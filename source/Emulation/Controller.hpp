@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <SDL2/SDL.h>
+#include <array>
+#include <iostream>
 
 /**
  * Buttons found on a standard controller.
@@ -20,7 +22,16 @@ enum ControllerButton
 };
 
 /**
- * Emulates an NES game controller device.
+ * Player identifiers
+ */
+enum Player
+{
+    PLAYER_1 = 0,
+    PLAYER_2 = 1
+};
+
+/**
+ * Emulates NES game controller devices for two players.
  * Supports keyboard input and SDL joystick/gamepad input.
  */
 class Controller
@@ -36,24 +47,46 @@ public:
     bool initJoystick();
 
     /**
-     * Read from the controller register.
+     * Read from the controller register for a specific player.
      */
-    uint8_t readByte();
+    uint8_t readByte(Player player);
 
     /**
-     * Set the state of a button on the controller.
+     * Set the state of a button on the controller for a specific player.
+     */
+    void setButtonState(Player player, ControllerButton button, bool state);
+
+    /**
+     * Get the state of a button on the controller for a specific player.
+     */
+    bool getButtonState(Player player, ControllerButton button) const;
+
+    /**
+     * Write a byte to the controller register (affects both players).
+     */
+    void writeByte(uint8_t value);
+
+    // Backward compatibility methods for existing code
+    /**
+     * Set button state for Player 1 (backward compatibility)
      */
     void setButtonState(ControllerButton button, bool state);
 
     /**
-     * Get the state of a button on the controller.
+     * Get button state for Player 1 (backward compatibility)
      */
     bool getButtonState(ControllerButton button) const;
 
     /**
-     * Write a byte to the controller register.
+     * Read from Player 1 controller (backward compatibility)
      */
-    void writeByte(uint8_t value);
+    uint8_t readByte();
+
+    /**
+     * Process SDL keyboard events.
+     * This should be called in your main event loop.
+     */
+    void processKeyboardEvent(const SDL_Event& event);
 
     /**
      * Process SDL joystick events.
@@ -62,35 +95,61 @@ public:
     void processJoystickEvent(const SDL_Event& event);
 
     /**
-     * Update the controller state from the joystick.
+     * Update the controller state from joysticks.
      * This should be called once per frame.
      */
     void updateJoystickState();
 
-    // Debug function to print the current state of the controller
+    /**
+     * Debug function to print the current state of both controllers
+     */
     void printButtonStates() const;
-    
 
+    /**
+     * Check if a joystick is connected for a specific player
+     */
+    bool isJoystickConnected(Player player) const;
+
+    /**
+     * Enable/disable joystick polling (default: enabled)
+     * When disabled, only event-driven input is used
+     */
+    void setJoystickPolling(bool enabled);
 
 private:
-    bool    buttonStates[8];
-    uint8_t buttonIndex;
+    // Controller state for each player
+    std::array<std::array<bool, 8>, 2> buttonStates;
+    std::array<uint8_t, 2> buttonIndex;
     uint8_t strobe;
 
-    // SDL joystick handling
-    SDL_Joystick* joystick;
-    SDL_GameController* gameController;
-    int joystickID;
-    bool joystickInitialized;
+    // SDL joystick handling for up to 2 joysticks
+    std::array<SDL_Joystick*, 2> joysticks;
+    std::array<SDL_GameController*, 2> gameControllers;
+    std::array<int, 2> joystickIDs;
+    std::array<bool, 2> joystickInitialized;
 
-    // Joystick deadzone
+    // Joystick settings
     static const int JOYSTICK_DEADZONE = 8000;
+    bool joystickPollingEnabled;
 
-    // Map SDL joystick/gamepad buttons to NES controller buttons
-    void mapJoystickButtonToController(int button, ControllerButton nesButton);
-    
-    // Creates a custom mapping for the Retrolink SNES Controller
+    // Keyboard mappings for both players
+    struct KeyboardMapping
+    {
+        SDL_Scancode up, down, left, right;
+        SDL_Scancode a, b, select, start;
+    };
+
+    static const KeyboardMapping player1Keys;
+    static const KeyboardMapping player2Keys;
+
+    // Helper methods
+    void mapJoystickButtonToController(Player player, int button, bool pressed);
     void setupRetrolinkMapping();
+    Player getPlayerFromJoystickID(int joystickID);
+    void handleJoystickAxis(Player player, int axis, Sint16 value);
+    void handleJoystickButton(Player player, int button, bool pressed);
+    void handleControllerButton(Player player, SDL_GameControllerButton button, bool pressed);
+    void handleControllerAxis(Player player, SDL_GameControllerAxis axis, Sint16 value);
 };
 
 #endif // CONTROLLER_HPP

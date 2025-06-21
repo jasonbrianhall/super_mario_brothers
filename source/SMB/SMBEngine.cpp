@@ -183,9 +183,9 @@ uint8_t SMBEngine::readData(uint16_t address)
         switch (address)
         {
         case 0x4016:
-            return controller1->readByte();
+            return controller1->readByte(PLAYER_1);
         case 0x4017:
-            return controller2->readByte();
+            return controller1->readByte(PLAYER_2);
         }
     }
 
@@ -253,7 +253,6 @@ void SMBEngine::writeData(uint16_t address, uint8_t value)
             break;
         case 0x4016:
             controller1->writeByte(value);
-            controller2->writeByte(value);
             break;
         default:
             apu->writeRegister(address, value);
