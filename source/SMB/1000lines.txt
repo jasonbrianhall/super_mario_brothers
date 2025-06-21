@@ -1,0 +1,1000 @@
+19,22c19
+<     s = x;
+<     x = 0xff; // reset stack pointer
+<     writeData(PPU_CTRL_REG1, a);
+<     a = BOOST_BINARY(00010000); // init PPU control register 1 
+---
+>     /* sei */ // pretty standard 6502 type init here
+24c21,24
+<     /* sei */ // pretty standard 6502 type init here
+---
+>     a = BOOST_BINARY(00010000); // init PPU control register 1 
+>     writeData(PPU_CTRL_REG1, a);
+>     x = 0xff; // reset stack pointer
+>     s = x;
+26c26,27
+< VBlank1: // wait two frames
+---
+> VBlank1: // wait two frames
+>     a = M(PPU_STATUS);
+29d29
+<     a = M(PPU_STATUS);
+32,33c32
+<     x = 0x05; // this is where we check for a warm boot
+<     y = ColdBootOffset; // load default cold boot pointer
+---
+>     a = M(PPU_STATUS);
+36c35,36
+<     a = M(PPU_STATUS);
+---
+>     y = ColdBootOffset; // load default cold boot pointer
+>     x = 0x05; // this is where we check for a warm boot
+38,43c38,43
+< WBootCheck: // check each score digit in the top score
+<     y = WarmBootOffset; // if passed both, load warm boot pointer
+<     if (!z)
+<         goto ColdBoot;
+<     compare(a, 0xa5); // another location has a specific value
+<     a = M(WarmBootValidation); // second checkpoint, check to see if 
+---
+> WBootCheck: // check each score digit in the top score
+>     a = M(TopScoreDisplay + x);
+>     compare(a, 10); // to see if we have a valid digit
+>     if (c)
+>         goto ColdBoot; // if not, give up and proceed with cold boot
+>     --x;
+46,50c46,50
+<     --x;
+<     if (c)
+<         goto ColdBoot; // if not, give up and proceed with cold boot
+<     compare(a, 10); // to see if we have a valid digit
+<     a = M(TopScoreDisplay + x);
+---
+>     a = M(WarmBootValidation); // second checkpoint, check to see if 
+>     compare(a, 0xa5); // another location has a specific value
+>     if (!z)
+>         goto ColdBoot;
+>     y = WarmBootOffset; // if passed both, load warm boot pointer
+52,69c52,56
+< ColdBoot: // clear memory using pointer in Y
+<     pushReturnIndex(0);
+<     goto WritePPUReg1;
+< Return_0:
+<     a |= BOOST_BINARY(10000000); // enable NMIs
+<     a = M(Mirror_PPU_CTRL_REG1);
+<     ++M(DisableScreenFlag); // set flag to disable screen output
+<     pushReturnIndex(1);
+<     goto InitializeNameTables;
+< Return_1: // initialize both name tables
+<     pushReturnIndex(2);
+<     goto MoveAllSpritesOffscreen;
+< Return_2:
+<     writeData(PPU_CTRL_REG2, a); // turn off clipping for OAM and background
+<     a = BOOST_BINARY(00000110);
+<     writeData(SND_MASTERCTRL_REG, a); // enable all sound channels except dmc
+<     a = BOOST_BINARY(00001111);
+<     writeData(PseudoRandomBitReg, a); // set seed for pseudorandom register
+---
+> ColdBoot: // clear memory using pointer in Y
+>     JSR(InitializeMemory, 0);
+>     writeData(SND_DELTA_REG + 1, a); // reset delta counter load register
+>     writeData(OperMode, a); // reset primary mode of operation
+>     a = 0xa5; // set warm boot flag
+71,76c58,68
+<     a = 0xa5; // set warm boot flag
+<     writeData(OperMode, a); // reset primary mode of operation
+<     writeData(SND_DELTA_REG + 1, a); // reset delta counter load register
+<     pushReturnIndex(3);
+<     goto InitializeMemory;
+< Return_3:
+---
+>     writeData(PseudoRandomBitReg, a); // set seed for pseudorandom register
+>     a = BOOST_BINARY(00001111);
+>     writeData(SND_MASTERCTRL_REG, a); // enable all sound channels except dmc
+>     a = BOOST_BINARY(00000110);
+>     writeData(PPU_CTRL_REG2, a); // turn off clipping for OAM and background
+>     JSR(MoveAllSpritesOffscreen, 1);
+>     JSR(InitializeNameTables, 2); // initialize both name tables
+>     ++M(DisableScreenFlag); // set flag to disable screen output
+>     a = M(Mirror_PPU_CTRL_REG1);
+>     a |= BOOST_BINARY(10000000); // enable NMIs
+>     JSR(WritePPUReg1, 3);
+78c70
+< EndlessLoop: // endless loop, need I say more?
+---
+> EndlessLoop: // endless loop, need I say more?
+82,90c74,75
+<     a |= BOOST_BINARY(00011110);
+<     a = M(Mirror_PPU_CTRL_REG2); // otherwise reenable bits and save them
+<     if (!z)
+<         goto ScreenOff; // if set, used bits as-is
+<     y = M(DisableScreenFlag); // get screen disable flag
+<     a &= BOOST_BINARY(11100110);
+<     a = M(Mirror_PPU_CTRL_REG2); // disable OAM and background display by default
+<     writeData(PPU_CTRL_REG1, a); // (essentially $2000) but save other bits
+<     a &= BOOST_BINARY(01111110); // alter name table address to be $2800
+---
+>     a = M(Mirror_PPU_CTRL_REG1); // disable NMIs in mirror reg
+>     a &= BOOST_BINARY(01111111); // save all other bits
+92,93c77,85
+<     a &= BOOST_BINARY(01111111); // save all other bits
+<     a = M(Mirror_PPU_CTRL_REG1); // disable NMIs in mirror reg
+---
+>     a &= BOOST_BINARY(01111110); // alter name table address to be $2800
+>     writeData(PPU_CTRL_REG1, a); // (essentially $2000) but save other bits
+>     a = M(Mirror_PPU_CTRL_REG2); // disable OAM and background display by default
+>     a &= BOOST_BINARY(11100110);
+>     y = M(DisableScreenFlag); // get screen disable flag
+>     if (!z)
+>         goto ScreenOff; // if set, used bits as-is
+>     a = M(Mirror_PPU_CTRL_REG2); // otherwise reenable bits and save them
+>     a |= BOOST_BINARY(00011110);
+95,96c87,105
+< ScreenOff: // save bits for later but not in register at the moment
+<     ++y; // get offset based on usage
+---
+> ScreenOff: // save bits for later but not in register at the moment
+>     writeData(Mirror_PPU_CTRL_REG2, a);
+>     a &= BOOST_BINARY(11100111); // disable screen for now
+>     writeData(PPU_CTRL_REG2, a);
+>     x = M(PPU_STATUS); // reset flip-flop and reset scroll registers to zero
+>     a = 0x00;
+>     JSR(InitScroll, 4);
+>     writeData(PPU_SPR_ADDR, a); // reset spr-ram address register
+>     a = 0x02; // perform spr-ram DMA access on $0200-$02ff
+>     writeData(SPR_DMA, a);
+>     x = M(VRAM_Buffer_AddrCtrl); // load control for pointer to buffer contents
+>     a = M(VRAM_AddrTable_Low + x); // set indirect at $00 to pointer
+>     writeData(0x00, a);
+>     a = M(VRAM_AddrTable_High + x);
+>     writeData(0x01, a);
+>     JSR(UpdateScreen, 5); // update screen with buffer contents
+>     y = 0x00;
+>     x = M(VRAM_Buffer_AddrCtrl); // check for usage of $0341
+>     compare(x, 0x06);
+99,120c108
+<     compare(x, 0x06);
+<     x = M(VRAM_Buffer_AddrCtrl); // check for usage of $0341
+<     y = 0x00;
+<     pushReturnIndex(4);
+<     goto UpdateScreen;
+< Return_4: // update screen with buffer contents
+<     writeData(0x01, a);
+<     a = M(VRAM_AddrTable_High + x);
+<     writeData(0x00, a);
+<     a = M(VRAM_AddrTable_Low + x); // set indirect at $00 to pointer
+<     x = M(VRAM_Buffer_AddrCtrl); // load control for pointer to buffer contents
+<     writeData(SPR_DMA, a);
+<     a = 0x02; // perform spr-ram DMA access on $0200-$02ff
+<     writeData(PPU_SPR_ADDR, a); // reset spr-ram address register
+<     pushReturnIndex(5);
+<     goto InitScroll;
+< Return_5:
+<     a = 0x00;
+<     x = M(PPU_STATUS); // reset flip-flop and reset scroll registers to zero
+<     writeData(PPU_CTRL_REG2, a);
+<     a &= BOOST_BINARY(11100111); // disable screen for now
+<     writeData(Mirror_PPU_CTRL_REG2, a);
+---
+>     ++y; // get offset based on usage
+123,128c111,123
+<     if (!z)
+<         goto NoDecTimers;
+<     --M(TimerControl);
+<     if (z)
+<         goto DecTimers; // all frame and interval timers
+<     a = M(TimerControl); // if master timer control not set, decrement
+---
+>     x = M(VRAM_Buffer_Offset + y);
+>     a = 0x00; // clear buffer header at last location
+>     writeData(VRAM_Buffer1_Offset + x, a);
+>     writeData(VRAM_Buffer1 + x, a);
+>     writeData(VRAM_Buffer_AddrCtrl, a); // reinit address control to $0301
+>     a = M(Mirror_PPU_CTRL_REG2); // copy mirror of $2001 to register
+>     writeData(PPU_CTRL_REG2, a);
+>     JSR(SoundEngine, 6); // play sound
+>     JSR(ReadJoypads, 7); // read joypads
+>     JSR(PauseRoutine, 8); // handle pause
+>     JSR(UpdateTopScore, 9);
+>     a = M(GamePauseStatus); // check for pause status
+>     a >>= 1;
+131,151c126,131
+<     a >>= 1;
+<     a = M(GamePauseStatus); // check for pause status
+<     pushReturnIndex(6);
+<     goto UpdateTopScore;
+< Return_6:
+<     pushReturnIndex(7);
+<     goto PauseRoutine;
+< Return_7: // handle pause
+<     pushReturnIndex(8);
+<     goto ReadJoypads;
+< Return_8: // read joypads
+<     pushReturnIndex(9);
+<     goto SoundEngine;
+< Return_9: // play sound
+<     writeData(PPU_CTRL_REG2, a);
+<     a = M(Mirror_PPU_CTRL_REG2); // copy mirror of $2001 to register
+<     writeData(VRAM_Buffer_AddrCtrl, a); // reinit address control to $0301
+<     writeData(VRAM_Buffer1 + x, a);
+<     writeData(VRAM_Buffer1_Offset + x, a);
+<     a = 0x00; // clear buffer header at last location
+<     x = M(VRAM_Buffer_Offset + y);
+---
+>     a = M(TimerControl); // if master timer control not set, decrement
+>     if (z)
+>         goto DecTimers; // all frame and interval timers
+>     --M(TimerControl);
+>     if (!z)
+>         goto NoDecTimers;
+153,159c133
+< DecTimers: // load end offset for end of frame timers
+<     x = 0x23; // interval timers will decrement along with frame timers
+<     writeData(IntervalTimerControl, a); // if control for interval timers expired,
+<     a = 0x14;
+<     if (!n)
+<         goto DecTimersLoop; // if not expired, only frame timers will decrement
+<     --M(IntervalTimerControl); // decrement interval timer control,
+---
+> DecTimers: // load end offset for end of frame timers
+160a135,140
+>     --M(IntervalTimerControl); // decrement interval timer control,
+>     if (!n)
+>         goto DecTimersLoop; // if not expired, only frame timers will decrement
+>     a = 0x14;
+>     writeData(IntervalTimerControl, a); // if control for interval timers expired,
+>     x = 0x23; // interval timers will decrement along with frame timers
+162,165c142
+< DecTimersLoop: // check current timer
+<     --M(Timers + x); // otherwise decrement the current timer
+<     if (z)
+<         goto SkipExpTimer; // if current timer expired, branch to skip,
+---
+> DecTimersLoop: // check current timer
+166a144,146
+>     if (z)
+>         goto SkipExpTimer; // if current timer expired, branch to skip,
+>     --M(Timers + x); // otherwise decrement the current timer
+168,170c148
+< SkipExpTimer: // move onto next timer
+<     if (!n)
+<         goto DecTimersLoop; // do this until all timers are dealt with
+---
+> SkipExpTimer: // move onto next timer
+171a150,151
+>     if (!n)
+>         goto DecTimersLoop; // do this until all timers are dealt with
+173c153
+< NoDecTimers: // increment frame counter
+---
+> NoDecTimers: // increment frame counter
+177c157,165
+<     c = 1; // if one or the other is set, carry will be set
+---
+>     x = 0x00;
+>     y = 0x07;
+>     a = M(PseudoRandomBitReg); // get first memory location of LSFR bytes
+>     a &= BOOST_BINARY(00000010); // mask out all but d1
+>     writeData(0x00, a); // save here
+>     a = M(PseudoRandomBitReg + 1); // get second memory location
+>     a &= BOOST_BINARY(00000010); // mask out all but d1
+>     a ^= M(0x00); // perform exclusive-OR on d1 from first and second bytes
+>     c = 0; // if neither or both are set, carry will be clear
+180,188c168
+<     c = 0; // if neither or both are set, carry will be clear
+<     a ^= M(0x00); // perform exclusive-OR on d1 from first and second bytes
+<     a &= BOOST_BINARY(00000010); // mask out all but d1
+<     a = M(PseudoRandomBitReg + 1); // get second memory location
+<     writeData(0x00, a); // save here
+<     a &= BOOST_BINARY(00000010); // mask out all but d1
+<     a = M(PseudoRandomBitReg); // get first memory location of LSFR bytes
+<     y = 0x07;
+<     x = 0x00;
+---
+>     c = 1; // if one or the other is set, carry will be set
+190,193c170,173
+< RotPRandomBit: // rotate carry into d7, and rotate last bit into carry
+<     if (z)
+<         goto SkipSprite0;
+<     a = M(Sprite0HitDetectFlag); // check for flag here
+---
+> RotPRandomBit: // rotate carry into d7, and rotate last bit into carry
+>     M(PseudoRandomBitReg + x).ror();
+>     ++x; // increment to next byte
+>     --y; // decrement for loop
+196,198c176,178
+<     --y; // decrement for loop
+<     ++x; // increment to next byte
+<     M(PseudoRandomBitReg + x).ror();
+---
+>     a = M(Sprite0HitDetectFlag); // check for flag here
+>     if (z)
+>         goto SkipSprite0;
+200,210c180,182
+< Sprite0Clr: // wait for sprite 0 flag to clear, which will
+<     pushReturnIndex(10);
+<     goto SpriteShuffler;
+< Return_10:
+<     pushReturnIndex(11);
+<     goto MoveSpritesOffscreen;
+< Return_11:
+<     if (c)
+<         goto Sprite0Hit;
+<     a >>= 1;
+<     a = M(GamePauseStatus); // if in pause mode, do not bother with sprites at all
+---
+> Sprite0Clr: // wait for sprite 0 flag to clear, which will
+>     a = M(PPU_STATUS);
+>     a &= BOOST_BINARY(01000000); // not happen until vblank has ended
+213,214c185,190
+<     a &= BOOST_BINARY(01000000); // not happen until vblank has ended
+<     a = M(PPU_STATUS);
+---
+>     a = M(GamePauseStatus); // if in pause mode, do not bother with sprites at all
+>     a >>= 1;
+>     if (c)
+>         goto Sprite0Hit;
+>     JSR(MoveSpritesOffscreen, 10);
+>     JSR(SpriteShuffler, 11);
+216,217c192,194
+< Sprite0Hit: // do sprite #0 hit detection
+<     y = 0x14; // small delay, to wait until we hit horizontal blank time
+---
+> Sprite0Hit: // do sprite #0 hit detection
+>     a = M(PPU_STATUS);
+>     a &= BOOST_BINARY(01000000);
+220,221c197
+<     a &= BOOST_BINARY(01000000);
+<     a = M(PPU_STATUS);
+---
+>     y = 0x14; // small delay, to wait until we hit horizontal blank time
+223a200
+>     --y;
+226d202
+<     --y;
+228,238c204,205
+< SkipSprite0: // set scroll registers from variables
+<     pushReturnIndex(12);
+<     goto OperModeExecutionTree;
+< Return_12: // otherwise do one of many, many possible subroutines
+<     if (c)
+<         goto SkipMainOper;
+<     a >>= 1;
+<     a = M(GamePauseStatus); // if in pause mode, do not perform operation mode stuff
+<     writeData(PPU_CTRL_REG1, a);
+<     pha();
+<     a = M(Mirror_PPU_CTRL_REG1); // load saved mirror of $2000
+---
+> SkipSprite0: // set scroll registers from variables
+>     a = M(HorizontalScroll);
+242,245c209,210
+<     a = M(HorizontalScroll);
+< 
+< SkipMainOper: // reset flip-flop
+<     return; // we are done until the next frame!
+---
+>     a = M(Mirror_PPU_CTRL_REG1); // load saved mirror of $2000
+>     pha();
+247,248c212,218
+<     a |= BOOST_BINARY(10000000); // reactivate NMIs
+<     pla();
+---
+>     a = M(GamePauseStatus); // if in pause mode, do not perform operation mode stuff
+>     a >>= 1;
+>     if (c)
+>         goto SkipMainOper;
+>     JSR(OperModeExecutionTree, 12); // otherwise do one of many, many possible subroutines
+> 
+> SkipMainOper: // reset flip-flop
+249a220,223
+>     pla();
+>     a |= BOOST_BINARY(10000000); // reactivate NMIs
+>     writeData(PPU_CTRL_REG1, a);
+>     return; // we are done until the next frame!
+251a226,230
+>     a = M(OperMode); // are we in victory mode?
+>     compare(a, VictoryModeValue); // if so, go ahead
+>     if (z)
+>         goto ChkPauseTimer;
+>     compare(a, GameModeValue); // are we in game mode?
+253c232,233
+<         goto ExitPause; // if not, leave
+---
+>         goto ExitPause; // if not, leave
+>     a = M(OperMode_Task); // if we are in game mode, are we running game engine?
+255d234
+<     a = M(OperMode_Task); // if we are in game mode, are we running game engine?
+257,262c236
+<         goto ExitPause; // if not, leave
+<     compare(a, GameModeValue); // are we in game mode?
+<     if (z)
+<         goto ChkPauseTimer;
+<     compare(a, VictoryModeValue); // if so, go ahead
+<     a = M(OperMode); // are we in victory mode?
+---
+>         goto ExitPause; // if not, leave
+264c238,242
+< ChkPauseTimer: // check if pause timer is still counting down
+---
+> ChkPauseTimer: // check if pause timer is still counting down
+>     a = M(GamePauseTimer);
+>     if (z)
+>         goto ChkStart;
+>     --M(GamePauseTimer); // if so, decrement and leave
+268,271d245
+<     --M(GamePauseTimer); // if so, decrement and leave
+<     if (z)
+<         goto ChkStart;
+<     a = M(GamePauseTimer);
+273c247,253
+< ChkStart: // check to see if start is pressed
+---
+> ChkStart: // check to see if start is pressed
+>     a = M(SavedJoypad1Bits);
+>     a &= Start_Button; // on controller 1
+>     if (z)
+>         goto ClrPauseTimer;
+>     a = M(GamePauseStatus); // check to see if timer flag is set
+>     a &= BOOST_BINARY(10000000); // and if so, do not reset timer (residual,
+275,281c255,256
+<         goto SetPause; // unconditional branch
+<     a |= BOOST_BINARY(10000000);
+<     a ^= BOOST_BINARY(00000001); // invert d0 and set d7
+<     writeData(PauseSoundQueue, y);
+<     ++y; // set pause sfx queue for next pause mode
+<     y = a;
+<     a = M(GamePauseStatus);
+---
+>         goto ExitPause; // joypad reading routine makes this unnecessary)
+>     a = 0x2b; // set pause timer
+283c258,263
+<     a = 0x2b; // set pause timer
+---
+>     a = M(GamePauseStatus);
+>     y = a;
+>     ++y; // set pause sfx queue for next pause mode
+>     writeData(PauseSoundQueue, y);
+>     a ^= BOOST_BINARY(00000001); // invert d0 and set d7
+>     a |= BOOST_BINARY(10000000);
+285,291c265
+<         goto ExitPause; // joypad reading routine makes this unnecessary)
+<     a &= BOOST_BINARY(10000000); // and if so, do not reset timer (residual,
+<     a = M(GamePauseStatus); // check to see if timer flag is set
+<     if (z)
+<         goto ClrPauseTimer;
+<     a &= Start_Button; // on controller 1
+<     a = M(SavedJoypad1Bits);
+---
+>         goto SetPause; // unconditional branch
+293,294c267
+< ClrPauseTimer: // clear timer flag if timer is at zero and start button
+<     a &= BOOST_BINARY(01111111); // is not pressed
+---
+> ClrPauseTimer: // clear timer flag if timer is at zero and start button
+295a269
+>     a &= BOOST_BINARY(01111111); // is not pressed
+306,309c280,283
+<     x = 0x0e; // start at the end of OAM data offsets
+<     writeData(0x00, a); // sprite #10
+<     a = 0x28; // load preset value which will put it at
+<     y = M(AreaType); // load level type, likely residual code
+---
+>     y = M(AreaType); // load level type, likely residual code
+>     a = 0x28; // load preset value which will put it at
+>     writeData(0x00, a); // sprite #10
+>     x = 0x0e; // start at the end of OAM data offsets
+311,313c285,287
+< ShuffleLoop: // check for offset value against
+<     a += M(0x00); // otherwise add preset value $28 to offset
+<     c = 0;
+---
+> ShuffleLoop: // check for offset value against
+>     a = M(SprDataOffset + x);
+>     compare(a, M(0x00)); // the preset value
+315,316c289,290
+<         goto StrSprOffset; // if not exceeded $ff, skip second add
+<     a += M(SprShuffleAmt + y); // get shuffle amount, add to current sprite offset
+---
+>         goto NextSprOffset; // if less, skip this part
+>     y = M(SprShuffleAmtOffset); // get current offset to preset value we want to add
+318c292
+<     y = M(SprShuffleAmtOffset); // get current offset to preset value we want to add
+---
+>     a += M(SprShuffleAmt + y); // get shuffle amount, add to current sprite offset
+320,322c294,296
+<         goto NextSprOffset; // if less, skip this part
+<     compare(a, M(0x00)); // the preset value
+<     a = M(SprDataOffset + x);
+---
+>         goto StrSprOffset; // if not exceeded $ff, skip second add
+>     c = 0;
+>     a += M(0x00); // otherwise add preset value $28 to offset
+324c298
+< StrSprOffset: // store new offset here or old one if branched to here
+---
+> StrSprOffset: // store new offset here or old one if branched to here
+327,333c301,302
+< NextSprOffset: // move backwards to next one
+<     x = 0x00; // otherwise, init to 0
+<     if (!z)
+<         goto SetAmtOffset; // if offset + 1 not 3, store
+<     compare(x, 0x03); // check if offset + 1 goes to 3
+<     ++x;
+<     x = M(SprShuffleAmtOffset); // load offset
+---
+> NextSprOffset: // move backwards to next one
+>     --x;
+336c305,310
+<     --x;
+---
+>     x = M(SprShuffleAmtOffset); // load offset
+>     ++x;
+>     compare(x, 0x03); // check if offset + 1 goes to 3
+>     if (!z)
+>         goto SetAmtOffset; // if offset + 1 not 3, store
+>     x = 0x00; // otherwise, init to 0
+339,340d312
+<     y = 0x02;
+<     x = 0x08; // load offsets for values and storage
+341a314,315
+>     x = 0x08; // load offsets for values and storage
+>     y = 0x02;
+343,349c317,325
+< SetMiscOffset: // load one of three OAM data offsets
+<     goto Return;
+< 
+< //------------------------------------------------------------------------
+<     if (!n)
+<         goto SetMiscOffset; // do this until all misc spr offsets are loaded
+<     --y;
+---
+> SetMiscOffset: // load one of three OAM data offsets
+>     a = M(SprDataOffset + 5 + y);
+>     writeData(Misc_SprDataOffset - 2 + x, a); // store first one unmodified, but
+>     c = 0; // add eight to the second and eight
+>     a += 0x08; // more to the third one
+>     writeData(Misc_SprDataOffset - 1 + x, a); // note that due to the way X is set up,
+>     c = 0; // this code loads into the misc sprite offsets
+>     a += 0x08;
+>     writeData(Misc_SprDataOffset + x, a);
+353,360c329,334
+<     writeData(Misc_SprDataOffset + x, a);
+<     a += 0x08;
+<     c = 0; // this code loads into the misc sprite offsets
+<     writeData(Misc_SprDataOffset - 1 + x, a); // note that due to the way X is set up,
+<     a += 0x08; // more to the third one
+<     c = 0; // add eight to the second and eight
+<     writeData(Misc_SprDataOffset - 2 + x, a); // store first one unmodified, but
+<     a = M(SprDataOffset + 5 + y);
+---
+>     --y;
+>     if (!n)
+>         goto SetMiscOffset; // do this until all misc spr offsets are loaded
+>     goto Return;
+> 
+> //------------------------------------------------------------------------
+362a337
+>     a = M(OperMode); // this is the heart of the entire program,
+365,366c340,348
+<     } // most of what goes on starts here
+<     a = M(OperMode); // this is the heart of the entire program,
+---
+>     case 0:
+>         goto TitleScreenMode;
+>     case 1:
+>         goto GameMode;
+>     case 2:
+>         goto VictoryMode;
+>     case 3:
+>         goto GameOverMode;
+>     } // most of what goes on starts here
+368a351
+>     y = 0x00; // this routine moves all sprites off the screen
+370,371d352
+<     y = 0x00; // this routine moves all sprites off the screen
+< Skip_0:
+374,378c355,357
+<     a = 0xf8; // off the screen
+<     y = 0x04; // this routine moves all but sprite 0
+< 
+< SprInitLoop: // write 248 into OAM data's Y coordinate
+<     goto Return;
+---
+>     y = 0x04; // this routine moves all but sprite 0
+> Skip_0:
+>     a = 0xf8; // off the screen
+380,382c359,361
+< //------------------------------------------------------------------------
+<     if (!z)
+<         goto SprInitLoop;
+---
+> SprInitLoop: // write 248 into OAM data's Y coordinate
+>     writeData(Sprite_Y_Position + y, a);
+>     ++y; // which will move it off the screen
+386,387c365,369
+<     ++y; // which will move it off the screen
+<     writeData(Sprite_Y_Position + y, a);
+---
+>     if (!z)
+>         goto SprInitLoop;
+>     goto Return;
+> 
+> //------------------------------------------------------------------------
+389a372
+>     a = M(OperMode_Task);
+391a375,382
+>     case 0:
+>         goto InitializeGame;
+>     case 1:
+>         goto ScreenRoutines;
+>     case 2:
+>         goto PrimaryGameSetup;
+>     case 3:
+>         goto GameMenuRoutine;
+393d383
+<     a = M(OperMode_Task);
+396,398c386,389
+<     if (!z)
+<         goto ChkSelect; // if not, branch to check select button
+<     compare(a, A_Button + Start_Button); // check to see if A + start was pressed
+---
+>     y = 0x00;
+>     a = M(SavedJoypad1Bits); // check to see if either player pressed
+>     a |= M(SavedJoypad2Bits); // only the start button (either joypad)
+>     compare(a, Start_Button);
+401,404c392,394
+<     compare(a, Start_Button);
+<     a |= M(SavedJoypad2Bits); // only the start button (either joypad)
+<     a = M(SavedJoypad1Bits); // check to see if either player pressed
+<     y = 0x00;
+---
+>     compare(a, A_Button + Start_Button); // check to see if A + start was pressed
+>     if (!z)
+>         goto ChkSelect; // if not, branch to check select button
+406c396
+< StartGame: // if either start or A + start, execute here
+---
+> StartGame: // if either start or A + start, execute here
+409,421c399
+< ChkSelect: // check to see if the select button was pressed
+<     goto RunDemo; // otherwise, run game engine for demo
+<     if (c)
+<         goto ResetTitle; // if carry flag set, demo over, thus branch
+<     pushReturnIndex(13);
+<     goto DemoEngine;
+< Return_13: // run through the demo actions
+<     writeData(SelectTimer, a); // set controller bits here if running demo
+<     if (!z)
+<         goto ChkWorldSel; // if demo timer not expired, branch to check world selection
+<     x = M(DemoTimer); // otherwise check demo timer
+<     if (z)
+<         goto SelectBLogic; // if so, branch reset demo timer
+---
+> ChkSelect: // check to see if the select button was pressed
+423,425c401,403
+< 
+< ChkWorldSel: // check to see if world selection has been enabled
+<     ++y; // if so, increment Y and execute same code as select
+---
+>     if (z)
+>         goto SelectBLogic; // if so, branch reset demo timer
+>     x = M(DemoTimer); // otherwise check demo timer
+427,428c405,413
+<         goto NullJoypad;
+<     compare(a, B_Button); // if so, check to see if the B button was pressed
+---
+>         goto ChkWorldSel; // if demo timer not expired, branch to check world selection
+>     writeData(SelectTimer, a); // set controller bits here if running demo
+>     JSR(DemoEngine, 13); // run through the demo actions
+>     if (c)
+>         goto ResetTitle; // if carry flag set, demo over, thus branch
+>     goto RunDemo; // otherwise, run game engine for demo
+> 
+> ChkWorldSel: // check to see if world selection has been enabled
+>     x = M(WorldSelectEnableFlag);
+431c416,419
+<     x = M(WorldSelectEnableFlag);
+---
+>     compare(a, B_Button); // if so, check to see if the B button was pressed
+>     if (!z)
+>         goto NullJoypad;
+>     ++y; // if so, increment Y and execute same code as select
+433,440c421,422
+< SelectBLogic: // if select or B pressed, check demo timer one last time
+<     goto NullJoypad;
+<     pushReturnIndex(14);
+<     goto DrawMushroomIcon;
+< Return_14:
+<     writeData(NumberOfPlayers, a);
+<     a ^= BOOST_BINARY(00000001); // change number of players and draw icon accordingly
+<     a = M(NumberOfPlayers); // if no, must have been the select button, therefore
+---
+> SelectBLogic: // if select or B pressed, check demo timer one last time
+>     a = M(DemoTimer);
+442,448c424,425
+<         goto IncWorldSel; // note this will not be run if world selection is disabled
+<     compare(y, 0x01); // was the B button pressed earlier?  if so, branch
+<     writeData(SelectTimer, a);
+<     a = 0x10; // otherwise reset select button timer
+<     if (!z)
+<         goto NullJoypad; // if not expired, branch
+<     a = M(SelectTimer); // check select/B button timer
+---
+>         goto ResetTitle; // if demo timer expired, branch to reset title screen mode
+>     a = 0x18; // otherwise reset demo timer
+450c427,432
+<     a = 0x18; // otherwise reset demo timer
+---
+>     a = M(SelectTimer); // check select/B button timer
+>     if (!z)
+>         goto NullJoypad; // if not expired, branch
+>     a = 0x10; // otherwise reset select button timer
+>     writeData(SelectTimer, a);
+>     compare(y, 0x01); // was the B button pressed earlier?  if so, branch
+452,453c434,439
+<         goto ResetTitle; // if demo timer expired, branch to reset title screen mode
+<     a = M(DemoTimer);
+---
+>         goto IncWorldSel; // note this will not be run if world selection is disabled
+>     a = M(NumberOfPlayers); // if no, must have been the select button, therefore
+>     a ^= BOOST_BINARY(00000001); // change number of players and draw icon accordingly
+>     writeData(NumberOfPlayers, a);
+>     JSR(DrawMushroomIcon, 14);
+>     goto NullJoypad;
+455,462c441
+< IncWorldSel: // increment world select number
+<     pushReturnIndex(15);
+<     goto GoContinue;
+< Return_15:
+<     writeData(WorldSelectNumber, a); // store as current world select number
+<     a &= BOOST_BINARY(00000111); // mask out higher bits
+<     a = x;
+<     ++x;
+---
+> IncWorldSel: // increment world select number
+463a443,447
+>     ++x;
+>     a = x;
+>     a &= BOOST_BINARY(00000111); // mask out higher bits
+>     writeData(WorldSelectNumber, a); // store as current world select number
+>     JSR(GoContinue, 15);
+465,468c449,453
+< UpdateShroom: // write template for world select in vram buffer
+<     writeData(VRAM_Buffer1 + 3, y); // null terminator
+<     ++y; // proper display, and put in blank byte before
+<     y = M(WorldNumber); // get world number from variable and increment for
+---
+> UpdateShroom: // write template for world select in vram buffer
+>     a = M(WSelectBufferTemplate + x);
+>     writeData(VRAM_Buffer1 - 1 + x, a); // do this until all bytes are written
+>     ++x;
+>     compare(x, 0x06);
+471,474c456,458
+<     compare(x, 0x06);
+<     ++x;
+<     writeData(VRAM_Buffer1 - 1 + x, a); // do this until all bytes are written
+<     a = M(WSelectBufferTemplate + x);
+---
+>     y = M(WorldNumber); // get world number from variable and increment for
+>     ++y; // proper display, and put in blank byte before
+>     writeData(VRAM_Buffer1 + 3, y); // null terminator
+476,477c460
+< NullJoypad: // clear joypad bits for player 1
+<     writeData(SavedJoypad1Bits, a);
+---
+> NullJoypad: // clear joypad bits for player 1
+478a462
+>     writeData(SavedJoypad1Bits, a);
+480,482c464,466
+< RunDemo: // run game engine
+<     if (!z)
+<         goto ExitMenu; // if not, do not do all the resetting below
+---
+> RunDemo: // run game engine
+>     JSR(GameCoreRoutine, 16);
+>     a = M(GameEngineSubroutine); // check to see if we're running lose life routine
+484,487c468,469
+<     a = M(GameEngineSubroutine); // check to see if we're running lose life routine
+<     pushReturnIndex(16);
+<     goto GameCoreRoutine;
+< Return_16:
+---
+>     if (!z)
+>         goto ExitMenu; // if not, do not do all the resetting below
+489c471,476
+< ResetTitle: // reset game modes, disable
+---
+> ResetTitle: // reset game modes, disable
+>     a = 0x00;
+>     writeData(OperMode, a); // sprite 0 check and disable
+>     writeData(OperMode_Task, a); // screen output
+>     writeData(Sprite0HitDetectFlag, a);
+>     ++M(DisableScreenFlag);
+493,497d479
+<     ++M(DisableScreenFlag);
+<     writeData(Sprite0HitDetectFlag, a);
+<     writeData(OperMode_Task, a); // screen output
+<     writeData(OperMode, a); // sprite 0 check and disable
+<     a = 0x00;
+499,506c481,482
+< ChkContinue: // if timer for demo has expired, reset modes
+<     pushReturnIndex(17);
+<     goto GoContinue;
+< Return_17: // continue function when pressing A + start
+<     a = M(ContinueWorld); // load previously saved world number for secret
+<     if (!c)
+<         goto StartWorld1; // if not, don't load continue function's world number
+<     a <<= 1; // check to see if A button was also pushed
+---
+> ChkContinue: // if timer for demo has expired, reset modes
+>     y = M(DemoTimer);
+509c485,489
+<     y = M(DemoTimer);
+---
+>     a <<= 1; // check to see if A button was also pushed
+>     if (!c)
+>         goto StartWorld1; // if not, don't load continue function's world number
+>     a = M(ContinueWorld); // load previously saved world number for secret
+>     JSR(GoContinue, 17); // continue function when pressing A + start
+511a492,498
+>     JSR(LoadAreaPointer, 18);
+>     ++M(Hidden1UpFlag); // set 1-up box flag for both players
+>     ++M(OffScr_Hidden1UpFlag);
+>     ++M(FetchNewGameTimerFlag); // set fetch new game timer flag
+>     ++M(OperMode); // set next game mode
+>     a = M(WorldSelectEnableFlag); // if world select flag is on, then primary
+>     writeData(PrimaryHardMode, a); // hard mode must be on as well
+513c500
+<     x = 0x17;
+---
+>     writeData(OperMode_Task, a); // set game mode here, and clear demo timer
+515c502
+<     writeData(OperMode_Task, a); // set game mode here, and clear demo timer
+---
+>     x = 0x17;
+517,525d503
+<     writeData(PrimaryHardMode, a); // hard mode must be on as well
+<     a = M(WorldSelectEnableFlag); // if world select flag is on, then primary
+<     ++M(OperMode); // set next game mode
+<     ++M(FetchNewGameTimerFlag); // set fetch new game timer flag
+<     ++M(OffScr_Hidden1UpFlag);
+<     ++M(Hidden1UpFlag); // set 1-up box flag for both players
+<     pushReturnIndex(18);
+<     goto LoadAreaPointer;
+< Return_18:
+527c505,507
+< InitScores: // clear player scores and coin displays
+---
+> InitScores: // clear player scores and coin displays
+>     writeData(ScoreAndCoinDisplay + x, a);
+>     --x;
+530,531d509
+<     --x;
+<     writeData(ScoreAndCoinDisplay + x, a);
+538c516,521
+< GoContinue: // start both players at the first area
+---
+> GoContinue: // start both players at the first area
+>     writeData(WorldNumber, a);
+>     writeData(OffScr_WorldNumber, a); // of the previously saved world number
+>     x = 0x00; // note that on power-up using this function
+>     writeData(AreaNumber, x); // will make no difference
+>     writeData(OffScr_AreaNumber, x);
+542,546d524
+<     writeData(OffScr_AreaNumber, x);
+<     writeData(AreaNumber, x); // will make no difference
+<     x = 0x00; // note that on power-up using this function
+<     writeData(OffScr_WorldNumber, a); // of the previously saved world number
+<     writeData(WorldNumber, a);
+549c527
+<     y = 0x07; // read eight bytes to be read by transfer routine
+---
+>     y = 0x07; // read eight bytes to be read by transfer routine
+551,558c529,532
+< IconDataRead: // note that the default position is set for a
+<     writeData(VRAM_Buffer1 + 5, a);
+<     a = 0xce; // then load shroom icon tile in 2-player position
+<     writeData(VRAM_Buffer1 + 3, a);
+<     a = 0x24; // otherwise, load blank tile in 1-player position
+<     if (z)
+<         goto ExitIcon; // if set to 1-player game, we're done
+<     a = M(NumberOfPlayers); // check number of players
+---
+> IconDataRead: // note that the default position is set for a
+>     a = M(MushroomIconData + y);
+>     writeData(VRAM_Buffer1 - 1 + y, a); // 1-player game
+>     --y;
+561,563c535,541
+<     --y;
+<     writeData(VRAM_Buffer1 - 1 + y, a); // 1-player game
+<     a = M(MushroomIconData + y);
+---
+>     a = M(NumberOfPlayers); // check number of players
+>     if (z)
+>         goto ExitIcon; // if set to 1-player game, we're done
+>     a = 0x24; // otherwise, load blank tile in 1-player position
+>     writeData(VRAM_Buffer1 + 3, a);
+>     a = 0xce; // then load shroom icon tile in 2-player position
+>     writeData(VRAM_Buffer1 + 5, a);
+571,577c549,550
+<     if (z)
+<         goto DemoOver; // if timer already at zero, skip
+<     writeData(DemoActionTimer, a); // store as current timer
+<     a = M(DemoTimingData - 1 + x); // get next timer
+<     c = 1; // set carry by default for demo over
+<     ++M(DemoAction); // if expired, increment action, X, and
+<     ++x;
+---
+>     x = M(DemoAction); // load current demo action
+>     a = M(DemoActionTimer); // load current action timer
+579,586c552,561
+<         goto DoAction; // if timer still counting down, skip
+<     a = M(DemoActionTimer); // load current action timer
+<     x = M(DemoAction); // load current demo action
+< 
+< DoAction: // get and perform action (current or next)
+<     c = 0; // clear carry if demo still going
+<     --M(DemoActionTimer); // decrement action timer
+<     writeData(SavedJoypad1Bits, a);
+---
+>         goto DoAction; // if timer still counting down, skip
+>     ++x;
+>     ++M(DemoAction); // if expired, increment action, X, and
+>     c = 1; // set carry by default for demo over
+>     a = M(DemoTimingData - 1 + x); // get next timer
+>     writeData(DemoActionTimer, a); // store as current timer
+>     if (z)
+>         goto DemoOver; // if timer already at zero, skip
+> 
+> DoAction: // get and perform action (current or next)
+587a563,565
+>     writeData(SavedJoypad1Bits, a);
+>     --M(DemoActionTimer); // decrement action timer
+>     c = 0; // clear carry if demo still going
+595,599c573,574
+<     pushReturnIndex(19);
+<     goto EnemiesAndLoopsCore;
+< Return_19: // and run enemy code
+<     writeData(ObjectOffset, x); // otherwise reset enemy object offset 
+<     x = 0x00;
+---
+>     JSR(VictoryModeSubroutines, 19); // run victory mode subroutines
+>     a = M(OperMode_Task); // get current task of victory mode
+601,611c576,583
+<         goto AutoPlayer; // if on bridge collapse, skip enemy processing
+<     a = M(OperMode_Task); // get current task of victory mode
+<     pushReturnIndex(20);
+<     goto VictoryModeSubroutines;
+< Return_20: // run victory mode subroutines
+< 
+< AutoPlayer: // get player's relative coordinates
+<     goto PlayerGfxHandler; // draw the player, then leave
+<     pushReturnIndex(21);
+<     goto RelativePlayerPosition;
+< Return_21:
+---
+>         goto AutoPlayer; // if on bridge collapse, skip enemy processing
+>     x = 0x00;
+>     writeData(ObjectOffset, x); // otherwise reset enemy object offset 
+>     JSR(EnemiesAndLoopsCore, 20); // and run enemy code
+> 
+> AutoPlayer: // get player's relative coordinates
+>     JSR(RelativePlayerPosition, 21);
+>     goto PlayerGfxHandler; // draw the player, then leave
+613a586
+>     a = M(OperMode_Task);
+615a589,598
+>     case 0:
+>         goto BridgeCollapse;
+>     case 1:
+>         goto SetupVictoryMode;
+>     case 2:
+>         goto PlayerVictoryWalk;
+>     case 3:
+>         goto PrintVictoryMessages;
+>     case 4:
+>         goto PlayerEndWorld;
+617d599
+<     a = M(OperMode_Task);
+620,621c602,604
+<     goto IncModeTask_B; // jump to set next major task in victory mode
