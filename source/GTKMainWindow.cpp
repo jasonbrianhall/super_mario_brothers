@@ -239,29 +239,87 @@ gboolean GTKMainWindow::onKeyPress(GtkWidget* widget, GdkEventKey* event, gpoint
     GTKMainWindow* window = static_cast<GTKMainWindow*>(user_data);
     
     if (smbEngine) {
-        // Convert GDK key to SDL key and process
-        SDL_Event sdlEvent;
-        sdlEvent.type = SDL_KEYDOWN;
-        sdlEvent.key.keysym.scancode = (SDL_Scancode)event->hardware_keycode;
-        sdlEvent.key.keysym.sym = (SDL_Keycode)event->keyval;
-        
         Controller& controller1 = smbEngine->getController1();
-        controller1.processKeyboardEvent(sdlEvent);
         
-        // Handle special keys
+        // Handle special keys first
         if (event->keyval == GDK_KEY_r || event->keyval == GDK_KEY_R) {
             smbEngine->reset();
             window->updateStatusBar("Game reset");
+            return TRUE;
         }
         
         // Handle fullscreen toggle (F key)
         if (event->keyval == GDK_KEY_f || event->keyval == GDK_KEY_F) {
             window->toggleFullscreen();
+            return TRUE;
         }
         
         // Handle escape key to exit fullscreen
         if (event->keyval == GDK_KEY_Escape) {
             window->exitFullscreen();
+            return TRUE;
+        }
+        
+        // Handle game controls directly (Player 1)
+        switch (event->keyval) {
+            case GDK_KEY_Up:
+                controller1.setButtonState(PLAYER_1, BUTTON_UP, true);
+                break;
+            case GDK_KEY_Down:
+                controller1.setButtonState(PLAYER_1, BUTTON_DOWN, true);
+                break;
+            case GDK_KEY_Left:
+                controller1.setButtonState(PLAYER_1, BUTTON_LEFT, true);
+                break;
+            case GDK_KEY_Right:
+                controller1.setButtonState(PLAYER_1, BUTTON_RIGHT, true);
+                break;
+            case GDK_KEY_x:
+            case GDK_KEY_X:
+                controller1.setButtonState(PLAYER_1, BUTTON_A, true);
+                break;
+            case GDK_KEY_z:
+            case GDK_KEY_Z:
+                controller1.setButtonState(PLAYER_1, BUTTON_B, true);
+                break;
+            case GDK_KEY_Shift_R:
+                controller1.setButtonState(PLAYER_1, BUTTON_SELECT, true);
+                break;
+            case GDK_KEY_Return:
+                controller1.setButtonState(PLAYER_1, BUTTON_START, true);
+                break;
+            
+            // Player 2 controls
+            case GDK_KEY_i:
+            case GDK_KEY_I:
+                controller1.setButtonState(PLAYER_2, BUTTON_UP, true);
+                break;
+            case GDK_KEY_k:
+            case GDK_KEY_K:
+                controller1.setButtonState(PLAYER_2, BUTTON_DOWN, true);
+                break;
+            case GDK_KEY_j:
+            case GDK_KEY_J:
+                controller1.setButtonState(PLAYER_2, BUTTON_LEFT, true);
+                break;
+            case GDK_KEY_l:
+            case GDK_KEY_L:
+                controller1.setButtonState(PLAYER_2, BUTTON_RIGHT, true);
+                break;
+            case GDK_KEY_n:
+            case GDK_KEY_N:
+                controller1.setButtonState(PLAYER_2, BUTTON_A, true);
+                break;
+            case GDK_KEY_m:
+            case GDK_KEY_M:
+                controller1.setButtonState(PLAYER_2, BUTTON_B, true);
+                break;
+            case GDK_KEY_Control_R:
+                controller1.setButtonState(PLAYER_2, BUTTON_SELECT, true);
+                break;
+            case GDK_KEY_space:
+                controller1.setButtonState(PLAYER_2, BUTTON_START, true);
+                break;
         }
     }
     
@@ -271,14 +329,69 @@ gboolean GTKMainWindow::onKeyPress(GtkWidget* widget, GdkEventKey* event, gpoint
 gboolean GTKMainWindow::onKeyRelease(GtkWidget* widget, GdkEventKey* event, gpointer user_data) 
 {
     if (smbEngine) {
-        // Convert GDK key to SDL key and process
-        SDL_Event sdlEvent;
-        sdlEvent.type = SDL_KEYUP;
-        sdlEvent.key.keysym.scancode = (SDL_Scancode)event->hardware_keycode;
-        sdlEvent.key.keysym.sym = (SDL_Keycode)event->keyval;
-        
         Controller& controller1 = smbEngine->getController1();
-        controller1.processKeyboardEvent(sdlEvent);
+        
+        // Handle game controls directly (Player 1)
+        switch (event->keyval) {
+            case GDK_KEY_Up:
+                controller1.setButtonState(PLAYER_1, BUTTON_UP, false);
+                break;
+            case GDK_KEY_Down:
+                controller1.setButtonState(PLAYER_1, BUTTON_DOWN, false);
+                break;
+            case GDK_KEY_Left:
+                controller1.setButtonState(PLAYER_1, BUTTON_LEFT, false);
+                break;
+            case GDK_KEY_Right:
+                controller1.setButtonState(PLAYER_1, BUTTON_RIGHT, false);
+                break;
+            case GDK_KEY_x:
+            case GDK_KEY_X:
+                controller1.setButtonState(PLAYER_1, BUTTON_A, false);
+                break;
+            case GDK_KEY_z:
+            case GDK_KEY_Z:
+                controller1.setButtonState(PLAYER_1, BUTTON_B, false);
+                break;
+            case GDK_KEY_Shift_R:
+                controller1.setButtonState(PLAYER_1, BUTTON_SELECT, false);
+                break;
+            case GDK_KEY_Return:
+                controller1.setButtonState(PLAYER_1, BUTTON_START, false);
+                break;
+            
+            // Player 2 controls
+            case GDK_KEY_i:
+            case GDK_KEY_I:
+                controller1.setButtonState(PLAYER_2, BUTTON_UP, false);
+                break;
+            case GDK_KEY_k:
+            case GDK_KEY_K:
+                controller1.setButtonState(PLAYER_2, BUTTON_DOWN, false);
+                break;
+            case GDK_KEY_j:
+            case GDK_KEY_J:
+                controller1.setButtonState(PLAYER_2, BUTTON_LEFT, false);
+                break;
+            case GDK_KEY_l:
+            case GDK_KEY_L:
+                controller1.setButtonState(PLAYER_2, BUTTON_RIGHT, false);
+                break;
+            case GDK_KEY_n:
+            case GDK_KEY_N:
+                controller1.setButtonState(PLAYER_2, BUTTON_A, false);
+                break;
+            case GDK_KEY_m:
+            case GDK_KEY_M:
+                controller1.setButtonState(PLAYER_2, BUTTON_B, false);
+                break;
+            case GDK_KEY_Control_R:
+                controller1.setButtonState(PLAYER_2, BUTTON_SELECT, false);
+                break;
+            case GDK_KEY_space:
+                controller1.setButtonState(PLAYER_2, BUTTON_START, false);
+                break;
+        }
     }
     
     return TRUE;
