@@ -156,21 +156,30 @@ static void shutdown()
 
 static void mainLoop()
 {
-    // Use the embedded ROM data directly
-    SMBEngine engine(smbRomData);
+    // Use the embedded ROM data directly (cast away const)
+    SMBEngine engine(const_cast<uint8_t*>(smbRomData));
     smbEngine = &engine;
     engine.reset();
 
-    // Initialize controller's joystick
+    // Initialize controller system for both players
     Controller& controller1 = engine.getController1();
     bool joystickInitialized = controller1.initJoystick();
     if (joystickInitialized)
     {
-        std::cout << "Joystick initialized successfully!" << std::endl;
+        std::cout << "Controller system initialized successfully!" << std::endl;
+        if (controller1.isJoystickConnected(PLAYER_1))
+            std::cout << "Player 1 joystick connected" << std::endl;
+        if (controller1.isJoystickConnected(PLAYER_2))
+            std::cout << "Player 2 joystick connected" << std::endl;
+            
+        // Disable joystick polling to prevent interference with keyboard
+        // Comment this line if you want polling enabled
+        controller1.setJoystickPolling(false);
+        std::cout << "Using event-driven joystick input only" << std::endl;
     }
     else
     {
-        std::cout << "No joystick found or initialization failed. Using keyboard controls only." << std::endl;
+        std::cout << "No joysticks found. Using keyboard controls only." << std::endl;
     }
 
     bool running = true;
@@ -194,8 +203,16 @@ static void mainLoop()
                     break;
                 }
                 break;
-            // Process joystick events
+            
+            // Process keyboard events for both players
+            case SDL_KEYDOWN:
+            case SDL_KEYUP:
+                controller1.processKeyboardEvent(event);
+                break;
+                
+            // Process joystick events for both players
             case SDL_JOYAXISMOTION:
+            case SDL_JOYHATMOTION:
             case SDL_JOYBUTTONDOWN:
             case SDL_JOYBUTTONUP:
             case SDL_CONTROLLERBUTTONDOWN:
@@ -206,34 +223,44 @@ static void mainLoop()
                     controller1.processJoystickEvent(event);
                 }
                 break;
+                
+            // Handle joystick connect/disconnect
+            case SDL_JOYDEVICEADDED:
+                std::cout << "Joystick connected - reinitializing controller system" << std::endl;
+                controller1.initJoystick();
+                break;
+                
+            case SDL_JOYDEVICEREMOVED:
+                std::cout << "Joystick disconnected" << std::endl;
+                break;
+                
             default:
                 break;
             }
         }
 
-        // Handle keyboard input
+        // Handle additional keyboard input that's not handled by the controller
         const Uint8* keys = SDL_GetKeyboardState(NULL);
-        controller1.setButtonState(BUTTON_A, keys[SDL_SCANCODE_X]);
-        controller1.setButtonState(BUTTON_B, keys[SDL_SCANCODE_Z]);
-        controller1.setButtonState(BUTTON_SELECT, keys[SDL_SCANCODE_BACKSPACE]);
-        controller1.setButtonState(BUTTON_START, keys[SDL_SCANCODE_RETURN]);
-        controller1.setButtonState(BUTTON_UP, keys[SDL_SCANCODE_UP]);
-        controller1.setButtonState(BUTTON_DOWN, keys[SDL_SCANCODE_DOWN]);
-        controller1.setButtonState(BUTTON_LEFT, keys[SDL_SCANCODE_LEFT]);
-        controller1.setButtonState(BUTTON_RIGHT, keys[SDL_SCANCODE_RIGHT]);
         
         // Debug key to print controller state (press D key)
-        if (keys[SDL_SCANCODE_D])
+        static bool dKeyPressed = false;
+        if (keys[SDL_SCANCODE_D] && !dKeyPressed)
         {
             controller1.printButtonStates();
+            dKeyPressed = true;
+        }
+        else if (!keys[SDL_SCANCODE_D])
+        {
+            dKeyPressed = false;
         }
 
-        // Update joystick state (optional, if you want to poll the joystick state directly)
+        // Update joystick state once per frame
         if (joystickInitialized)
         {
             controller1.updateJoystickState();
         }
 
+        // Game control keys
         if (keys[SDL_SCANCODE_R])
         {
             // Reset
