@@ -443,9 +443,17 @@ void GTKMainWindow::gameLoop()
     if (Configuration::getAudioEnabled()) {
         SDL_AudioSpec desiredSpec;
         desiredSpec.freq = Configuration::getAudioFrequency();
+        
+        // Use 16-bit audio on Windows, 8-bit on other platforms
+#ifdef _WIN32
+        desiredSpec.format = AUDIO_S16;
+        desiredSpec.samples = 1024;  // Smaller buffer for Windows
+#else
         desiredSpec.format = AUDIO_S8;
-        desiredSpec.channels = 1;
         desiredSpec.samples = 2048;
+#endif
+        
+        desiredSpec.channels = 1;
         desiredSpec.callback = [](void* userdata, uint8_t* buffer, int len) {
             if (smbEngine != nullptr) {
                 smbEngine->audioCallback(buffer, len);
@@ -454,8 +462,22 @@ void GTKMainWindow::gameLoop()
         desiredSpec.userdata = NULL;
 
         SDL_AudioSpec obtainedSpec;
-        SDL_OpenAudio(&desiredSpec, &obtainedSpec);
-        SDL_PauseAudio(0);
+        if (SDL_OpenAudio(&desiredSpec, &obtainedSpec) < 0) {
+            std::cout << "SDL_OpenAudio failed: " << SDL_GetError() << std::endl;
+            std::cout << "Continuing without audio..." << std::endl;
+        } else {
+            std::cout << "Audio initialized successfully:" << std::endl;
+#ifdef _WIN32
+            std::cout << "Win32 Detected" << std::endl;
+            std::cout << "Obtained format: 0x" << std::hex << obtainedSpec.format << std::endl;
+
+#endif
+            std::cout << "  Format: " << (obtainedSpec.format == AUDIO_S16 ? "16-bit" : "8-bit") << std::endl;
+            std::cout << "  Frequency: " << obtainedSpec.freq << " Hz" << std::endl;
+            std::cout << "  Channels: " << (int)obtainedSpec.channels << std::endl;
+            std::cout << "  Buffer size: " << obtainedSpec.samples << std::endl;
+            SDL_PauseAudio(0);
+        }
     }
 
     // Initialize HQDN3D filter if enabled
