@@ -37,7 +37,7 @@ LDFLAGS_WIN = $(SDL_LIBS_WIN) -lwinmm -static-libgcc -static-libstdc++
 # Source files (from CMakeLists.txt)
 SOURCE_FILES = \
     source/Configuration.cpp \
-    source/Main.cpp \
+    source/GTKMainWindow.cpp \
     source/Emulation/APU.cpp \
     source/Emulation/Controller.cpp \
     source/Emulation/MemoryAccess.cpp \
