@@ -3,9 +3,9 @@
 
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 -O2
-LDFLAGS = 
-LIBS = 
+CXXFLAGS = -Wall -Wextra -std=c++17 -O2 -fpermissive `pkg-config --cflags sdl2`
+LDFLAGS = -s
+LIBS = `pkg-config --libs sdl2` 
 
 # Directories
 SRCDIR = source
