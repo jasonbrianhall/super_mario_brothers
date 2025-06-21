@@ -56,6 +56,11 @@ private:
     static void onSettingsControls(GtkMenuItem* item, gpointer user_data);
     static void onHelpAbout(GtkMenuItem* item, gpointer user_data);
     
+    // GTK drawing and input callbacks
+    static gboolean onGameDraw(GtkWidget* widget, cairo_t* cr, gpointer user_data);
+    static gboolean onKeyPress(GtkWidget* widget, GdkEventKey* event, gpointer user_data);
+    static gboolean onKeyRelease(GtkWidget* widget, GdkEventKey* event, gpointer user_data);
+    
     // SDL integration
     bool initializeSDL();
     void gameLoop();
@@ -69,6 +74,10 @@ private:
     
     // Status updates
     void updateStatusBar(const std::string& message);
+    
+    // Fullscreen functionality
+    void toggleFullscreen();
+    void exitFullscreen();
 };
 
 #endif // GTK_MAIN_WINDOW_HPP

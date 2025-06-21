@@ -14,25 +14,33 @@ DEBUG_FLAGS = -g -DDEBUG
 SDL_CFLAGS_LINUX := $(shell pkg-config --cflags sdl2)
 SDL_LIBS_LINUX := $(shell pkg-config --libs sdl2)
 
+# GTK3 flags for Linux
+GTK_CFLAGS_LINUX := $(shell pkg-config --cflags gtk+-3.0)
+GTK_LIBS_LINUX := $(shell pkg-config --libs gtk+-3.0)
+
 # SDL flags for Windows
 SDL_CFLAGS_WIN := $(shell mingw64-pkg-config --cflags sdl2 2>/dev/null || echo "-I/usr/x86_64-w64-mingw32/include/SDL2")
 SDL_LIBS_WIN := $(shell mingw64-pkg-config --libs sdl2 2>/dev/null || echo "-lSDL2 -lSDL2main")
+
+# GTK3 flags for Windows
+GTK_CFLAGS_WIN := $(shell mingw64-pkg-config --cflags gtk+-3.0 2>/dev/null || echo "-I/usr/x86_64-w64-mingw32/include/gtk-3.0")
+GTK_LIBS_WIN := $(shell mingw64-pkg-config --libs gtk+-3.0 2>/dev/null || echo "-lgtk-3 -lgdk-3 -lgobject-2.0 -lglib-2.0")
 
 # Boost flags (header-only, no linking needed)
 BOOST_CFLAGS_LINUX := $(shell pkg-config --cflags boost 2>/dev/null || echo "")
 BOOST_CFLAGS_WIN := $(shell mingw64-pkg-config --cflags boost 2>/dev/null || echo "")
 
 # Platform-specific settings
-CXXFLAGS_LINUX = $(CXXFLAGS_COMMON) $(SDL_CFLAGS_LINUX) $(BOOST_CFLAGS_LINUX) -DLINUX
-CXXFLAGS_WIN = $(CXXFLAGS_COMMON) $(SDL_CFLAGS_WIN) $(BOOST_CFLAGS_WIN) -DWIN32
+CXXFLAGS_LINUX = $(CXXFLAGS_COMMON) $(SDL_CFLAGS_LINUX) $(GTK_CFLAGS_LINUX) $(BOOST_CFLAGS_LINUX) -DLINUX
+CXXFLAGS_WIN = $(CXXFLAGS_COMMON) $(SDL_CFLAGS_WIN) $(GTK_CFLAGS_WIN) $(BOOST_CFLAGS_WIN) -DWIN32
 
 # Debug-specific flags
 CXXFLAGS_LINUX_DEBUG = $(CXXFLAGS_LINUX) $(DEBUG_FLAGS)
 CXXFLAGS_WIN_DEBUG = $(CXXFLAGS_WIN) $(DEBUG_FLAGS)
 
 # Linker flags
-LDFLAGS_LINUX = $(SDL_LIBS_LINUX)
-LDFLAGS_WIN = $(SDL_LIBS_WIN) -lwinmm -static-libgcc -static-libstdc++
+LDFLAGS_LINUX = $(SDL_LIBS_LINUX) $(GTK_LIBS_LINUX)
+LDFLAGS_WIN = $(SDL_LIBS_WIN) $(GTK_LIBS_WIN) -lwinmm -static-libgcc -static-libstdc++
 
 # Source files (from CMakeLists.txt)
 SOURCE_FILES = \
@@ -162,36 +170,12 @@ $(BUILD_DIR_WIN_DEBUG)/%.win.debug.o: %.cpp
 .PHONY: smbc-collect-dlls
 smbc-collect-dlls: $(BUILD_DIR_WIN)/$(TARGET_WIN)
 	@echo "Collecting DLLs for Windows build..."
-	@if [ -f "build/windows/collect_dlls.sh" ]; then \
-		build/windows/collect_dlls.sh $(BUILD_DIR_WIN)/$(TARGET_WIN) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN); \
-	else \
-		echo "Creating simple DLL collection..."; \
-		if [ -d "$(DLL_SOURCE_DIR)" ]; then \
-			cp $(DLL_SOURCE_DIR)/SDL2.dll $(BUILD_DIR_WIN)/ 2>/dev/null || echo "SDL2.dll not found"; \
-			cp $(DLL_SOURCE_DIR)/libgcc_s_seh-1.dll $(BUILD_DIR_WIN)/ 2>/dev/null || echo "libgcc_s_seh-1.dll not found"; \
-			cp $(DLL_SOURCE_DIR)/libstdc++-6.dll $(BUILD_DIR_WIN)/ 2>/dev/null || echo "libstdc++-6.dll not found"; \
-			cp $(DLL_SOURCE_DIR)/libwinpthread-1.dll $(BUILD_DIR_WIN)/ 2>/dev/null || echo "libwinpthread-1.dll not found"; \
-		else \
-			echo "DLL source directory not found: $(DLL_SOURCE_DIR)"; \
-		fi; \
-	fi
+	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN)/$(TARGET_WIN) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN)
 
 .PHONY: smbc-collect-debug-dlls
 smbc-collect-debug-dlls: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG)
 	@echo "Collecting Debug DLLs for Windows build..."
-	@if [ -f "build/windows/collect_dlls.sh" ]; then \
-		build/windows/collect_dlls.sh $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN_DEBUG); \
-	else \
-		echo "Creating simple DLL collection..."; \
-		if [ -d "$(DLL_SOURCE_DIR)" ]; then \
-			cp $(DLL_SOURCE_DIR)/SDL2.dll $(BUILD_DIR_WIN_DEBUG)/ 2>/dev/null || echo "SDL2.dll not found"; \
-			cp $(DLL_SOURCE_DIR)/libgcc_s_seh-1.dll $(BUILD_DIR_WIN_DEBUG)/ 2>/dev/null || echo "libgcc_s_seh-1.dll not found"; \
-			cp $(DLL_SOURCE_DIR)/libstdc++-6.dll $(BUILD_DIR_WIN_DEBUG)/ 2>/dev/null || echo "libstdc++-6.dll not found"; \
-			cp $(DLL_SOURCE_DIR)/libwinpthread-1.dll $(BUILD_DIR_WIN_DEBUG)/ 2>/dev/null || echo "libwinpthread-1.dll not found"; \
-		else \
-			echo "DLL source directory not found: $(DLL_SOURCE_DIR)"; \
-		fi; \
-	fi
+	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN_DEBUG)
 
 # Create DLL collection script if it doesn't exist
 .PHONY: create-dll-script
@@ -214,12 +198,32 @@ if [ -d "$$DLL_SOURCE" ]; then; \
     cp "$$DLL_SOURCE"/libgcc_s_seh-1.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgcc_s_seh-1.dll not found"; \
     cp "$$DLL_SOURCE"/libstdc++-6.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libstdc++-6.dll not found"; \
     cp "$$DLL_SOURCE"/libwinpthread-1.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libwinpthread-1.dll not found"; \
+    # GTK3 DLLs; \
+    cp "$$DLL_SOURCE"/libgtk-3-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgtk-3-0.dll not found"; \
+    cp "$$DLL_SOURCE"/libgdk-3-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgdk-3-0.dll not found"; \
+    cp "$$DLL_SOURCE"/libgobject-2.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgobject-2.0-0.dll not found"; \
+    cp "$$DLL_SOURCE"/libglib-2.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libglib-2.0-0.dll not found"; \
+    cp "$$DLL_SOURCE"/libgdk_pixbuf-2.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgdk_pixbuf-2.0-0.dll not found"; \
+    cp "$$DLL_SOURCE"/libgio-2.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgio-2.0-0.dll not found"; \
+    cp "$$DLL_SOURCE"/libcairo-2.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libcairo-2.dll not found"; \
+    cp "$$DLL_SOURCE"/libpango-1.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libpango-1.0-0.dll not found"; \
+    cp "$$DLL_SOURCE"/libpangocairo-1.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libpangocairo-1.0-0.dll not found"; \
+    cp "$$DLL_SOURCE"/libatk-1.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libatk-1.0-0.dll not found"; \
 else; \
     echo "DLL source directory not found: $$DLL_SOURCE"; \
 fi; \
 EOF; \
 		chmod +x build/windows/collect_dlls.sh; \
 	fi
+
+# Check dependencies target
+.PHONY: check-deps
+check-deps:
+	@echo "Checking dependencies..."
+	@echo "Linux SDL2:"; pkg-config --exists sdl2 && echo "  ✓ SDL2 found" || echo "  ✗ SDL2 not found - install libsdl2-dev"
+	@echo "Linux GTK3:"; pkg-config --exists gtk+-3.0 && echo "  ✓ GTK+3 found" || echo "  ✗ GTK+3 not found - install libgtk-3-dev"
+	@echo "Windows SDL2:"; mingw64-pkg-config --exists sdl2 2>/dev/null && echo "  ✓ MinGW SDL2 found" || echo "  ✗ MinGW SDL2 not found - install mingw64-SDL2-devel"
+	@echo "Windows GTK3:"; mingw64-pkg-config --exists gtk+-3.0 2>/dev/null && echo "  ✓ MinGW GTK+3 found" || echo "  ✗ MinGW GTK+3 not found - install mingw64-gtk3-devel"
 
 # Clean target
 .PHONY: clean
@@ -245,6 +249,7 @@ help:
 	@echo "  make smbc-linux-debug    - Build smbc for Linux with debug symbols"
 	@echo "  make smbc-windows-debug  - Build smbc for Windows with debug symbols"
 	@echo ""
+	@echo "  make check-deps    - Check if required dependencies are installed"
 	@echo "  make create-dll-script   - Create DLL collection script"
 	@echo "  make smbc-collect-dlls   - Collect DLLs for Windows build"
 	@echo ""
@@ -254,3 +259,7 @@ help:
 	@echo "Build outputs:"
 	@echo "  Linux:   $(BUILD_DIR_LINUX)/$(TARGET_LINUX)"
 	@echo "  Windows: $(BUILD_DIR_WIN)/$(TARGET_WIN)"
+	@echo ""
+	@echo "Dependencies required:"
+	@echo "  Linux:   SDL2 (libsdl2-dev), GTK+3 (libgtk-3-dev)"
+	@echo "  Windows: MinGW SDL2 (mingw64-SDL2-devel), MinGW GTK+3 (mingw64-gtk3-devel)"
