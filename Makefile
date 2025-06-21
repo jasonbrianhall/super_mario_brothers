@@ -3,8 +3,8 @@
 
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 -O2 -fpermissive `pkg-config --cflags sdl2`
-LDFLAGS = -s
+CXXFLAGS = -s -std=c++11 -Wno-c++11-narrowing -fpermissive `pkg-config --cflags sdl2`
+LDFLAGS = 
 LIBS = `pkg-config --libs sdl2` 
 
 # Directories
