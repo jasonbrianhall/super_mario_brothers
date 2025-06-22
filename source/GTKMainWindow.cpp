@@ -440,7 +440,7 @@ gboolean GTKMainWindow::onGameDraw(GtkWidget* widget, cairo_t* cr, gpointer user
     
     // Set high-quality filter for Windows
     cairo_pattern_t* pattern = cairo_pattern_create_for_surface(surface);
-    cairo_pattern_set_filter(pattern, CAIRO_FILTER_GOOD);  // Better than CAIRO_FILTER_FAST
+    //cairo_pattern_set_filter(pattern, CAIRO_FILTER_GOOD);  // Better than CAIRO_FILTER_FAST
     
     // Draw the surface with the pattern
     cairo_set_source(cr, pattern);
