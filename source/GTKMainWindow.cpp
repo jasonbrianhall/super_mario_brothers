@@ -28,7 +28,8 @@ GTKMainWindow::GTKMainWindow()
     : window(nullptr), vbox(nullptr), menubar(nullptr), 
       gameContainer(nullptr), statusbar(nullptr), configDialog(nullptr),
       sdlWindow(nullptr), sdlRenderer(nullptr), sdlTexture(nullptr),
-      gameRunning(false), gamePaused(false)
+      gameRunning(false), gamePaused(false),
+      isCapturingJoystick(false), currentCaptureIsAxis(false)
 {
 }
 
@@ -81,6 +82,116 @@ bool GTKMainWindow::initialize()
     gtk_widget_show_all(window);
     
     return true;
+}
+
+void GTKMainWindow::captureJoystickButton(int button)
+{
+    std::cout << "Captured joystick button: " << button << std::endl;
+    
+    // Update the UI on the main thread
+    gdk_threads_add_idle([](gpointer data) -> gboolean {
+        auto* capture_data = static_cast<std::pair<GTKMainWindow*, int>*>(data);
+        GTKMainWindow* window = capture_data->first;
+        int button = capture_data->second;
+        
+        // Find and update the spin button
+        if (window->controlWidgets.find(window->currentCaptureWidget) != window->controlWidgets.end()) {
+            GtkWidget* spin = window->controlWidgets[window->currentCaptureWidget];
+            gtk_spin_button_set_value(GTK_SPIN_BUTTON(spin), button);
+        }
+        
+        window->stopJoystickCapture();
+        
+        delete capture_data;
+        return G_SOURCE_REMOVE;
+    }, new std::pair<GTKMainWindow*, int>(this, button));
+}
+
+void GTKMainWindow::captureJoystickAxis(int axis, int value)
+{
+    std::cout << "Captured joystick axis: " << axis << " value: " << value << std::endl;
+    
+    // Determine direction based on value
+    bool inverted = value < 0;
+    
+    // Update the UI on the main thread
+    gdk_threads_add_idle([](gpointer data) -> gboolean {
+        auto* capture_data = static_cast<std::tuple<GTKMainWindow*, int, bool>*>(data);
+        GTKMainWindow* window = std::get<0>(*capture_data);
+        int axis = std::get<1>(*capture_data);
+        bool inverted = std::get<2>(*capture_data);
+        
+        // Update axis spin button
+        if (window->controlWidgets.find(window->currentCaptureWidget) != window->controlWidgets.end()) {
+            GtkWidget* axis_spin = window->controlWidgets[window->currentCaptureWidget];
+            gtk_spin_button_set_value(GTK_SPIN_BUTTON(axis_spin), axis);
+        }
+        
+        // Update direction combo
+        std::string dir_key = window->currentCaptureWidget;
+        size_t pos = dir_key.find("axis_");
+        if (pos != std::string::npos) {
+            dir_key = dir_key.substr(0, pos + 5) + dir_key.substr(pos + 6) + "_dir";
+            if (window->controlWidgets.find(dir_key) != window->controlWidgets.end()) {
+                GtkWidget* dir_combo = window->controlWidgets[dir_key];
+                gtk_combo_box_set_active(GTK_COMBO_BOX(dir_combo), inverted ? 1 : 0);
+            }
+        }
+        
+        window->stopJoystickCapture();
+        
+        delete capture_data;
+        return G_SOURCE_REMOVE;
+    }, new std::tuple<GTKMainWindow*, int, bool>(this, axis, inverted));
+}
+
+void GTKMainWindow::captureJoystickHat(int hat, int value)
+{
+    std::cout << "Captured joystick hat: " << hat << " value: " << value << std::endl;
+    
+    // Update the UI on the main thread
+    gdk_threads_add_idle([](gpointer data) -> gboolean {
+        auto* capture_data = static_cast<std::pair<GTKMainWindow*, int>*>(data);
+        GTKMainWindow* window = capture_data->first;
+        int hat = capture_data->second;
+        
+        // Find the hat number widget for this player
+        std::string hat_key = window->currentCaptureWidget;
+        size_t pos = hat_key.find("axis_");
+        if (pos != std::string::npos) {
+            std::string player_prefix = hat_key.substr(0, 3); // "p1_" or "p2_"
+            std::string hat_widget_key = player_prefix + "hat_number";
+            
+            if (window->controlWidgets.find(hat_widget_key) != window->controlWidgets.end()) {
+                GtkWidget* hat_spin = window->controlWidgets[hat_widget_key];
+                gtk_spin_button_set_value(GTK_SPIN_BUTTON(hat_spin), hat);
+                
+                // Also set movement type to D-Pad
+                std::string movement_type_key = player_prefix + "movement_type";
+                if (window->controlWidgets.find(movement_type_key) != window->controlWidgets.end()) {
+                    GtkWidget* movement_combo = window->controlWidgets[movement_type_key];
+                    gtk_combo_box_set_active(GTK_COMBO_BOX(movement_combo), 1); // D-Pad option
+                }
+            }
+        }
+        
+        window->stopJoystickCapture();
+        
+        delete capture_data;
+        return G_SOURCE_REMOVE;
+    }, new std::pair<GTKMainWindow*, int>(this, hat));
+}
+
+void GTKMainWindow::captureControllerButton(int button)
+{
+    // Same as joystick button but for SDL Game Controller API
+    captureJoystickButton(button);
+}
+
+void GTKMainWindow::captureControllerAxis(int axis, int value)
+{
+    // Same as joystick axis but for SDL Game Controller API
+    captureJoystickAxis(axis, value);
 }
 
 void GTKMainWindow::createMenuBar() 
@@ -747,8 +858,6 @@ void GTKMainWindow::showAudioSettings()
     // TODO: Implement audio settings dialog
 }
 
-// Replace the showAboutDialog() method in GTKMainWindow.cpp:
-
 void GTKMainWindow::showAboutDialog() 
 {
     GtkWidget* dialog = gtk_about_dialog_new();
@@ -871,25 +980,26 @@ void GTKMainWindow::showControlSettings()
 
 GtkWidget* GTKMainWindow::createPlayerControlTab(Player player)
 {
-    GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
-    gtk_container_set_border_width(GTK_CONTAINER(vbox), 10);
+    GtkWidget* notebook = gtk_notebook_new();
+    
+    // Create keyboard tab
+    GtkWidget* keyboard_tab = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_container_set_border_width(GTK_CONTAINER(keyboard_tab), 10);
     
     const char* playerName = (player == PLAYER_1) ? "Player 1" : "Player 2";
     
-    // Player label
-    GtkWidget* player_label = gtk_label_new(NULL);
-    gchar* markup = g_markup_printf_escaped("<b>%s Controls</b>", playerName);
-    gtk_label_set_markup(GTK_LABEL(player_label), markup);
-    g_free(markup);
-    gtk_box_pack_start(GTK_BOX(vbox), player_label, FALSE, FALSE, 0);
+    // Player label for keyboard tab
+    GtkWidget* kb_player_label = gtk_label_new(NULL);
+    gchar* kb_markup = g_markup_printf_escaped("<b>%s Keyboard Controls</b>", playerName);
+    gtk_label_set_markup(GTK_LABEL(kb_player_label), kb_markup);
+    g_free(kb_markup);
+    gtk_box_pack_start(GTK_BOX(keyboard_tab), kb_player_label, FALSE, FALSE, 0);
     
     // Create keyboard section
-    GtkWidget* keyboard_frame = gtk_frame_new("Keyboard Controls");
     GtkWidget* keyboard_grid = gtk_grid_new();
     gtk_grid_set_row_spacing(GTK_GRID(keyboard_grid), 5);
     gtk_grid_set_column_spacing(GTK_GRID(keyboard_grid), 10);
     gtk_container_set_border_width(GTK_CONTAINER(keyboard_grid), 10);
-    gtk_container_add(GTK_CONTAINER(keyboard_frame), keyboard_grid);
     
     // Store widgets for later access
     std::string prefix = (player == PLAYER_1) ? "p1_" : "p2_";
@@ -904,28 +1014,304 @@ GtkWidget* GTKMainWindow::createPlayerControlTab(Player player)
     createKeyInputRow(keyboard_grid, 6, "Select:", prefix + "key_select");
     createKeyInputRow(keyboard_grid, 7, "Start:", prefix + "key_start");
     
-    gtk_box_pack_start(GTK_BOX(vbox), keyboard_frame, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(keyboard_tab), keyboard_grid, FALSE, FALSE, 0);
     
-    // Create joystick section
-    GtkWidget* joystick_frame = gtk_frame_new("Joystick/Gamepad Controls");
-    GtkWidget* joystick_grid = gtk_grid_new();
-    gtk_grid_set_row_spacing(GTK_GRID(joystick_grid), 5);
-    gtk_grid_set_column_spacing(GTK_GRID(joystick_grid), 10);
-    gtk_container_set_border_width(GTK_CONTAINER(joystick_grid), 10);
-    gtk_container_add(GTK_CONTAINER(joystick_frame), joystick_grid);
+    // Create joystick tab
+    GtkWidget* joystick_tab = createJoystickConfigTab(player);
     
-    // Create joystick button input fields
-    createButtonInputRow(joystick_grid, 0, "A Button:", prefix + "joy_a");
-    createButtonInputRow(joystick_grid, 1, "B Button:", prefix + "joy_b");
-    createButtonInputRow(joystick_grid, 2, "Start:", prefix + "joy_start");
-    createButtonInputRow(joystick_grid, 3, "Select:", prefix + "joy_select");
+    // Add tabs to notebook
+    GtkWidget* kb_label = gtk_label_new("Keyboard");
+    GtkWidget* joy_label = gtk_label_new("Joystick/Gamepad");
     
-    gtk_box_pack_start(GTK_BOX(vbox), joystick_frame, FALSE, FALSE, 0);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), keyboard_tab, kb_label);
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), joystick_tab, joy_label);
     
     // Load current values
     loadPlayerControlValues(player);
     
+    return notebook;
+}
+
+GtkWidget* GTKMainWindow::createJoystickConfigTab(Player player)
+{
+    GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_container_set_border_width(GTK_CONTAINER(vbox), 10);
+    
+    const char* playerName = (player == PLAYER_1) ? "Player 1" : "Player 2";
+    std::string prefix = (player == PLAYER_1) ? "p1_" : "p2_";
+    
+    // Player label
+    GtkWidget* player_label = gtk_label_new(NULL);
+    gchar* markup = g_markup_printf_escaped("<b>%s Joystick/Gamepad Configuration</b>", playerName);
+    gtk_label_set_markup(GTK_LABEL(player_label), markup);
+    g_free(markup);
+    gtk_box_pack_start(GTK_BOX(vbox), player_label, FALSE, FALSE, 0);
+    
+    // Movement section
+    GtkWidget* movement_frame = gtk_frame_new("Movement Controls");
+    GtkWidget* movement_grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(movement_grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(movement_grid), 10);
+    gtk_container_set_border_width(GTK_CONTAINER(movement_grid), 10);
+    gtk_container_add(GTK_CONTAINER(movement_frame), movement_grid);
+    
+    // Movement type selection
+    GtkWidget* movement_type_label = gtk_label_new("Movement Type:");
+    GtkWidget* movement_combo = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(movement_combo), "Analog Stick (Axis)");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(movement_combo), "D-Pad (Hat)");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(movement_combo), "Buttons");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(movement_combo), 0);
+    controlWidgets[prefix + "movement_type"] = movement_combo;
+    
+    gtk_grid_attach(GTK_GRID(movement_grid), movement_type_label, 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(movement_grid), movement_combo, 1, 0, 2, 1);
+    
+    // Analog stick configuration
+    createJoystickAxisRow(movement_grid, 1, "X-Axis (Left/Right):", prefix + "axis_x", prefix + "axis_x_dir");
+    createJoystickAxisRow(movement_grid, 2, "Y-Axis (Up/Down):", prefix + "axis_y", prefix + "axis_y_dir");
+    
+    // D-Pad configuration
+    GtkWidget* hat_label = gtk_label_new("D-Pad/Hat Number:");
+    GtkWidget* hat_spin = gtk_spin_button_new_with_range(0, 3, 1);
+    controlWidgets[prefix + "hat_number"] = hat_spin;
+    gtk_grid_attach(GTK_GRID(movement_grid), hat_label, 0, 3, 1, 1);
+    gtk_grid_attach(GTK_GRID(movement_grid), hat_spin, 1, 3, 1, 1);
+    
+    // Movement buttons (as alternative)
+    createJoystickButtonRow(movement_grid, 4, "Up Button:", prefix + "btn_up");
+    createJoystickButtonRow(movement_grid, 5, "Down Button:", prefix + "btn_down");
+    createJoystickButtonRow(movement_grid, 6, "Left Button:", prefix + "btn_left");
+    createJoystickButtonRow(movement_grid, 7, "Right Button:", prefix + "btn_right");
+    
+    gtk_box_pack_start(GTK_BOX(vbox), movement_frame, FALSE, FALSE, 0);
+    
+    // Action buttons section
+    GtkWidget* buttons_frame = gtk_frame_new("Action Buttons");
+    GtkWidget* buttons_grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(buttons_grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(buttons_grid), 10);
+    gtk_container_set_border_width(GTK_CONTAINER(buttons_grid), 10);
+    gtk_container_add(GTK_CONTAINER(buttons_frame), buttons_grid);
+    
+    createJoystickButtonRow(buttons_grid, 0, "A Button:", prefix + "joy_a");
+    createJoystickButtonRow(buttons_grid, 1, "B Button:", prefix + "joy_b");
+    createJoystickButtonRow(buttons_grid, 2, "Start Button:", prefix + "joy_start");
+    createJoystickButtonRow(buttons_grid, 3, "Select Button:", prefix + "joy_select");
+    
+    gtk_box_pack_start(GTK_BOX(vbox), buttons_frame, FALSE, FALSE, 0);
+    
+    // Deadzone configuration
+    GtkWidget* deadzone_frame = gtk_frame_new("Analog Stick Settings");
+    GtkWidget* deadzone_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_container_set_border_width(GTK_CONTAINER(deadzone_vbox), 10);
+    gtk_container_add(GTK_CONTAINER(deadzone_frame), deadzone_vbox);
+    
+    GtkWidget* deadzone_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    GtkWidget* deadzone_label = gtk_label_new("Deadzone:");
+    GtkWidget* deadzone_spin = gtk_spin_button_new_with_range(1000, 20000, 500);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(deadzone_spin), 8000);
+    controlWidgets[prefix + "deadzone"] = deadzone_spin;
+    
+    gtk_box_pack_start(GTK_BOX(deadzone_hbox), deadzone_label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(deadzone_hbox), deadzone_spin, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(deadzone_vbox), deadzone_hbox, FALSE, FALSE, 0);
+    
+    gtk_box_pack_start(GTK_BOX(vbox), deadzone_frame, FALSE, FALSE, 0);
+    
+    // Test section
+    GtkWidget* test_frame = gtk_frame_new("Controller Test");
+    GtkWidget* test_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_container_set_border_width(GTK_CONTAINER(test_vbox), 10);
+    gtk_container_add(GTK_CONTAINER(test_frame), test_vbox);
+    
+    GtkWidget* test_button = gtk_button_new_with_label("Test Controller Input");
+    GtkWidget* test_label = gtk_label_new("Press 'Test Controller Input' and use your controller");
+    controlWidgets[prefix + "test_label"] = test_label;
+    
+    gtk_box_pack_start(GTK_BOX(test_vbox), test_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(test_vbox), test_label, FALSE, FALSE, 0);
+    
+    gtk_box_pack_start(GTK_BOX(vbox), test_frame, FALSE, FALSE, 0);
+    
     return vbox;
+}
+
+// Add these new methods to GTKMainWindow.cpp:
+
+void GTKMainWindow::createJoystickButtonRow(GtkWidget* grid, int row, const char* label, const std::string& key)
+{
+    GtkWidget* label_widget = gtk_label_new(label);
+    gtk_widget_set_halign(label_widget, GTK_ALIGN_START);
+    
+    GtkWidget* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+    
+    GtkWidget* spin = gtk_spin_button_new_with_range(-1, 31, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(spin), -1); // -1 = not assigned
+    gtk_widget_set_size_request(spin, 60, -1);
+    
+    GtkWidget* detect_button = gtk_button_new_with_label("Detect");
+    gtk_widget_set_size_request(detect_button, 80, -1);
+    
+    // Store the key as button data
+    g_object_set_data_full(G_OBJECT(detect_button), "config_key", 
+                          g_strdup(key.c_str()), g_free);
+    g_object_set_data(G_OBJECT(detect_button), "spin_button", spin);
+    g_object_set_data(G_OBJECT(detect_button), "window", this);
+    
+    g_signal_connect(detect_button, "clicked", G_CALLBACK(onJoystickDetectButton), this);
+    
+    gtk_box_pack_start(GTK_BOX(hbox), spin, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox), detect_button, FALSE, FALSE, 0);
+    
+    // Store widget for later access
+    controlWidgets[key] = spin;
+    controlWidgets[key + "_detect"] = detect_button;
+    
+    gtk_grid_attach(GTK_GRID(grid), label_widget, 0, row, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), hbox, 1, row, 2, 1);
+}
+
+void GTKMainWindow::createJoystickAxisRow(GtkWidget* grid, int row, const char* label, 
+                                         const std::string& axis_key, const std::string& direction_key)
+{
+    GtkWidget* label_widget = gtk_label_new(label);
+    gtk_widget_set_halign(label_widget, GTK_ALIGN_START);
+    
+    GtkWidget* hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+    
+    // Axis number
+    GtkWidget* axis_spin = gtk_spin_button_new_with_range(-1, 5, 1);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(axis_spin), -1); // -1 = not assigned
+    gtk_widget_set_size_request(axis_spin, 60, -1);
+    
+    // Direction
+    GtkWidget* dir_combo = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(dir_combo), "Normal");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(dir_combo), "Inverted");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(dir_combo), 0);
+    gtk_widget_set_size_request(dir_combo, 80, -1);
+    
+    GtkWidget* detect_button = gtk_button_new_with_label("Detect");
+    gtk_widget_set_size_request(detect_button, 80, -1);
+    
+    // Store references
+    g_object_set_data_full(G_OBJECT(detect_button), "config_key", 
+                          g_strdup(axis_key.c_str()), g_free);
+    g_object_set_data(G_OBJECT(detect_button), "axis_spin", axis_spin);
+    g_object_set_data(G_OBJECT(detect_button), "dir_combo", dir_combo);
+    g_object_set_data(G_OBJECT(detect_button), "window", this);
+    
+    g_signal_connect(detect_button, "clicked", G_CALLBACK(onJoystickDetectAxis), this);
+    
+    gtk_box_pack_start(GTK_BOX(hbox), axis_spin, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox), dir_combo, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(hbox), detect_button, FALSE, FALSE, 0);
+    
+    // Store widgets
+    controlWidgets[axis_key] = axis_spin;
+    controlWidgets[direction_key] = dir_combo;
+    controlWidgets[axis_key + "_detect"] = detect_button;
+    
+    gtk_grid_attach(GTK_GRID(grid), label_widget, 0, row, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), hbox, 1, row, 2, 1);
+}
+
+// Add these callback methods:
+
+void GTKMainWindow::onJoystickDetectButton(GtkButton* button, gpointer user_data)
+{
+    GTKMainWindow* window = static_cast<GTKMainWindow*>(user_data);
+    
+    const char* config_key = static_cast<const char*>(g_object_get_data(G_OBJECT(button), "config_key"));
+    GtkWidget* spin_button = static_cast<GtkWidget*>(g_object_get_data(G_OBJECT(button), "spin_button"));
+    
+    gtk_button_set_label(button, "Press Button...");
+    gtk_widget_set_sensitive(GTK_WIDGET(button), FALSE);
+    
+    window->startJoystickCapture(config_key, false);
+    
+    // Set timer to timeout after 5 seconds
+    g_timeout_add(5000, [](gpointer data) -> gboolean {
+        GTKMainWindow* win = static_cast<GTKMainWindow*>(data);
+        win->stopJoystickCapture();
+        return G_SOURCE_REMOVE;
+    }, window);
+}
+
+void GTKMainWindow::onJoystickDetectAxis(GtkButton* button, gpointer user_data)
+{
+    GTKMainWindow* window = static_cast<GTKMainWindow*>(user_data);
+    
+    const char* config_key = static_cast<const char*>(g_object_get_data(G_OBJECT(button), "config_key"));
+    
+    gtk_button_set_label(button, "Move Stick...");
+    gtk_widget_set_sensitive(GTK_WIDGET(button), FALSE);
+    
+    window->startJoystickCapture(config_key, true);
+    
+    // Set timer to timeout after 5 seconds
+    g_timeout_add(5000, [](gpointer data) -> gboolean {
+        GTKMainWindow* win = static_cast<GTKMainWindow*>(data);
+        win->stopJoystickCapture();
+        return G_SOURCE_REMOVE;
+    }, window);
+}
+
+void GTKMainWindow::startJoystickCapture(const std::string& widgetKey, bool isAxis)
+{
+    isCapturingJoystick = true;
+    currentCaptureWidget = widgetKey;
+    currentCaptureIsAxis = isAxis;
+}
+
+void GTKMainWindow::stopJoystickCapture()
+{
+    if (!isCapturingJoystick) return;
+    
+    std::cout << "Stopping joystick capture for: " << currentCaptureWidget << std::endl;
+    
+    isCapturingJoystick = false;
+    
+    // Reset button labels and re-enable buttons
+    std::string detect_key = currentCaptureWidget + "_detect";
+    if (controlWidgets.find(detect_key) != controlWidgets.end()) {
+        GtkWidget* button = controlWidgets[detect_key];
+        if (button) {
+            gtk_button_set_label(GTK_BUTTON(button), "Detect");
+            gtk_widget_set_sensitive(button, TRUE);
+        }
+    }
+    
+    currentCaptureWidget.clear();
+    currentCaptureIsAxis = false;
+}
+
+void GTKMainWindow::testJoystickInput()
+{
+    if (!smbEngine) {
+        std::cout << "Engine not initialized" << std::endl;
+        return;
+    }
+    
+    Controller& controller = smbEngine->getController1();
+    
+    std::cout << "=== Joystick Test ===" << std::endl;
+    std::cout << "Total joysticks: " << SDL_NumJoysticks() << std::endl;
+    
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+        SDL_Joystick* joy = SDL_JoystickOpen(i);
+        if (joy) {
+            std::cout << "Joystick " << i << ": " << SDL_JoystickName(joy) << std::endl;
+            std::cout << "  Axes: " << SDL_JoystickNumAxes(joy) << std::endl;
+            std::cout << "  Buttons: " << SDL_JoystickNumButtons(joy) << std::endl;
+            std::cout << "  Hats: " << SDL_JoystickNumHats(joy) << std::endl;
+            SDL_JoystickClose(joy);
+        }
+    }
+    
+    std::cout << "Player 1 connected: " << (controller.isJoystickConnected(PLAYER_1) ? "Yes" : "No") << std::endl;
+    std::cout << "Player 2 connected: " << (controller.isJoystickConnected(PLAYER_2) ? "Yes" : "No") << std::endl;
 }
 
 GtkWidget* GTKMainWindow::createGeneralControlTab()
