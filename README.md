@@ -22,6 +22,8 @@ cd build/linux
 make windows
 cd build/windows
 Copy All files to windows and run smbc.exe
-``
+```
 
-`
+## Notes
+
+Due to fair use, you must own the original Super Mario Brothers Game in order to play this.  By playing this game, you acknowledge that you own the original game.
