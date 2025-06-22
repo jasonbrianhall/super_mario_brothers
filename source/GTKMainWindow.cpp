@@ -1031,7 +1031,6 @@ void GTKMainWindow::showControlSettings()
         // Save the settings
         saveControllerSettings();
         
-        // **THIS IS THE KEY FIX** - Reinitialize the entire controller system
         if (smbEngine) {
             Controller& controller = smbEngine->getController1();
             
