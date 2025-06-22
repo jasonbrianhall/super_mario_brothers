@@ -545,29 +545,25 @@ void Controller::handleControllerButton(Player player, SDL_GameControllerButton 
 }
 
 void Controller::shutdownJoystick() {
-/*    // Close any open joysticks
-    if (player1Joystick) {
-        SDL_JoystickClose(player1Joystick);
-        player1Joystick = nullptr;
+    for (int i = 0; i < 2; ++i) {
+        if (gameControllers[i]) {
+            SDL_GameControllerClose(gameControllers[i]);
+            gameControllers[i] = nullptr;
+        } else if (joysticks[i]) {
+            SDL_JoystickClose(joysticks[i]);
+            joysticks[i] = nullptr;
+        }
+
+        joystickIDs[i] = -1;
+        joystickInitialized[i] = false;
     }
-    
-    if (player2Joystick) {
-        SDL_JoystickClose(player2Joystick);
-        player2Joystick = nullptr;
-    }
-    
-    // Close any open game controllers
-    if (player1Controller) {
-        SDL_GameControllerClose(player1Controller);
-        player1Controller = nullptr;
-    }
-    
-    if (player2Controller) {
-        SDL_GameControllerClose(player2Controller);
-        player2Controller = nullptr;
-    }
-    
-    std::cout << "Controller system shut down" << std::endl; */
+
+    // Optional: Disable joystick events if you want to completely shut things down
+    SDL_JoystickEventState(SDL_DISABLE);
+    SDL_GameControllerEventState(SDL_DISABLE);
+
+    // Optional: If you're done with SDL joystick support entirely and not using it elsewhere
+    SDL_QuitSubSystem(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
 }
 
 void Controller::handleControllerAxis(Player player, SDL_GameControllerAxis axis, Sint16 value)
