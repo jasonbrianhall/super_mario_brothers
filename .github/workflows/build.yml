@@ -189,7 +189,7 @@ jobs:
                   
                   <!-- Main application component -->
                   <Component Id="MainExecutable" 
-                           Guid="B58E63D9-4F06-59G7-C36G-2F7D0E5B9E45"
+                           Guid="B58E63D9-4F06-59A7-C36G-2A7D0E5B9E45"
                            Win64="no">
                     <File Id="MainEXE" 
                           Name="$mainExe" 
@@ -237,7 +237,7 @@ jobs:
                   <!-- GTK Runtime directories -->
                   <Directory Id="LibDir" Name="lib">
                     <Directory Id="GdkPixbuf" Name="gdk-pixbuf-2.0">
-                      <Component Id="GdkPixbufDir" Guid="G9B4C826-E04B-5F78-B9D4-753E3G0F6B53">
+                      <Component Id="GdkPixbufDir" Guid="A9B4C826-E04B-5A78-B9D4-753E3A0A6B53">
                         <CreateFolder />
                         <RemoveFolder Id="RemoveGdkPixbuf" On="uninstall" />
                         <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
@@ -245,7 +245,7 @@ jobs:
                       </Component>
                     </Directory>
                     <Directory Id="Gtk3" Name="gtk-3.0">
-                      <Component Id="Gtk3Dir" Guid="C2E5D270-9F3C-5G89-C7E4-864G3G0F7C64">
+                      <Component Id="Gtk3Dir" Guid="C2E5D270-9A3C-5A89-C7E4-864A3A0A7C64">
                         <CreateFolder />
                         <RemoveFolder Id="RemoveGtk3" On="uninstall" />
                         <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
@@ -257,7 +257,7 @@ jobs:
                   <Directory Id="ShareDir" Name="share">
                     <Directory Id="GLib2" Name="glib-2.0">
                       <Directory Id="Schemas" Name="schemas">
-                        <Component Id="GtkSchemas" Guid="D8F7E956-C7F2-5G93-9E2F-975F4G0F8D75">
+                        <Component Id="GtkSchemas" Guid="D8A7E956-C7A2-5A93-9E2F-975A4G0A8D75">
                           <File Id="GSchemas" Name="gschemas.compiled" 
                                 Source="share/glib-2.0/schemas/gschemas.compiled"/>
                           <RemoveFolder Id="RemoveSchemas" On="uninstall" />
@@ -267,7 +267,7 @@ jobs:
                       </Directory>
                     </Directory>
                     <Directory Id="Icons" Name="icons">
-                      <Component Id="IconsDir" Guid="E6G8F482-D6E4-5G94-B4G6-086G5G0F9G86">
+                      <Component Id="IconsDir" Guid="E6A8A482-D6E4-5A94-B4A6-086A5A0A9G86">
                         <CreateFolder />
                         <RemoveFolder Id="RemoveIcons" On="uninstall" />
                         <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
@@ -275,7 +275,7 @@ jobs:
                       </Component>
                     </Directory>
                     <Directory Id="Themes" Name="themes">
-                      <Component Id="ThemesDir" Guid="F3H9G593-E7G5-5H05-D5H7-197H6H0H0H97">
+                      <Component Id="ThemesDir" Guid="A3A9a593-E7a5-5A05-D5A7-197A6A0A0A97">
                         <CreateFolder />
                         <RemoveFolder Id="RemoveThemes" On="uninstall" />
                         <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
@@ -289,7 +289,7 @@ jobs:
               <!-- Start Menu shortcuts -->
               <Directory Id="ProgramMenuFolder">
                 <Directory Id="ApplicationProgramsFolder" Name="Super Mario Brothers Virtualized">
-                  <Component Id="ApplicationShortcuts" Guid="G0I2E570-G8B2-5I64-0D83-F42E9GF63E80">
+                  <Component Id="ApplicationShortcuts" Guid="A0A2E570-A8B2-5A64-0D83-A42E9AF63E80">
                     <Shortcut Id="UninstallShortcut"
                              Name="Uninstall Super Mario Brothers Virtualized"
                              Target="[SystemFolder]msiexec.exe"
@@ -304,7 +304,7 @@ jobs:
               
               <!-- Desktop shortcut (optional) -->
               <Directory Id="DesktopFolder" Name="Desktop">
-                <Component Id="DesktopShortcut" Guid="H6J0G432-G0C8-5J79-9G2B-E53G7GF0BH91">
+                <Component Id="DesktopShortcut" Guid="A6A0A432-a0C8-5A79-9A2B-E53a7AA0BA91">
                   <Condition>DESKTOP_SHORTCUT</Condition>
                   <Shortcut Id="DesktopShortcut" 
                            Name="Super Mario Brothers Virtualized" 
