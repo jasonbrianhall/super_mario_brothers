@@ -44,6 +44,7 @@ jobs:
           mingw64-gcc mingw64-gcc-c++ \
           mingw64-gtk3 mingw64-gtkmm30 \
           mingw64-SDL2 mingw64-SDL2_mixer \
+          mingw64-boost \
           wine wine-devel \
           binutils make zip unzip \
           gcc-c++ SDL2-devel gtk3-devel gtkmm30-devel \
