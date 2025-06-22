@@ -18,7 +18,39 @@ std::list<ConfigurationOption*> Configuration::configurationOptions = {
     &Configuration::hqdn3dSpatialStrength,
     &Configuration::hqdn3dTemporalStrength,
     &Configuration::antiAliasingEnabled,
-    &Configuration::antiAliasingMethod
+    &Configuration::antiAliasingMethod,
+    
+    // Input configuration options
+    &Configuration::player1KeyUp,
+    &Configuration::player1KeyDown,
+    &Configuration::player1KeyLeft,
+    &Configuration::player1KeyRight,
+    &Configuration::player1KeyA,
+    &Configuration::player1KeyB,
+    &Configuration::player1KeySelect,
+    &Configuration::player1KeyStart,
+    
+    &Configuration::player2KeyUp,
+    &Configuration::player2KeyDown,
+    &Configuration::player2KeyLeft,
+    &Configuration::player2KeyRight,
+    &Configuration::player2KeyA,
+    &Configuration::player2KeyB,
+    &Configuration::player2KeySelect,
+    &Configuration::player2KeyStart,
+    
+    &Configuration::joystickPollingEnabled,
+    &Configuration::joystickDeadzone,
+    
+    &Configuration::player1JoystickButtonA,
+    &Configuration::player1JoystickButtonB,
+    &Configuration::player1JoystickButtonStart,
+    &Configuration::player1JoystickButtonSelect,
+    
+    &Configuration::player2JoystickButtonA,
+    &Configuration::player2JoystickButtonB,
+    &Configuration::player2JoystickButtonStart,
+    &Configuration::player2JoystickButtonSelect
 };
 
 /**
@@ -111,6 +143,125 @@ BasicConfigurationOption<bool> Configuration::antiAliasingEnabled(
  */
 BasicConfigurationOption<int> Configuration::antiAliasingMethod(
     "video.antialiasing_method", 0
+);
+
+/**
+ * Player 1 keyboard mappings (using numeric scancode values)
+ */
+BasicConfigurationOption<int> Configuration::player1KeyUp(
+    "input.player1.key.up", 82  // SDL_SCANCODE_UP
+);
+
+BasicConfigurationOption<int> Configuration::player1KeyDown(
+    "input.player1.key.down", 81  // SDL_SCANCODE_DOWN
+);
+
+BasicConfigurationOption<int> Configuration::player1KeyLeft(
+    "input.player1.key.left", 80  // SDL_SCANCODE_LEFT
+);
+
+BasicConfigurationOption<int> Configuration::player1KeyRight(
+    "input.player1.key.right", 79  // SDL_SCANCODE_RIGHT
+);
+
+BasicConfigurationOption<int> Configuration::player1KeyA(
+    "input.player1.key.a", 27  // SDL_SCANCODE_X
+);
+
+BasicConfigurationOption<int> Configuration::player1KeyB(
+    "input.player1.key.b", 29  // SDL_SCANCODE_Z
+);
+
+BasicConfigurationOption<int> Configuration::player1KeySelect(
+    "input.player1.key.select", 229  // SDL_SCANCODE_RSHIFT
+);
+
+BasicConfigurationOption<int> Configuration::player1KeyStart(
+    "input.player1.key.start", 40  // SDL_SCANCODE_RETURN
+);
+
+/**
+ * Player 2 keyboard mappings
+ */
+BasicConfigurationOption<int> Configuration::player2KeyUp(
+    "input.player2.key.up", 12  // SDL_SCANCODE_I
+);
+
+BasicConfigurationOption<int> Configuration::player2KeyDown(
+    "input.player2.key.down", 14  // SDL_SCANCODE_K
+);
+
+BasicConfigurationOption<int> Configuration::player2KeyLeft(
+    "input.player2.key.left", 13  // SDL_SCANCODE_J
+);
+
+BasicConfigurationOption<int> Configuration::player2KeyRight(
+    "input.player2.key.right", 15  // SDL_SCANCODE_L
+);
+
+BasicConfigurationOption<int> Configuration::player2KeyA(
+    "input.player2.key.a", 17  // SDL_SCANCODE_N
+);
+
+BasicConfigurationOption<int> Configuration::player2KeyB(
+    "input.player2.key.b", 16  // SDL_SCANCODE_M
+);
+
+BasicConfigurationOption<int> Configuration::player2KeySelect(
+    "input.player2.key.select", 228  // SDL_SCANCODE_RCTRL
+);
+
+BasicConfigurationOption<int> Configuration::player2KeyStart(
+    "input.player2.key.start", 44  // SDL_SCANCODE_SPACE
+);
+
+/**
+ * Joystick settings
+ */
+BasicConfigurationOption<bool> Configuration::joystickPollingEnabled(
+    "input.joystick.polling_enabled", true
+);
+
+BasicConfigurationOption<int> Configuration::joystickDeadzone(
+    "input.joystick.deadzone", 8000
+);
+
+/**
+ * Player 1 joystick button mappings
+ */
+BasicConfigurationOption<int> Configuration::player1JoystickButtonA(
+    "input.player1.joystick.button_a", 1
+);
+
+BasicConfigurationOption<int> Configuration::player1JoystickButtonB(
+    "input.player1.joystick.button_b", 0
+);
+
+BasicConfigurationOption<int> Configuration::player1JoystickButtonStart(
+    "input.player1.joystick.button_start", 9
+);
+
+BasicConfigurationOption<int> Configuration::player1JoystickButtonSelect(
+    "input.player1.joystick.button_select", 8
+);
+
+/**
+ * Player 2 joystick button mappings
+ */
+BasicConfigurationOption<int> Configuration::player2JoystickButtonA(
+    "input.player2.joystick.button_a", 1
+);
+
+BasicConfigurationOption<int> Configuration::player2JoystickButtonB(
+    "input.player2.joystick.button_b", 0
+);
+
+BasicConfigurationOption<int> Configuration::player2JoystickButtonStart(
+    "input.player2.joystick.button_start", 9
+);
+
+BasicConfigurationOption<int> Configuration::player2JoystickButtonSelect(
+    "input.player2.joystick.button_select", 8
 );
 
 ConfigurationOption::ConfigurationOption(
@@ -210,4 +361,134 @@ bool Configuration::getAntiAliasingEnabled()
 int Configuration::getAntiAliasingMethod()
 {
     return antiAliasingMethod.getValue();
+}
+
+int Configuration::getPlayer1KeyUp()
+{
+    return player1KeyUp.getValue();
+}
+
+int Configuration::getPlayer1KeyDown()
+{
+    return player1KeyDown.getValue();
+}
+
+int Configuration::getPlayer1KeyLeft()
+{
+    return player1KeyLeft.getValue();
+}
+
+int Configuration::getPlayer1KeyRight()
+{
+    return player1KeyRight.getValue();
+}
+
+int Configuration::getPlayer1KeyA()
+{
+    return player1KeyA.getValue();
+}
+
+int Configuration::getPlayer1KeyB()
+{
+    return player1KeyB.getValue();
+}
+
+int Configuration::getPlayer1KeySelect()
+{
+    return player1KeySelect.getValue();
+}
+
+int Configuration::getPlayer1KeyStart()
+{
+    return player1KeyStart.getValue();
+}
+
+int Configuration::getPlayer2KeyUp()
+{
+    return player2KeyUp.getValue();
+}
+
+int Configuration::getPlayer2KeyDown()
+{
+    return player2KeyDown.getValue();
+}
+
+int Configuration::getPlayer2KeyLeft()
+{
+    return player2KeyLeft.getValue();
+}
+
+int Configuration::getPlayer2KeyRight()
+{
+    return player2KeyRight.getValue();
+}
+
+int Configuration::getPlayer2KeyA()
+{
+    return player2KeyA.getValue();
+}
+
+int Configuration::getPlayer2KeyB()
+{
+    return player2KeyB.getValue();
+}
+
+int Configuration::getPlayer2KeySelect()
+{
+    return player2KeySelect.getValue();
+}
+
+int Configuration::getPlayer2KeyStart()
+{
+    return player2KeyStart.getValue();
+}
+
+bool Configuration::getJoystickPollingEnabled()
+{
+    return joystickPollingEnabled.getValue();
+}
+
+int Configuration::getJoystickDeadzone()
+{
+    return joystickDeadzone.getValue();
+}
+
+int Configuration::getPlayer1JoystickButtonA()
+{
+    return player1JoystickButtonA.getValue();
+}
+
+int Configuration::getPlayer1JoystickButtonB()
+{
+    return player1JoystickButtonB.getValue();
+}
+
+int Configuration::getPlayer1JoystickButtonStart()
+{
+    return player1JoystickButtonStart.getValue();
+}
+
+int Configuration::getPlayer1JoystickButtonSelect()
+{
+    return player1JoystickButtonSelect.getValue();
+}
+
+int Configuration::getPlayer2JoystickButtonA()
+{
+    return player2JoystickButtonA.getValue();
+}
+
+int Configuration::getPlayer2JoystickButtonB()
+{
+    return player2JoystickButtonB.getValue();
+}
+
+int Configuration::getPlayer2JoystickButtonStart()
+{
+    return player2JoystickButtonStart.getValue();
+}
+
+int Configuration::getPlayer2JoystickButtonSelect()
+{
+    return player2JoystickButtonSelect.getValue();
 }
