@@ -27,12 +27,14 @@ enum ControllerButton
 /**
  * Player identifiers
  */
-/*enum Player
+#ifndef PLAYER_ENUM_DEFINED
+#define PLAYER_ENUM_DEFINED
+enum Player
 {
     PLAYER_1 = 0,
     PLAYER_2 = 1
-};*/
-
+};
+#endif // PLAYER_ENUM_DEFINED
 #endif // CONTROLLER_ENUMS_INCLUDED
 
 /**
