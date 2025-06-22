@@ -137,9 +137,6 @@ jobs:
           "          <File Id=`"$safeId`" Name=`"$_`" Source=`"$_`"/>"
         }
         
-        # Determine the main executable name (adjust as needed based on your build)
-        $mainExe = "smbc.exe"  # Update this to match your actual executable name
-        
         # Create advanced WXS installer
         @"
         <?xml version="1.0" encoding="UTF-8"?>
@@ -149,15 +146,15 @@ jobs:
                    Name="Super Mario Brothers Virtualized" 
                    Language="1033" 
                    Version="${{ needs.build-linux.outputs.version }}" 
-                   Manufacturer="Jason Brian Hall" 
+                   Manufacturer="Jason Hall" 
                    UpgradeCode="${{ env.UPGRADE_CODE }}"> 
             
             <Package InstallerVersion="500" 
                      Compressed="yes" 
                      InstallScope="perMachine" 
-                     Description="Super Mario Brothers Virtualized - NES Virtualizer"
+                     Description="Super Mario Brothers 1 for PC"
                      Comments="Built with GitHub Actions"
-                     Manufacturer="Jason Brian Hall" />
+                     Manufacturer="Jason Hall" />
             
             <!-- Major upgrade configuration -->
             <MajorUpgrade 
@@ -170,14 +167,14 @@ jobs:
             <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
             
             <!-- Custom properties -->
-            <Property Id="ARPPRODUCTICON" Value="SMBIcon" />
-            <Property Id="ARPURLINFOABOUT" Value="https://github.com/yourusername/super_mario_brothers" />
+            <Property Id="ARPPRODUCTICON" Value="TetrimoneIcon" />
+            <Property Id="ARPURLINFOABOUT" Value="https://github.com/jasonbrianhall/super_mario_brothers" />
             <Property Id="ARPNOREPAIR" Value="yes" />
             <Property Id="ARPNOMODIFY" Value="yes" />
-            <Property Id="ARPHELPLINK" Value="https://github.com/yourusername/super_mario_brothers/issues" />
+            <Property Id="ARPHELPLINK" Value="https://github.com/jasonbrianhall/super_mario_brothers/issues" />
             
             <!-- Installation scope choice -->
-            <Property Id="ApplicationFolderName" Value="Super Mario Brothers Virtualized" />
+            <Property Id="ApplicationFolderName" Value="Super Mario Brothers" />
             <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
             <WixVariable Id="WixUISupportPerUser" Value="1" />
             <WixVariable Id="WixUISupportPerMachine" Value="1" />
@@ -189,66 +186,47 @@ jobs:
                   
                   <!-- Main application component -->
                   <Component Id="MainExecutable" 
-                           Guid="B58E63D9-4A06-59A7-C36A-2A7D0E5B9E45"
+                           Guid="85114FA9-FB15-4DB8-9F62-6A23158CBAFA"
                            Win64="no">
                     <File Id="MainEXE" 
-                          Name="$mainExe" 
-                          Source="$mainExe" 
+                          Name="SMB.exe" 
+                          Source="SMB.exe" 
                           KeyPath="yes">
-                      <!-- File associations for ROM files could go here -->
-                      <Shortcut Id="StartMenuShortcut"
-                               Directory="ApplicationProgramsFolder"
-                               Name="Super Mario Brothers Virtualized"
-                               WorkingDirectory="INSTALLFOLDER"
-                               Description="Launch Super Mario Brothers Virtualized"
-                               Icon="SMBIcon" />
+                      <!-- File associations could go here -->
                     </File>
                     
                     <!-- Application files -->
-                    <File Id="README" Name="README.md" Source="README.md" />
-                    <File Id="LICENSE_MD" Name="LICENSE.md" Source="LICENSE.md" />
-                    <File Id="LICENSE_TXT" Name="LICENSE.txt" Source="LICENSE.txt" />
-                    
-                    <!-- Include icon if it exists -->
-                    <File Id="IconFile" Name="icon.ico" Source="icon.ico" />
+                    <File Id="IconFile" Name="icon.ico" Source="icon.ico"/>
+                    <File Id="README" Name="README.md" Source="README.md"/>
+                    <File Id="LICENSE_MD" Name="LICENSE.md" Source="LICENSE.md"/>
+                    <File Id="LICENSE_TXT" Name="LICENSE.txt" Source="LICENSE.txt"/>
                     
                     <!-- DLL files -->
         $($dllEntries -join "`r`n")
                     
-                    <!-- Registry entries for uninstall info and file associations -->
-                    <RegistryKey Root="HKLM" Key="SOFTWARE\Super Mario Brothers Virtualized">
+                    <!-- Registry entries for uninstall info -->
+                    <RegistryKey Root="HKLM" Key="SOFTWARE\SMB Virtualized">
                       <RegistryValue Type="string" Name="InstallPath" Value="[INSTALLFOLDER]" />
                       <RegistryValue Type="string" Name="Version" Value="${{ needs.build-linux.outputs.version }}" />
-                      <RegistryValue Type="string" Name="Publisher" Value="Jason Brian Hall" />
-                    </RegistryKey>
-                    
-                    <!-- Optional: Register .nes file association -->
-                    <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\.nes">
-                      <RegistryValue Type="string" Value="SMBVirtualized.NESFile" />
-                    </RegistryKey>
-                    <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\SMBVirtualized.NESFile">
-                      <RegistryValue Type="string" Value="NES ROM File" />
-                    </RegistryKey>
-                    <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\SMBVirtualized.NESFile\shell\open\command">
-                      <RegistryValue Type="string" Value='"[INSTALLFOLDER]$mainExe" "%1"' />
+                      <RegistryValue Type="string" Name="Publisher" Value="Jason Hall" />
                     </RegistryKey>
                   </Component>
                   
                   <!-- GTK Runtime directories -->
                   <Directory Id="LibDir" Name="lib">
                     <Directory Id="GdkPixbuf" Name="gdk-pixbuf-2.0">
-                      <Component Id="GdkPixbufDir" Guid="A9B4C826-E04B-5A78-B9D4-753E3A0A6B53">
+                      <Component Id="GdkPixbufDir" Guid="FF9BB8A5-36C4-4ED0-9A89-B94FE4647513">
                         <CreateFolder />
                         <RemoveFolder Id="RemoveGdkPixbuf" On="uninstall" />
-                        <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
+                        <RegistryValue Root="HKCU" Key="Software\SuperMarioBrothers\Components" 
                                      Type="integer" Name="GdkPixbuf" Value="1" KeyPath="yes"/>
                       </Component>
                     </Directory>
                     <Directory Id="Gtk3" Name="gtk-3.0">
-                      <Component Id="Gtk3Dir" Guid="C2E5D270-9A3C-5A89-C7E4-864A3A0A7C64">
+                      <Component Id="Gtk3Dir" Guid="BB820903-A9A0-43F5-9FFA-5C300BD8F3AC>
                         <CreateFolder />
                         <RemoveFolder Id="RemoveGtk3" On="uninstall" />
-                        <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
+                        <RegistryValue Root="HKCU" Key="Software\SuperMarioBrothers\Components" 
                                      Type="integer" Name="Gtk3" Value="1" KeyPath="yes"/>
                       </Component>
                     </Directory>
@@ -257,28 +235,28 @@ jobs:
                   <Directory Id="ShareDir" Name="share">
                     <Directory Id="GLib2" Name="glib-2.0">
                       <Directory Id="Schemas" Name="schemas">
-                        <Component Id="GtkSchemas" Guid="D8A7E956-C7A2-5A93-9E2A-975A4A0A8D75">
+                        <Component Id="GtkSchemas" Guid="0855450A-D21F-45B1-99BF-6EDC945ED6FF">
                           <File Id="GSchemas" Name="gschemas.compiled" 
                                 Source="share/glib-2.0/schemas/gschemas.compiled"/>
                           <RemoveFolder Id="RemoveSchemas" On="uninstall" />
-                          <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
+                          <RegistryValue Root="HKCU" Key="Software\SuperMarioBrothers\Components" 
                                        Type="integer" Name="Schemas" Value="1" KeyPath="yes"/>
                         </Component>
                       </Directory>
                     </Directory>
                     <Directory Id="Icons" Name="icons">
-                      <Component Id="IconsDir" Guid="E6A8A482-D6E4-5A94-B4A6-086A5A0A9A86">
+                      <Component Id="IconsDir" Guid="6079F9C2-F67B-4B36-AD59-144B44B06A14">
                         <CreateFolder />
                         <RemoveFolder Id="RemoveIcons" On="uninstall" />
-                        <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
+                        <RegistryValue Root="HKCU" Key="Software\SuperMarioBrothers\Components" 
                                      Type="integer" Name="Icons" Value="1" KeyPath="yes"/>
                       </Component>
                     </Directory>
                     <Directory Id="Themes" Name="themes">
-                      <Component Id="ThemesDir" Guid="A3A9a593-E7a5-5A05-D5A7-197A6A0A0A97">
+                      <Component Id="ThemesDir" Guid="8DE56D61-1F96-492E-9A38-E515B6F36EF4">
                         <CreateFolder />
                         <RemoveFolder Id="RemoveThemes" On="uninstall" />
-                        <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
+                        <RegistryValue Root="HKCU" Key="Software\SuperMarioBrothers\Components" 
                                      Type="integer" Name="Themes" Value="1" KeyPath="yes"/>
                       </Component>
                     </Directory>
@@ -288,15 +266,21 @@ jobs:
               
               <!-- Start Menu shortcuts -->
               <Directory Id="ProgramMenuFolder">
-                <Directory Id="ApplicationProgramsFolder" Name="Super Mario Brothers Virtualized">
-                  <Component Id="ApplicationShortcuts" Guid="A0A2E570-A8B2-5A64-0D83-A42E9AF63E80">
+                <Directory Id="ApplicationProgramsFolder" Name="Super Mario Brothers">
+                  <Component Id="ApplicationShortcuts" Guid="413A99F3-B168-4D24-A086-FDE8AE601352">
+                    <Shortcut Id="ApplicationStartMenu" 
+                             Name="Super Mario Brothers" 
+                             Target="[INSTALLFOLDER]SMB.exe" 
+                             WorkingDirectory="INSTALLFOLDER"
+                             Description="Launch Super Mario Brothers Game"
+                             Icon="TetrimoneIcon"/>
                     <Shortcut Id="UninstallShortcut"
-                             Name="Uninstall Super Mario Brothers Virtualized"
+                             Name="Uninstall Super Mario Brothers"
                              Target="[SystemFolder]msiexec.exe"
                              Arguments="/x [ProductCode]"
-                             Description="Uninstall Super Mario Brothers Virtualized" />
+                             Description="Uninstall Super Mario Brothers" />
                     <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall"/>
-                    <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Shortcuts" 
+                    <RegistryValue Root="HKCU" Key="Software\SuperMarioBrothers\Shortcuts" 
                                  Name="StartMenu" Type="integer" Value="1" KeyPath="yes"/>
                   </Component>
                 </Directory>
@@ -304,15 +288,15 @@ jobs:
               
               <!-- Desktop shortcut (optional) -->
               <Directory Id="DesktopFolder" Name="Desktop">
-                <Component Id="DesktopShortcut" Guid="A6A0A432-a0C8-5A79-9A2B-E53a7AA0BA91">
+                <Component Id="DesktopShortcut" Guid="C4FAE804-C521-45E2-B85E-F3A4622B21EA">
                   <Condition>DESKTOP_SHORTCUT</Condition>
                   <Shortcut Id="DesktopShortcut" 
-                           Name="Super Mario Brothers Virtualized" 
-                           Target="[INSTALLFOLDER]$mainExe"
+                           Name="Super Mario Brothers" 
+                           Target="[INSTALLFOLDER]SMB.exe"
                            WorkingDirectory="INSTALLFOLDER"
-                           Description="Launch Super Mario Brothers Virtualized"
-                           Icon="SMBIcon"/>
-                  <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Shortcuts" 
+                           Description="Launch Super Mario Brothers Game"
+                           Icon="TetrimoneIcon"/>
+                  <RegistryValue Root="HKCU" Key="Software\SuperMarioBrothers\Shortcuts" 
                                Name="Desktop" Type="integer" Value="1" KeyPath="yes"/>
                 </Component>
               </Directory>
@@ -320,8 +304,8 @@ jobs:
             
             <!-- Feature definitions -->
             <Feature Id="ProductFeature" 
-                     Title="Super Mario Brothers Virtualized" 
-                     Description="The main Super Mario Brothers Virtualized application and required runtime files."
+                     Title="Super Mario Brothers" 
+                     Description="The main Super Mario Brothers application and required runtime files."
                      Level="1" 
                      ConfigurableDirectory="INSTALLFOLDER"
                      AllowAdvertise="no">
@@ -342,7 +326,7 @@ jobs:
             </Feature>
             
             <!-- Application icon -->
-            <Icon Id="SMBIcon" SourceFile="icon.ico"/>
+            <Icon Id="TetrimoneIcon" SourceFile="icon.ico"/>
             
             <!-- Custom actions for cleanup -->
             <CustomAction Id="CleanupRegistryOnUninstall" 
@@ -352,8 +336,8 @@ jobs:
               <![CDATA[
                 On Error Resume Next
                 Set shell = CreateObject("WScript.Shell")
-                shell.RegDelete "HKLM\SOFTWARE\Super Mario Brothers Virtualized\"
-                shell.RegDelete "HKCU\Software\SMBVirtualized\"
+                shell.RegDelete "HKLM\SOFTWARE\Super Mario Brothers\"
+                shell.RegDelete "HKCU\Software\SuperMarioBrothers\"
               ]]>
             </CustomAction>
             
@@ -374,6 +358,7 @@ jobs:
         </Wix>
         "@ | Out-File -FilePath "installer.wxs" -Encoding UTF8
 
+
     - name: Create License RTF for Installer
       working-directory: artifacts/build/windows
       run: |
@@ -382,7 +367,7 @@ jobs:
         \f0\fs24
         MIT License\par
         \par
-        Copyright (c) 2025 Jaosn Hall\par
+        Copyright (c) 2025 Jason Hall\par
         \par
         Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\par
         \par
