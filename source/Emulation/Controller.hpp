@@ -111,10 +111,14 @@ public:
     bool isJoystickConnected(Player player) const;
 
     /**
-     * Enable/disable joystick polling (default: enabled)
-     * When disabled, only event-driven input is used
+     * Enable/disable joystick polling (default: from configuration)
      */
     void setJoystickPolling(bool enabled);
+
+    /**
+     * Load controller configuration from the config system
+     */
+    void loadConfiguration();
 
 private:
     // Controller state for each player
@@ -128,22 +132,30 @@ private:
     std::array<int, 2> joystickIDs;
     std::array<bool, 2> joystickInitialized;
 
-    // Joystick settings
-    static const int JOYSTICK_DEADZONE = 8000;
+    // Joystick settings - now loaded from configuration
+    int joystickDeadzone;
     bool joystickPollingEnabled;
 
-    // Keyboard mappings for both players
+    // Keyboard mappings for both players - now configurable
     struct KeyboardMapping
     {
         SDL_Scancode up, down, left, right;
         SDL_Scancode a, b, select, start;
     };
 
-    static const KeyboardMapping player1Keys;
-    static const KeyboardMapping player2Keys;
+    KeyboardMapping player1Keys;
+    KeyboardMapping player2Keys;
+
+    // Joystick button mappings - now configurable
+    struct JoystickMapping
+    {
+        int buttonA, buttonB, buttonSelect, buttonStart;
+    };
+
+    JoystickMapping player1JoystickButtons;
+    JoystickMapping player2JoystickButtons;
 
     // Helper methods
-    void mapJoystickButtonToController(Player player, int button, bool pressed);
     void setupRetrolinkMapping();
     Player getPlayerFromJoystickID(int joystickID);
     void handleJoystickAxis(Player player, int axis, Sint16 value);

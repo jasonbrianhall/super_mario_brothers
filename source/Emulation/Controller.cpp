@@ -1,30 +1,8 @@
 #include "Controller.hpp"
+#include "../Configuration.hpp"
 #include <iostream>
 
-// Keyboard mappings
-const Controller::KeyboardMapping Controller::player1Keys = {
-    SDL_SCANCODE_UP,     // up
-    SDL_SCANCODE_DOWN,   // down
-    SDL_SCANCODE_LEFT,   // left
-    SDL_SCANCODE_RIGHT,  // right
-    SDL_SCANCODE_X,      // a
-    SDL_SCANCODE_Z,      // b
-    SDL_SCANCODE_RSHIFT, // select
-    SDL_SCANCODE_RETURN  // start
-};
-
-const Controller::KeyboardMapping Controller::player2Keys = {
-    SDL_SCANCODE_I,      // up
-    SDL_SCANCODE_K,      // down
-    SDL_SCANCODE_J,      // left
-    SDL_SCANCODE_L,      // right
-    SDL_SCANCODE_N,      // a
-    SDL_SCANCODE_M,      // b
-    SDL_SCANCODE_RCTRL,  // select
-    SDL_SCANCODE_SPACE   // start
-};
-
-Controller::Controller() : strobe(1), joystickPollingEnabled(true)
+Controller::Controller() : strobe(1)
 {
     // Initialize button states for both players
     for (int player = 0; player < 2; player++)
@@ -39,6 +17,20 @@ Controller::Controller() : strobe(1), joystickPollingEnabled(true)
         joystickIDs[player] = -1;
         joystickInitialized[player] = false;
     }
+    
+    // Initialize with default values (will be overridden by loadConfiguration)
+    joystickPollingEnabled = true;
+    joystickDeadzone = 8000;
+    
+    // Set default keyboard mappings (will be overridden by loadConfiguration)
+    player1Keys = {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT,
+                   SDL_SCANCODE_X, SDL_SCANCODE_Z, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_RETURN};
+    player2Keys = {SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_J, SDL_SCANCODE_L,
+                   SDL_SCANCODE_N, SDL_SCANCODE_M, SDL_SCANCODE_RCTRL, SDL_SCANCODE_SPACE};
+    
+    // Set default joystick mappings (will be overridden by loadConfiguration)
+    player1JoystickButtons = {1, 0, 8, 9};  // A, B, Select, Start
+    player2JoystickButtons = {1, 0, 8, 9};
     
     // Load SDL_GameControllerDB database if it exists
     FILE* dbFile = fopen("gamecontrollerdb.txt", "r");
@@ -65,6 +57,47 @@ Controller::~Controller()
             SDL_JoystickClose(joysticks[player]);
         }
     }
+}
+
+void Controller::loadConfiguration()
+{
+    // Load joystick settings from configuration
+    joystickPollingEnabled = Configuration::getJoystickPollingEnabled();
+    joystickDeadzone = Configuration::getJoystickDeadzone();
+    
+    // Load Player 1 keyboard mappings
+    player1Keys.up = static_cast<SDL_Scancode>(Configuration::getPlayer1KeyUp());
+    player1Keys.down = static_cast<SDL_Scancode>(Configuration::getPlayer1KeyDown());
+    player1Keys.left = static_cast<SDL_Scancode>(Configuration::getPlayer1KeyLeft());
+    player1Keys.right = static_cast<SDL_Scancode>(Configuration::getPlayer1KeyRight());
+    player1Keys.a = static_cast<SDL_Scancode>(Configuration::getPlayer1KeyA());
+    player1Keys.b = static_cast<SDL_Scancode>(Configuration::getPlayer1KeyB());
+    player1Keys.select = static_cast<SDL_Scancode>(Configuration::getPlayer1KeySelect());
+    player1Keys.start = static_cast<SDL_Scancode>(Configuration::getPlayer1KeyStart());
+    
+    // Load Player 2 keyboard mappings
+    player2Keys.up = static_cast<SDL_Scancode>(Configuration::getPlayer2KeyUp());
+    player2Keys.down = static_cast<SDL_Scancode>(Configuration::getPlayer2KeyDown());
+    player2Keys.left = static_cast<SDL_Scancode>(Configuration::getPlayer2KeyLeft());
+    player2Keys.right = static_cast<SDL_Scancode>(Configuration::getPlayer2KeyRight());
+    player2Keys.a = static_cast<SDL_Scancode>(Configuration::getPlayer2KeyA());
+    player2Keys.b = static_cast<SDL_Scancode>(Configuration::getPlayer2KeyB());
+    player2Keys.select = static_cast<SDL_Scancode>(Configuration::getPlayer2KeySelect());
+    player2Keys.start = static_cast<SDL_Scancode>(Configuration::getPlayer2KeyStart());
+    
+    // Load Player 1 joystick button mappings
+    player1JoystickButtons.buttonA = Configuration::getPlayer1JoystickButtonA();
+    player1JoystickButtons.buttonB = Configuration::getPlayer1JoystickButtonB();
+    player1JoystickButtons.buttonStart = Configuration::getPlayer1JoystickButtonStart();
+    player1JoystickButtons.buttonSelect = Configuration::getPlayer1JoystickButtonSelect();
+    
+    // Load Player 2 joystick button mappings
+    player2JoystickButtons.buttonA = Configuration::getPlayer2JoystickButtonA();
+    player2JoystickButtons.buttonB = Configuration::getPlayer2JoystickButtonB();
+    player2JoystickButtons.buttonStart = Configuration::getPlayer2JoystickButtonStart();
+    player2JoystickButtons.buttonSelect = Configuration::getPlayer2JoystickButtonSelect();
+    
+    std::cout << "Controller configuration loaded from settings." << std::endl;
 }
 
 bool Controller::initJoystick()
@@ -332,13 +365,13 @@ void Controller::updateJoystickState()
             }
         }
         
-        // Check axis input
+        // Check axis input with configurable deadzone
         if (SDL_JoystickNumAxes(joysticks[player]) >= 2)
         {
             Sint16 xAxis = SDL_JoystickGetAxis(joysticks[player], 0);
             Sint16 yAxis = SDL_JoystickGetAxis(joysticks[player], 1);
             
-            if (abs(xAxis) > JOYSTICK_DEADZONE || abs(yAxis) > JOYSTICK_DEADZONE)
+            if (abs(xAxis) > joystickDeadzone || abs(yAxis) > joystickDeadzone)
             {
                 hasJoystickInput = true;
             }
@@ -348,17 +381,15 @@ void Controller::updateJoystickState()
         // This prevents overriding keyboard input when joystick is idle
         if (hasJoystickInput)
         {
-            // Update button states
+            // Use configurable button mappings
+            const JoystickMapping& mapping = (player == PLAYER_1) ? player1JoystickButtons : player2JoystickButtons;
+            
             if (SDL_JoystickNumButtons(joysticks[player]) >= 10) 
             {
-                setButtonState(player, BUTTON_B, SDL_JoystickGetButton(joysticks[player], 0));
-                setButtonState(player, BUTTON_A, SDL_JoystickGetButton(joysticks[player], 1) || 
-                                                 SDL_JoystickGetButton(joysticks[player], 4));
-                setButtonState(player, BUTTON_SELECT, SDL_JoystickGetButton(joysticks[player], 8));
-                setButtonState(player, BUTTON_START, SDL_JoystickGetButton(joysticks[player], 9));
-                
-                if (!buttonStates[player][BUTTON_B])
-                    setButtonState(player, BUTTON_B, SDL_JoystickGetButton(joysticks[player], 5));
+                setButtonState(player, BUTTON_A, SDL_JoystickGetButton(joysticks[player], mapping.buttonA));
+                setButtonState(player, BUTTON_B, SDL_JoystickGetButton(joysticks[player], mapping.buttonB));
+                setButtonState(player, BUTTON_START, SDL_JoystickGetButton(joysticks[player], mapping.buttonStart));
+                setButtonState(player, BUTTON_SELECT, SDL_JoystickGetButton(joysticks[player], mapping.buttonSelect));
             }
             
             // Update directional input
@@ -418,12 +449,12 @@ void Controller::handleJoystickAxis(Player player, int axis, Sint16 value)
 {
     if (axis == 0) // X axis
     {
-        if (value < -JOYSTICK_DEADZONE)
+        if (value < -joystickDeadzone)  // Use configurable deadzone
         {
             setButtonState(player, BUTTON_LEFT, true);
             setButtonState(player, BUTTON_RIGHT, false);
         }
-        else if (value > JOYSTICK_DEADZONE)
+        else if (value > joystickDeadzone)  // Use configurable deadzone
         {
             setButtonState(player, BUTTON_RIGHT, true);
             setButtonState(player, BUTTON_LEFT, false);
@@ -436,12 +467,12 @@ void Controller::handleJoystickAxis(Player player, int axis, Sint16 value)
     }
     else if (axis == 1) // Y axis
     {
-        if (value < -JOYSTICK_DEADZONE)
+        if (value < -joystickDeadzone)  // Use configurable deadzone
         {
             setButtonState(player, BUTTON_UP, true);
             setButtonState(player, BUTTON_DOWN, false);
         }
-        else if (value > JOYSTICK_DEADZONE)
+        else if (value > joystickDeadzone)  // Use configurable deadzone
         {
             setButtonState(player, BUTTON_DOWN, true);
             setButtonState(player, BUTTON_UP, false);
@@ -456,6 +487,20 @@ void Controller::handleJoystickAxis(Player player, int axis, Sint16 value)
 
 void Controller::handleJoystickButton(Player player, int button, bool pressed)
 {
+    // Use configurable button mappings
+    const JoystickMapping& mapping = (player == PLAYER_1) ? player1JoystickButtons : player2JoystickButtons;
+    
+    if (button == mapping.buttonA) {
+        setButtonState(player, BUTTON_A, pressed);
+    } else if (button == mapping.buttonB) {
+        setButtonState(player, BUTTON_B, pressed);
+    } else if (button == mapping.buttonStart) {
+        setButtonState(player, BUTTON_START, pressed);
+    } else if (button == mapping.buttonSelect) {
+        setButtonState(player, BUTTON_SELECT, pressed);
+    }
+    
+    // Keep some fallback mappings for common controllers
     switch (button)
     {
         case 0: setButtonState(player, BUTTON_B, pressed); break;
