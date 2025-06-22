@@ -7,6 +7,16 @@
 #include "Util/VideoFilters.hpp"
 #include "SMBRom.hpp"
 
+#ifdef _WIN32
+#include "WindowsAudio.hpp"
+#endif
+
+// Add this as a member variable in GTKMainWindow class (in header file):
+#ifdef _WIN32
+    WindowsAudio* windowsAudio;
+#endif
+
+
 // Global variables for the game engine
 static SMBEngine* smbEngine = nullptr;
 static uint32_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
@@ -433,27 +443,89 @@ void GTKMainWindow::shutdown()
 
 void GTKMainWindow::gameLoop() 
 {
-    // Initialize SDL for audio and controllers only - NO VIDEO AT ALL
+#ifdef _WIN32
+    // On Windows, force SDL to use DirectSound or WinMM to avoid WASAPI issues
+    SDL_SetHint(SDL_HINT_AUDIODRIVER, "directsound,winmm");
+    
+    // Initialize SDL for joystick/gamecontroller only - we'll handle audio separately
+    if (SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) < 0) {
+        updateStatusBar("SDL initialization failed");
+        return;
+    }
+#else
+    // Initialize SDL for audio and controllers on non-Windows platforms
     if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) < 0) {
         updateStatusBar("SDL initialization failed");
         return;
     }
+#endif
 
-    // Initialize audio
+    // Initialize HQDN3D filter if enabled
+    uint32_t* prevFrameBuffer = nullptr;
+    if (Configuration::getHqdn3dEnabled()) {
+        initHQDN3D(RENDER_WIDTH, RENDER_HEIGHT);
+        prevFrameBuffer = new uint32_t[RENDER_WIDTH * RENDER_HEIGHT];
+        memset(prevFrameBuffer, 0, RENDER_WIDTH * RENDER_HEIGHT * sizeof(uint32_t));
+    }
+
+    // Initialize the SMB engine with embedded ROM data - MOVED UP BEFORE AUDIO INIT
+    SMBEngine engine(const_cast<uint8_t*>(smbRomData));
+    smbEngine = &engine;
+    engine.reset();
+
+    // Initialize audio AFTER engine is created
+    bool audioInitialized = false;
+    
+#ifdef _WIN32
+    // Try WinMM first on Windows
+    if (Configuration::getAudioEnabled()) {
+        windowsAudio = new WindowsAudio();
+        if (windowsAudio->initialize(Configuration::getAudioFrequency(), &engine)) {
+            audioInitialized = true;
+        } else {
+            delete windowsAudio;
+            windowsAudio = nullptr;
+        }
+    }
+    
+    // If WinMM failed, fall back to SDL with safe drivers
+    if (Configuration::getAudioEnabled() && !audioInitialized) {
+        if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
+            SDL_AudioSpec desiredSpec;
+            desiredSpec.freq = Configuration::getAudioFrequency();
+            desiredSpec.format = AUDIO_S16;
+            desiredSpec.channels = 1;
+            desiredSpec.samples = 1024;
+            desiredSpec.callback = [](void* userdata, uint8_t* buffer, int len) {
+                if (smbEngine != nullptr) {
+                    smbEngine->audioCallback(buffer, len);
+                }
+            };
+            desiredSpec.userdata = NULL;
+
+            SDL_AudioSpec obtainedSpec;
+            if (SDL_OpenAudio(&desiredSpec, &obtainedSpec) < 0) {
+                std::cout << "SDL_OpenAudio failed: " << SDL_GetError() << std::endl;
+                std::cout << "Continuing without audio..." << std::endl;
+            } else {
+                audioInitialized = true;
+                std::cout << "SDL Audio initialized (fallback):" << std::endl;
+                std::cout << "  Format: 16-bit" << std::endl;
+                std::cout << "  Frequency: " << obtainedSpec.freq << " Hz" << std::endl;
+                std::cout << "  Channels: " << (int)obtainedSpec.channels << std::endl;
+                std::cout << "  Buffer size: " << obtainedSpec.samples << std::endl;
+                SDL_PauseAudio(0);
+            }
+        }
+    }
+#else
+    // Non-Windows SDL audio initialization
     if (Configuration::getAudioEnabled()) {
         SDL_AudioSpec desiredSpec;
         desiredSpec.freq = Configuration::getAudioFrequency();
-        
-        // Use 16-bit audio on Windows, 8-bit on other platforms
-#ifdef _WIN32
-        desiredSpec.format = AUDIO_S16;
-        desiredSpec.samples = 1024;  // Smaller buffer for Windows
-#else
         desiredSpec.format = AUDIO_S8;
-        desiredSpec.samples = 2048;
-#endif
-        
         desiredSpec.channels = 1;
+        desiredSpec.samples = 2048;
         desiredSpec.callback = [](void* userdata, uint8_t* buffer, int len) {
             if (smbEngine != nullptr) {
                 smbEngine->audioCallback(buffer, len);
@@ -466,32 +538,23 @@ void GTKMainWindow::gameLoop()
             std::cout << "SDL_OpenAudio failed: " << SDL_GetError() << std::endl;
             std::cout << "Continuing without audio..." << std::endl;
         } else {
+            audioInitialized = true;
             std::cout << "Audio initialized successfully:" << std::endl;
-#ifdef _WIN32
-            std::cout << "Win32 Detected" << std::endl;
-            std::cout << "Obtained format: 0x" << std::hex << obtainedSpec.format << std::endl;
-
-#endif
-            std::cout << "  Format: " << (obtainedSpec.format == AUDIO_S16 ? "16-bit" : "8-bit") << std::endl;
+            std::cout << "  Format: 8-bit" << std::endl;
             std::cout << "  Frequency: " << obtainedSpec.freq << " Hz" << std::endl;
             std::cout << "  Channels: " << (int)obtainedSpec.channels << std::endl;
             std::cout << "  Buffer size: " << obtainedSpec.samples << std::endl;
             SDL_PauseAudio(0);
         }
     }
+#endif
 
-    // Initialize HQDN3D filter if enabled
-    uint32_t* prevFrameBuffer = nullptr;
-    if (Configuration::getHqdn3dEnabled()) {
-        initHQDN3D(RENDER_WIDTH, RENDER_HEIGHT);
-        prevFrameBuffer = new uint32_t[RENDER_WIDTH * RENDER_HEIGHT];
-        memset(prevFrameBuffer, 0, RENDER_WIDTH * RENDER_HEIGHT * sizeof(uint32_t));
+#ifdef _WIN32
+    // Start WinMM audio if it was initialized
+    if (windowsAudio) {
+        windowsAudio->start();
     }
-
-    // Initialize the SMB engine with embedded ROM data
-    SMBEngine engine(const_cast<uint8_t*>(smbRomData));
-    smbEngine = &engine;
-    engine.reset();
+#endif
 
     // Initialize controller system for both players
     Controller& controller1 = engine.getController1();
@@ -589,7 +652,7 @@ void GTKMainWindow::gameLoop()
             // Store the final buffer for GTK rendering
             currentFrameBuffer = sourceBuffer;
             
-            // Force immediate redraw on the main thread - don't use g_idle_add
+            // Force immediate redraw on the main thread
             gdk_threads_add_idle([](gpointer data) -> gboolean {
                 GTKMainWindow* window = static_cast<GTKMainWindow*>(data);
                 gtk_widget_queue_draw(window->gameContainer);
@@ -610,6 +673,14 @@ void GTKMainWindow::gameLoop()
     }
 
     // Cleanup
+#ifdef _WIN32
+    if (windowsAudio) {
+        windowsAudio->shutdown();
+        delete windowsAudio;
+        windowsAudio = nullptr;
+    }
+#endif
+
     if (Configuration::getHqdn3dEnabled()) {
         cleanupHQDN3D();
         delete[] prevFrameBuffer;

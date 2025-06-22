@@ -55,7 +55,8 @@ SOURCE_FILES = \
     source/SMB/SMBEngine.cpp \
     source/Util/Video.cpp \
     source/Util/VideoFilters.cpp \
-    source/SMBRom.cpp
+    source/SMBRom.cpp \
+    source/WindowsAudio.cpp
 
 # Object files
 OBJS_LINUX = $(SOURCE_FILES:.cpp=.o)
