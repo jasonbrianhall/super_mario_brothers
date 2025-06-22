@@ -481,7 +481,7 @@ jobs:
           **Build:** #${{ github.run_number }}  
           
           ### 🎮 Super Mario Brothers Virtualized
-          A high-performance NES virtualizer built with GTK3, specifically optimized for Super Mario Brothers gameplay.
+          A high-performance NES virtualizer built with GTK3, specifically optimized for Super Mario Brothers gameplay.  A virtualizer means that it's not emulating the CPU, it's running native.
           
           ### 📦 Downloads
           - **SMBVirtualized-GTK.msi** - Windows installer with uninstall support and .NES file association
@@ -492,7 +492,6 @@ jobs:
           - ✅ Custom installation directory
           - ✅ Start menu shortcuts with uninstall option
           - ✅ Optional desktop shortcut
-          - ✅ .NES file association for double-click ROM loading
           - ✅ Proper uninstall support
           - ✅ MIT License agreement
           - ✅ Registry cleanup on uninstall
