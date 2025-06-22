@@ -385,7 +385,7 @@ jobs:
         Get-Location
         Write-Host "=== DEBUG: Files in current directory ==="
         Get-ChildItem
-        
+        type installer.wxs 
         # Compile the installer
         Write-Host "=== Building MSI installer ==="
         & candle.exe installer.wxs
