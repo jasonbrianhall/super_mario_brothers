@@ -1031,11 +1031,35 @@ void GTKMainWindow::showControlSettings()
         // Save the settings
         saveControllerSettings();
         
-        // Reload controller configuration
+        // **THIS IS THE KEY FIX** - Reinitialize the entire controller system
         if (smbEngine) {
             Controller& controller = smbEngine->getController1();
+            
+            // First, shutdown any existing joystick connections
+            controller.shutdownJoystick();
+            
+            // Reload configuration from the saved values
             controller.loadConfiguration();
-            updateStatusBar("Controller settings saved and applied");
+            
+            // Reinitialize joystick system with new configuration
+            bool joystickInitialized = controller.initJoystick();
+            
+            if (joystickInitialized) {
+                std::cout << "Controller system reinitialized successfully!" << std::endl;
+                if (controller.isJoystickConnected(PLAYER_1))
+                    std::cout << "Player 1 joystick reconnected" << std::endl;
+                if (controller.isJoystickConnected(PLAYER_2))
+                    std::cout << "Player 2 joystick reconnected" << std::endl;
+                    
+                // Apply the new polling setting
+                controller.setJoystickPolling(Configuration::getJoystickPollingEnabled());
+                std::cout << "Joystick polling: " << (Configuration::getJoystickPollingEnabled() ? "enabled" : "disabled") << std::endl;
+                
+                updateStatusBar("Controller settings saved and applied - controllers reinitialized");
+            } else {
+                std::cout << "No joysticks found after reinitialization." << std::endl;
+                updateStatusBar("Controller settings saved - no joysticks detected");
+            }
         } else {
             updateStatusBar("Controller settings saved");
         }
