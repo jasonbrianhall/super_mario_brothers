@@ -133,6 +133,11 @@ private:
   void captureControllerButton(int button);
   void captureControllerAxis(int axis, int value);
   void testJoystickInput();
+  cairo_surface_t* backBuffer;
+  guchar* backBufferData;
+  bool backBufferInitialized;
+  void initializeBackBuffer();
+
 };
 
 #endif // GTK_MAIN_WINDOW_HPP

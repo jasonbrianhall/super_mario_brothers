@@ -29,12 +29,33 @@ GTKMainWindow::GTKMainWindow()
       gameContainer(nullptr), statusbar(nullptr), configDialog(nullptr),
       sdlWindow(nullptr), sdlRenderer(nullptr), sdlTexture(nullptr),
       gameRunning(false), gamePaused(false),
-      isCapturingJoystick(false), currentCaptureIsAxis(false)
+      isCapturingJoystick(false), currentCaptureIsAxis(false),
+      backBuffer(nullptr), backBufferData(nullptr), backBufferInitialized(false)
 {
+}
+
+void GTKMainWindow::initializeBackBuffer() {
+    if (backBufferInitialized) return;
+    
+    backBufferData = g_new(guchar, RENDER_WIDTH * RENDER_HEIGHT * 4);
+    backBuffer = cairo_image_surface_create_for_data(
+        backBufferData,
+        CAIRO_FORMAT_ARGB32,
+        RENDER_WIDTH,
+        RENDER_HEIGHT,
+        RENDER_WIDTH * 4
+    );
+    backBufferInitialized = true;
 }
 
 GTKMainWindow::~GTKMainWindow() 
 {
+    if (backBuffer) {
+        cairo_surface_destroy(backBuffer);
+    }
+    if (backBufferData) {
+        g_free(backBufferData);
+    }
     shutdown();
 }
 
@@ -351,10 +372,12 @@ void GTKMainWindow::exitFullscreen()
 // GTK drawing callback - renders the game frame
 gboolean GTKMainWindow::onGameDraw(GtkWidget* widget, cairo_t* cr, gpointer user_data) 
 {
+    // Always fill with black background first to prevent artifacts
+    cairo_set_source_rgb(cr, 0, 0, 0);
+    cairo_paint(cr);
+    
     if (!currentFrameBuffer) {
-        // Draw a black rectangle if no frame is available yet
-        cairo_set_source_rgb(cr, 0, 0, 0);
-        cairo_paint(cr);
+        // No frame available yet - background is already black
         return TRUE;
     }
     
@@ -362,25 +385,44 @@ gboolean GTKMainWindow::onGameDraw(GtkWidget* widget, cairo_t* cr, gpointer user
     int widget_width = gtk_widget_get_allocated_width(widget);
     int widget_height = gtk_widget_get_allocated_height(widget);
     
-    // Create a proper RGB buffer - the game buffer is BGRA format
-    guchar* rgb_data = g_new(guchar, RENDER_WIDTH * RENDER_HEIGHT * 4);
+    // Create a static buffer to avoid repeated allocations (Windows performance issue)
+    static guchar* rgb_data = nullptr;
+    static size_t buffer_size = 0;
+    size_t required_size = RENDER_WIDTH * RENDER_HEIGHT * 4;
+    
+    if (!rgb_data || buffer_size < required_size) {
+        if (rgb_data) g_free(rgb_data);
+        rgb_data = g_new(guchar, required_size);
+        buffer_size = required_size;
+    }
+    
+    // Convert pixel format - optimize for Windows
+    // The original buffer might be in different formats, ensure BGRA32
     for (int i = 0; i < RENDER_WIDTH * RENDER_HEIGHT; i++) {
         uint32_t pixel = currentFrameBuffer[i];
-        // Convert BGRA to BGRA for Cairo (swap red and blue)
+        
+        // For Cairo ARGB32 format on Windows: Blue, Green, Red, Alpha
+        // Ensure proper byte order for Windows
         rgb_data[i * 4 + 0] = pixel & 0xFF;         // Blue
         rgb_data[i * 4 + 1] = (pixel >> 8) & 0xFF;  // Green  
         rgb_data[i * 4 + 2] = (pixel >> 16) & 0xFF; // Red
-        rgb_data[i * 4 + 3] = 255;                  // Alpha
+        rgb_data[i * 4 + 3] = 255;                  // Alpha (fully opaque)
     }
     
-    // Create Cairo surface from the converted RGB data
+    // Create Cairo surface with explicit format
     cairo_surface_t* surface = cairo_image_surface_create_for_data(
         rgb_data,
-        CAIRO_FORMAT_ARGB32,
+        CAIRO_FORMAT_ARGB32,  // Explicitly use ARGB32
         RENDER_WIDTH,
         RENDER_HEIGHT,
         RENDER_WIDTH * 4
     );
+    
+    // Check surface status to prevent rendering corrupted surfaces
+    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surface);
+        return TRUE;
+    }
     
     // Scale to fit the widget while maintaining aspect ratio
     double scale_x = (double)widget_width / RENDER_WIDTH;
@@ -391,17 +433,23 @@ gboolean GTKMainWindow::onGameDraw(GtkWidget* widget, cairo_t* cr, gpointer user
     double offset_x = (widget_width - RENDER_WIDTH * scale) / 2;
     double offset_y = (widget_height - RENDER_HEIGHT * scale) / 2;
     
+    // Use high-quality scaling to reduce artifacts
     cairo_save(cr);
     cairo_translate(cr, offset_x, offset_y);
     cairo_scale(cr, scale, scale);
     
-    // Draw the surface
-    cairo_set_source_surface(cr, surface, 0, 0);
+    // Set high-quality filter for Windows
+    cairo_pattern_t* pattern = cairo_pattern_create_for_surface(surface);
+    cairo_pattern_set_filter(pattern, CAIRO_FILTER_GOOD);  // Better than CAIRO_FILTER_FAST
+    
+    // Draw the surface with the pattern
+    cairo_set_source(cr, pattern);
     cairo_paint(cr);
     
+    // Cleanup
+    cairo_pattern_destroy(pattern);
     cairo_restore(cr);
     cairo_surface_destroy(surface);
-    g_free(rgb_data);
     
     return TRUE;
 }
@@ -572,6 +620,10 @@ void GTKMainWindow::gameLoop()
         updateStatusBar("SDL initialization failed");
         return;
     }
+    
+    // Windows-specific optimizations
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
+    timeBeginPeriod(1);
 #else
     // Initialize SDL for audio and controllers on non-Windows platforms
     if (SDL_Init(SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) < 0) {
@@ -699,11 +751,13 @@ void GTKMainWindow::gameLoop()
 
     updateStatusBar("Game started");
 
-    // Main game loop
-    int progStartTime = SDL_GetTicks();
-    int frame = 0;
+    // Main game loop with precise frame timing
+    auto lastFrameTime = std::chrono::high_resolution_clock::now();
+    const auto targetFrameTime = std::chrono::microseconds(1000000 / Configuration::getFrameRate());
     
     while (gameRunning) {
+        auto frameStart = std::chrono::high_resolution_clock::now();
+        
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             // First check if we're capturing joystick input for configuration
@@ -818,24 +872,22 @@ void GTKMainWindow::gameLoop()
             // Store the final buffer for GTK rendering
             currentFrameBuffer = sourceBuffer;
             
-            // Force immediate redraw on the main thread
-            gdk_threads_add_idle([](gpointer data) -> gboolean {
+            // Force immediate redraw with frame synchronization
+            gdk_threads_add_idle_full(G_PRIORITY_HIGH_IDLE, [](gpointer data) -> gboolean {
                 GTKMainWindow* window = static_cast<GTKMainWindow*>(data);
                 gtk_widget_queue_draw(window->gameContainer);
                 return G_SOURCE_REMOVE;
-            }, this);
+            }, this, nullptr);
         }
 
-        // Ensure that the framerate stays as close to the desired FPS as possible
-        int now = SDL_GetTicks();
-        int delay = progStartTime + int(double(frame) * double(MS_PER_SEC) / double(Configuration::getFrameRate())) - now;
-        if (delay > 0) {
-            SDL_Delay(delay);
-        } else {
-            frame = 0;
-            progStartTime = now;
+        // Precise frame timing
+        auto frameEnd = std::chrono::high_resolution_clock::now();
+        auto frameDuration = frameEnd - frameStart;
+        
+        if (frameDuration < targetFrameTime) {
+            auto sleepTime = targetFrameTime - frameDuration;
+            std::this_thread::sleep_for(sleepTime);
         }
-        frame++;
     }
 
     // Cleanup
@@ -845,6 +897,7 @@ void GTKMainWindow::gameLoop()
         delete windowsAudio;
         windowsAudio = nullptr;
     }
+    timeEndPeriod(1);
 #endif
 
     if (Configuration::getHqdn3dEnabled()) {
