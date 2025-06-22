@@ -48,6 +48,14 @@ bool GTKMainWindow::initialize()
     gtk_window_set_default_size(GTK_WINDOW(window), 800, 600);
     gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
     
+    // Set window background to black
+    GdkRGBA black_color;
+    black_color.red = 0.0;
+    black_color.green = 0.0;
+    black_color.blue = 0.0;
+    black_color.alpha = 1.0;
+    gtk_widget_override_background_color(window, GTK_STATE_FLAG_NORMAL, &black_color);
+    
     // Connect window close event
     g_signal_connect(window, "destroy", G_CALLBACK(gtk_main_quit), nullptr);
     
@@ -100,18 +108,10 @@ void GTKMainWindow::createMenuBar()
     
     gtk_menu_shell_append(GTK_MENU_SHELL(menubar), fileMenuItem);
     
-    // Settings menu
+    // Settings menu - only keep Controls
     GtkWidget* settingsMenu = gtk_menu_new();
     GtkWidget* settingsMenuItem = gtk_menu_item_new_with_label("Settings");
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(settingsMenuItem), settingsMenu);
-    
-    GtkWidget* videoItem = gtk_menu_item_new_with_label("Video");
-    g_signal_connect(videoItem, "activate", G_CALLBACK(onSettingsVideo), this);
-    gtk_menu_shell_append(GTK_MENU_SHELL(settingsMenu), videoItem);
-    
-    GtkWidget* audioItem = gtk_menu_item_new_with_label("Audio");
-    g_signal_connect(audioItem, "activate", G_CALLBACK(onSettingsAudio), this);
-    gtk_menu_shell_append(GTK_MENU_SHELL(settingsMenu), audioItem);
     
     GtkWidget* controlsItem = gtk_menu_item_new_with_label("Controls");
     g_signal_connect(controlsItem, "activate", G_CALLBACK(onSettingsControls), this);
