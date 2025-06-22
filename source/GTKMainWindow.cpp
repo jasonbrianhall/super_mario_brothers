@@ -271,66 +271,48 @@ gboolean GTKMainWindow::onKeyPress(GtkWidget* widget, GdkEventKey* event, gpoint
             return TRUE;
         }
         
-        // Handle game controls directly (Player 1)
-        switch (event->keyval) {
-            case GDK_KEY_Up:
+        // Convert GDK key to SDL scancode for comparison with configuration
+        GTKMainWindow temp;
+        SDL_Scancode scancode = temp.gdk_keyval_to_sdl_scancode(event->keyval);
+        
+        if (scancode != SDL_SCANCODE_UNKNOWN) {
+            // Check Player 1 controls
+            if (scancode == Configuration::getPlayer1KeyUp()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_UP, true);
-                break;
-            case GDK_KEY_Down:
+            } else if (scancode == Configuration::getPlayer1KeyDown()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_DOWN, true);
-                break;
-            case GDK_KEY_Left:
+            } else if (scancode == Configuration::getPlayer1KeyLeft()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_LEFT, true);
-                break;
-            case GDK_KEY_Right:
+            } else if (scancode == Configuration::getPlayer1KeyRight()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_RIGHT, true);
-                break;
-            case GDK_KEY_x:
-            case GDK_KEY_X:
+            } else if (scancode == Configuration::getPlayer1KeyA()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_A, true);
-                break;
-            case GDK_KEY_z:
-            case GDK_KEY_Z:
+            } else if (scancode == Configuration::getPlayer1KeyB()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_B, true);
-                break;
-            case GDK_KEY_Shift_R:
+            } else if (scancode == Configuration::getPlayer1KeySelect()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_SELECT, true);
-                break;
-            case GDK_KEY_Return:
+            } else if (scancode == Configuration::getPlayer1KeyStart()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_START, true);
-                break;
+            }
             
-            // Player 2 controls
-            case GDK_KEY_i:
-            case GDK_KEY_I:
+            // Check Player 2 controls
+            else if (scancode == Configuration::getPlayer2KeyUp()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_UP, true);
-                break;
-            case GDK_KEY_k:
-            case GDK_KEY_K:
+            } else if (scancode == Configuration::getPlayer2KeyDown()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_DOWN, true);
-                break;
-            case GDK_KEY_j:
-            case GDK_KEY_J:
+            } else if (scancode == Configuration::getPlayer2KeyLeft()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_LEFT, true);
-                break;
-            case GDK_KEY_l:
-            case GDK_KEY_L:
+            } else if (scancode == Configuration::getPlayer2KeyRight()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_RIGHT, true);
-                break;
-            case GDK_KEY_n:
-            case GDK_KEY_N:
+            } else if (scancode == Configuration::getPlayer2KeyA()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_A, true);
-                break;
-            case GDK_KEY_m:
-            case GDK_KEY_M:
+            } else if (scancode == Configuration::getPlayer2KeyB()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_B, true);
-                break;
-            case GDK_KEY_Control_R:
+            } else if (scancode == Configuration::getPlayer2KeySelect()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_SELECT, true);
-                break;
-            case GDK_KEY_space:
+            } else if (scancode == Configuration::getPlayer2KeyStart()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_START, true);
-                break;
+            }
         }
     }
     
@@ -342,66 +324,48 @@ gboolean GTKMainWindow::onKeyRelease(GtkWidget* widget, GdkEventKey* event, gpoi
     if (smbEngine) {
         Controller& controller1 = smbEngine->getController1();
         
-        // Handle game controls directly (Player 1)
-        switch (event->keyval) {
-            case GDK_KEY_Up:
+        // Convert GDK key to SDL scancode for comparison with configuration
+        GTKMainWindow temp;
+        SDL_Scancode scancode = temp.gdk_keyval_to_sdl_scancode(event->keyval);
+        
+        if (scancode != SDL_SCANCODE_UNKNOWN) {
+            // Check Player 1 controls
+            if (scancode == Configuration::getPlayer1KeyUp()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_UP, false);
-                break;
-            case GDK_KEY_Down:
+            } else if (scancode == Configuration::getPlayer1KeyDown()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_DOWN, false);
-                break;
-            case GDK_KEY_Left:
+            } else if (scancode == Configuration::getPlayer1KeyLeft()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_LEFT, false);
-                break;
-            case GDK_KEY_Right:
+            } else if (scancode == Configuration::getPlayer1KeyRight()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_RIGHT, false);
-                break;
-            case GDK_KEY_x:
-            case GDK_KEY_X:
+            } else if (scancode == Configuration::getPlayer1KeyA()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_A, false);
-                break;
-            case GDK_KEY_z:
-            case GDK_KEY_Z:
+            } else if (scancode == Configuration::getPlayer1KeyB()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_B, false);
-                break;
-            case GDK_KEY_Shift_R:
+            } else if (scancode == Configuration::getPlayer1KeySelect()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_SELECT, false);
-                break;
-            case GDK_KEY_Return:
+            } else if (scancode == Configuration::getPlayer1KeyStart()) {
                 controller1.setButtonState(PLAYER_1, BUTTON_START, false);
-                break;
+            }
             
-            // Player 2 controls
-            case GDK_KEY_i:
-            case GDK_KEY_I:
+            // Check Player 2 controls
+            else if (scancode == Configuration::getPlayer2KeyUp()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_UP, false);
-                break;
-            case GDK_KEY_k:
-            case GDK_KEY_K:
+            } else if (scancode == Configuration::getPlayer2KeyDown()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_DOWN, false);
-                break;
-            case GDK_KEY_j:
-            case GDK_KEY_J:
+            } else if (scancode == Configuration::getPlayer2KeyLeft()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_LEFT, false);
-                break;
-            case GDK_KEY_l:
-            case GDK_KEY_L:
+            } else if (scancode == Configuration::getPlayer2KeyRight()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_RIGHT, false);
-                break;
-            case GDK_KEY_n:
-            case GDK_KEY_N:
+            } else if (scancode == Configuration::getPlayer2KeyA()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_A, false);
-                break;
-            case GDK_KEY_m:
-            case GDK_KEY_M:
+            } else if (scancode == Configuration::getPlayer2KeyB()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_B, false);
-                break;
-            case GDK_KEY_Control_R:
+            } else if (scancode == Configuration::getPlayer2KeySelect()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_SELECT, false);
-                break;
-            case GDK_KEY_space:
+            } else if (scancode == Configuration::getPlayer2KeyStart()) {
                 controller1.setButtonState(PLAYER_2, BUTTON_START, false);
-                break;
+            }
         }
     }
     
