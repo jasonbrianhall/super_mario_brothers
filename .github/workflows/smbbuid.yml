@@ -148,7 +148,7 @@ jobs:
                    Name="Super Mario Brothers Virtualized" 
                    Language="1033" 
                    Version="${{ needs.build-linux.outputs.version }}" 
-                   Manufacturer="Your Name" 
+                   Manufacturer="Jason Brian Hall" 
                    UpgradeCode="${{ env.UPGRADE_CODE }}"> 
             
             <Package InstallerVersion="500" 
@@ -156,7 +156,7 @@ jobs:
                      InstallScope="perMachine" 
                      Description="Super Mario Brothers Virtualized - NES Emulator"
                      Comments="Built with GitHub Actions"
-                     Manufacturer="Your Name" />
+                     Manufacturer="Jason Brian Hall" />
             
             <!-- Major upgrade configuration -->
             <MajorUpgrade 
@@ -218,7 +218,7 @@ jobs:
                     <RegistryKey Root="HKLM" Key="SOFTWARE\Super Mario Brothers Virtualized">
                       <RegistryValue Type="string" Name="InstallPath" Value="[INSTALLFOLDER]" />
                       <RegistryValue Type="string" Name="Version" Value="${{ needs.build-linux.outputs.version }}" />
-                      <RegistryValue Type="string" Name="Publisher" Value="Your Name" />
+                      <RegistryValue Type="string" Name="Publisher" Value="Jason Brian Hall" />
                     </RegistryKey>
                     
                     <!-- Optional: Register .nes file association -->
