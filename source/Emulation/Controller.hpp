@@ -47,6 +47,7 @@ public:
     Controller();
     ~Controller();
 
+    void shutdownJoystick();
     /**
      * Initialize SDL joystick subsystem.
      * Returns true if successful, false otherwise.

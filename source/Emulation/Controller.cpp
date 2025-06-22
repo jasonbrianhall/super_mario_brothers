@@ -544,6 +544,32 @@ void Controller::handleControllerButton(Player player, SDL_GameControllerButton 
     }
 }
 
+void Controller::shutdownJoystick() {
+/*    // Close any open joysticks
+    if (player1Joystick) {
+        SDL_JoystickClose(player1Joystick);
+        player1Joystick = nullptr;
+    }
+    
+    if (player2Joystick) {
+        SDL_JoystickClose(player2Joystick);
+        player2Joystick = nullptr;
+    }
+    
+    // Close any open game controllers
+    if (player1Controller) {
+        SDL_GameControllerClose(player1Controller);
+        player1Controller = nullptr;
+    }
+    
+    if (player2Controller) {
+        SDL_GameControllerClose(player2Controller);
+        player2Controller = nullptr;
+    }
+    
+    std::cout << "Controller system shut down" << std::endl; */
+}
+
 void Controller::handleControllerAxis(Player player, SDL_GameControllerAxis axis, Sint16 value)
 {
     if (axis == SDL_CONTROLLER_AXIS_LEFTX)
