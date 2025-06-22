@@ -223,7 +223,7 @@ jobs:
                       </Component>
                     </Directory>
                     <Directory Id="Gtk3" Name="gtk-3.0">
-                      <Component Id="Gtk3Dir" Guid="BB820903-A9A0-43F5-9FFA-5C300BD8F3AC>
+                      <Component Id="Gtk3Dir" Guid="BB820903-A9A0-43F5-9FFA-5C300BD8F3AC">
                         <CreateFolder />
                         <RemoveFolder Id="RemoveGtk3" On="uninstall" />
                         <RegistryValue Root="HKCU" Key="Software\SuperMarioBrothers\Components" 
