@@ -1,0 +1,526 @@
+name: Build Super Mario Brothers Virtualized
+
+on:
+  push:
+    branches: [ master, dev ]
+    paths:
+      - '**.cpp'
+      - '**.hpp'
+      - '**.h'
+      - 'Makefile'
+      - '**/Makefile'
+      - '**.yml'
+      - '**.yaml'
+  pull_request:
+    branches: [ master, dev ]
+    paths:
+      - '**.cpp'
+      - '**.hpp'
+      - '**.h'
+      - 'Makefile'
+      - '**/Makefile'
+      - '**.yml'
+      - '**.yaml'
+  workflow_dispatch:
+
+env:
+  PRODUCT_VERSION: "1.0.${{ github.run_number }}"
+  UPGRADE_CODE: "A8B2C934-9E53-428B-AF2C-DD863G8E7824"
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    container: 
+      image: fedora:41
+    outputs:
+      version: ${{ env.PRODUCT_VERSION }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Cross-Compilation Dependencies
+      run: |
+        dnf -y install \
+          mingw64-gcc mingw64-gcc-c++ \
+          mingw64-gtk3 mingw64-gtkmm30 \
+          mingw64-SDL2 mingw64-SDL2_mixer \
+          wine wine-devel \
+          binutils make zip unzip \
+          gcc-c++ SDL2-devel gtk3-devel gtkmm30-devel \
+          alsa-lib-devel pulseaudio-libs-devel
+
+    - name: Build Windows GTK Version
+      run: |
+        make windows
+
+    - name: Prepare Build Artifacts
+      working-directory: build/windows
+      run: |
+        # Copy documentation and icon if they exist
+        if [ -f "../../README.md" ]; then cp ../../README.md .; fi
+        if [ -f "../../LICENSE" ]; then cp ../../LICENSE . ; fi
+        if [ -f "../../LICENSE.md" ]; then cp ../../LICENSE.md . ; fi
+        if [ -f "../../icon.ico" ]; then cp ../../icon.ico . ; fi
+        
+        # Create file list for MSI
+        echo "Creating file inventory..."
+        find . -name "*.dll" -type f | sort > dll_list.txt
+        find . -name "*.exe" -type f | sort > exe_list.txt
+        
+        # Create portable ZIP
+        zip -r ../../SMBVirtualized-GTK-Portable.zip ./*
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: smb-virtualized-build
+        path: |
+          build/windows/**/*
+          SMBVirtualized-GTK-Portable.zip
+        retention-days: 7
+
+  build-msi-windows:
+    needs: build-linux
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: smb-virtualized-build
+        path: artifacts
+
+    - name: Setup WiX Toolset
+      run: |
+        # Download and install WiX Toolset v3
+        Invoke-WebRequest -Uri "https://github.com/wixtoolset/wix3/releases/download/wix3112rtm/wix311-binaries.zip" -OutFile "wix.zip"
+        Expand-Archive -Path "wix.zip" -DestinationPath "wix"
+        echo "$env:GITHUB_WORKSPACE\wix" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+    - name: Create MIT License File
+      run: |
+        @"
+        MIT License
+        
+        Copyright (c) 2025 Jason Hall
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        "@ | Out-File -FilePath "artifacts\build\windows\LICENSE.txt" -Encoding UTF8
+
+    - name: Generate Advanced MSI Installer
+      working-directory: artifacts/build/windows
+      run: |
+        # Generate component entries for all DLLs
+        $dllEntries = Get-ChildItem -Name "*.dll" | ForEach-Object {
+          $safeId = $_ -replace '[^a-zA-Z0-9]', '_'
+          "          <File Id=`"$safeId`" Name=`"$_`" Source=`"$_`"/>"
+        }
+        
+        # Determine the main executable name (adjust as needed based on your build)
+        $mainExe = "super_mario_brothers.exe"  # Update this to match your actual executable name
+        
+        # Create advanced WXS installer
+        @"
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+          
+          <Product Id="*" 
+                   Name="Super Mario Brothers Virtualized" 
+                   Language="1033" 
+                   Version="${{ needs.build-linux.outputs.version }}" 
+                   Manufacturer="Your Name" 
+                   UpgradeCode="${{ env.UPGRADE_CODE }}"> 
+            
+            <Package InstallerVersion="500" 
+                     Compressed="yes" 
+                     InstallScope="perMachine" 
+                     Description="Super Mario Brothers Virtualized - NES Emulator"
+                     Comments="Built with GitHub Actions"
+                     Manufacturer="Your Name" />
+            
+            <!-- Major upgrade configuration -->
+            <MajorUpgrade 
+              DowngradeErrorMessage="A newer version of Super Mario Brothers Virtualized is already installed. Please uninstall it first." 
+              Schedule="afterInstallInitialize" />
+            
+            <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+            
+            <!-- License agreement -->
+            <WixVariable Id="WixUILicenseRtf" Value="License.rtf" />
+            
+            <!-- Custom properties -->
+            <Property Id="ARPPRODUCTICON" Value="SMBIcon" />
+            <Property Id="ARPURLINFOABOUT" Value="https://github.com/yourusername/super_mario_brothers" />
+            <Property Id="ARPNOREPAIR" Value="yes" />
+            <Property Id="ARPNOMODIFY" Value="yes" />
+            <Property Id="ARPHELPLINK" Value="https://github.com/yourusername/super_mario_brothers/issues" />
+            
+            <!-- Installation scope choice -->
+            <Property Id="ApplicationFolderName" Value="Super Mario Brothers Virtualized" />
+            <Property Id="WixAppFolder" Value="WixPerMachineFolder" />
+            <WixVariable Id="WixUISupportPerUser" Value="1" />
+            <WixVariable Id="WixUISupportPerMachine" Value="1" />
+            
+            <Directory Id="TARGETDIR" Name="SourceDir">
+              <!-- Program Files installation -->
+              <Directory Id="ProgramFilesFolder">
+                <Directory Id="INSTALLFOLDER" Name="!(bind.Property.ApplicationFolderName)">
+                  
+                  <!-- Main application component -->
+                  <Component Id="MainExecutable" 
+                           Guid="B58E63D9-4F06-59G7-C36G-2F7D0E5B9E45"
+                           Win64="no">
+                    <File Id="MainEXE" 
+                          Name="$mainExe" 
+                          Source="$mainExe" 
+                          KeyPath="yes">
+                      <!-- File associations for ROM files could go here -->
+                      <Shortcut Id="StartMenuShortcut"
+                               Directory="ApplicationProgramsFolder"
+                               Name="Super Mario Brothers Virtualized"
+                               WorkingDirectory="INSTALLFOLDER"
+                               Description="Launch Super Mario Brothers Virtualized"
+                               Icon="SMBIcon" />
+                    </File>
+                    
+                    <!-- Application files -->
+                    <File Id="README" Name="README.md" Source="README.md" />
+                    <File Id="LICENSE_MD" Name="LICENSE.md" Source="LICENSE.md" />
+                    <File Id="LICENSE_TXT" Name="LICENSE.txt" Source="LICENSE.txt" />
+                    
+                    <!-- Include icon if it exists -->
+                    <File Id="IconFile" Name="icon.ico" Source="icon.ico" />
+                    
+                    <!-- DLL files -->
+        $($dllEntries -join "`r`n")
+                    
+                    <!-- Registry entries for uninstall info and file associations -->
+                    <RegistryKey Root="HKLM" Key="SOFTWARE\Super Mario Brothers Virtualized">
+                      <RegistryValue Type="string" Name="InstallPath" Value="[INSTALLFOLDER]" />
+                      <RegistryValue Type="string" Name="Version" Value="${{ needs.build-linux.outputs.version }}" />
+                      <RegistryValue Type="string" Name="Publisher" Value="Your Name" />
+                    </RegistryKey>
+                    
+                    <!-- Optional: Register .nes file association -->
+                    <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\.nes">
+                      <RegistryValue Type="string" Value="SMBVirtualized.NESFile" />
+                    </RegistryKey>
+                    <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\SMBVirtualized.NESFile">
+                      <RegistryValue Type="string" Value="NES ROM File" />
+                    </RegistryKey>
+                    <RegistryKey Root="HKLM" Key="SOFTWARE\Classes\SMBVirtualized.NESFile\shell\open\command">
+                      <RegistryValue Type="string" Value='"[INSTALLFOLDER]$mainExe" "%1"' />
+                    </RegistryKey>
+                  </Component>
+                  
+                  <!-- GTK Runtime directories -->
+                  <Directory Id="LibDir" Name="lib">
+                    <Directory Id="GdkPixbuf" Name="gdk-pixbuf-2.0">
+                      <Component Id="GdkPixbufDir" Guid="G9B4C826-E04B-5F78-B9D4-753E3G0F6B53">
+                        <CreateFolder />
+                        <RemoveFolder Id="RemoveGdkPixbuf" On="uninstall" />
+                        <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
+                                     Type="integer" Name="GdkPixbuf" Value="1" KeyPath="yes"/>
+                      </Component>
+                    </Directory>
+                    <Directory Id="Gtk3" Name="gtk-3.0">
+                      <Component Id="Gtk3Dir" Guid="C2E5D270-9F3C-5G89-C7E4-864G3G0F7C64">
+                        <CreateFolder />
+                        <RemoveFolder Id="RemoveGtk3" On="uninstall" />
+                        <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
+                                     Type="integer" Name="Gtk3" Value="1" KeyPath="yes"/>
+                      </Component>
+                    </Directory>
+                  </Directory>
+                  
+                  <Directory Id="ShareDir" Name="share">
+                    <Directory Id="GLib2" Name="glib-2.0">
+                      <Directory Id="Schemas" Name="schemas">
+                        <Component Id="GtkSchemas" Guid="D8F7E956-C7F2-5G93-9E2F-975F4G0F8D75">
+                          <File Id="GSchemas" Name="gschemas.compiled" 
+                                Source="share/glib-2.0/schemas/gschemas.compiled"/>
+                          <RemoveFolder Id="RemoveSchemas" On="uninstall" />
+                          <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
+                                       Type="integer" Name="Schemas" Value="1" KeyPath="yes"/>
+                        </Component>
+                      </Directory>
+                    </Directory>
+                    <Directory Id="Icons" Name="icons">
+                      <Component Id="IconsDir" Guid="E6G8F482-D6E4-5G94-B4G6-086G5G0F9G86">
+                        <CreateFolder />
+                        <RemoveFolder Id="RemoveIcons" On="uninstall" />
+                        <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
+                                     Type="integer" Name="Icons" Value="1" KeyPath="yes"/>
+                      </Component>
+                    </Directory>
+                    <Directory Id="Themes" Name="themes">
+                      <Component Id="ThemesDir" Guid="F3H9G593-E7G5-5H05-D5H7-197H6H0H0H97">
+                        <CreateFolder />
+                        <RemoveFolder Id="RemoveThemes" On="uninstall" />
+                        <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Components" 
+                                     Type="integer" Name="Themes" Value="1" KeyPath="yes"/>
+                      </Component>
+                    </Directory>
+                  </Directory>
+                </Directory>
+              </Directory>
+              
+              <!-- Start Menu shortcuts -->
+              <Directory Id="ProgramMenuFolder">
+                <Directory Id="ApplicationProgramsFolder" Name="Super Mario Brothers Virtualized">
+                  <Component Id="ApplicationShortcuts" Guid="G0I2E570-G8B2-5I64-0D83-F42E9GF63E80">
+                    <Shortcut Id="UninstallShortcut"
+                             Name="Uninstall Super Mario Brothers Virtualized"
+                             Target="[SystemFolder]msiexec.exe"
+                             Arguments="/x [ProductCode]"
+                             Description="Uninstall Super Mario Brothers Virtualized" />
+                    <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall"/>
+                    <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Shortcuts" 
+                                 Name="StartMenu" Type="integer" Value="1" KeyPath="yes"/>
+                  </Component>
+                </Directory>
+              </Directory>
+              
+              <!-- Desktop shortcut (optional) -->
+              <Directory Id="DesktopFolder" Name="Desktop">
+                <Component Id="DesktopShortcut" Guid="H6J0G432-G0C8-5J79-9G2B-E53G7GF0BH91">
+                  <Condition>DESKTOP_SHORTCUT</Condition>
+                  <Shortcut Id="DesktopShortcut" 
+                           Name="Super Mario Brothers Virtualized" 
+                           Target="[INSTALLFOLDER]$mainExe"
+                           WorkingDirectory="INSTALLFOLDER"
+                           Description="Launch Super Mario Brothers Virtualized"
+                           Icon="SMBIcon"/>
+                  <RegistryValue Root="HKCU" Key="Software\SMBVirtualized\Shortcuts" 
+                               Name="Desktop" Type="integer" Value="1" KeyPath="yes"/>
+                </Component>
+              </Directory>
+            </Directory>
+            
+            <!-- Feature definitions -->
+            <Feature Id="ProductFeature" 
+                     Title="Super Mario Brothers Virtualized" 
+                     Description="The main Super Mario Brothers Virtualized application and required runtime files."
+                     Level="1" 
+                     ConfigurableDirectory="INSTALLFOLDER"
+                     AllowAdvertise="no">
+              <ComponentRef Id="MainExecutable" />
+              <ComponentRef Id="ApplicationShortcuts" />
+              <ComponentRef Id="GtkSchemas" />
+              <ComponentRef Id="GdkPixbufDir" />
+              <ComponentRef Id="Gtk3Dir" />
+              <ComponentRef Id="IconsDir" />
+              <ComponentRef Id="ThemesDir" />
+            </Feature>
+            
+            <Feature Id="DesktopShortcutFeature" 
+                     Title="Desktop Shortcut" 
+                     Description="Create a shortcut on the desktop."
+                     Level="1000">
+              <ComponentRef Id="DesktopShortcut" />
+            </Feature>
+            
+            <!-- Application icon -->
+            <Icon Id="SMBIcon" SourceFile="icon.ico"/>
+            
+            <!-- Custom actions for cleanup -->
+            <CustomAction Id="CleanupRegistryOnUninstall" 
+                         Script="vbscript"
+                         Execute="deferred"
+                         Impersonate="no">
+              <![CDATA[
+                On Error Resume Next
+                Set shell = CreateObject("WScript.Shell")
+                shell.RegDelete "HKLM\SOFTWARE\Super Mario Brothers Virtualized\"
+                shell.RegDelete "HKCU\Software\SMBVirtualized\"
+              ]]>
+            </CustomAction>
+            
+            <InstallExecuteSequence>
+              <Custom Action="CleanupRegistryOnUninstall" Before="RemoveFiles">
+                REMOVE="ALL"
+              </Custom>
+            </InstallExecuteSequence>
+            
+            <!-- UI Configuration -->
+            <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+            <Property Id="DESKTOP_SHORTCUT" Value="1" />
+            
+            <UIRef Id="WixUI_FeatureTree" />
+            <UIRef Id="WixUI_ErrorProgressText" />
+            
+          </Product>
+        </Wix>
+        "@ | Out-File -FilePath "installer.wxs" -Encoding UTF8
+
+    - name: Create License RTF for Installer
+      working-directory: artifacts/build/windows
+      run: |
+        @"
+        {\rtf1\ansi\deff0 {\fonttbl {\f0 Times New Roman;}}
+        \f0\fs24
+        MIT License\par
+        \par
+        Copyright (c) 2025 Jaosn Hall\par
+        \par
+        Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:\par
+        \par
+        The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.\par
+        \par
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.\par
+        }
+        "@ | Out-File -FilePath "License.rtf" -Encoding UTF8
+
+    - name: Build MSI Installer
+      working-directory: artifacts/build/windows
+      run: |
+        # Debug: Show current directory and files
+        Write-Host "=== DEBUG: Current directory ==="
+        Get-Location
+        Write-Host "=== DEBUG: Files in current directory ==="
+        Get-ChildItem
+        
+        # Compile the installer
+        Write-Host "=== Building MSI installer ==="
+        & candle.exe installer.wxs
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Candle compilation failed with exit code $LASTEXITCODE"
+          exit 1
+        }
+        
+        Write-Host "=== DEBUG: Files after candle ==="
+        Get-ChildItem
+        
+        & light.exe -ext WixUIExtension installer.wixobj -o "SMBVirtualized-GTK.msi"
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Light linking failed with exit code $LASTEXITCODE"
+          exit 1
+        }
+        
+        Write-Host "=== DEBUG: Files after light ==="
+        Get-ChildItem
+        
+        # Verify MSI was created
+        if (Test-Path "SMBVirtualized-GTK.msi") {
+          Write-Host "✅ MSI installer created successfully: SMBVirtualized-GTK.msi"
+          $msiSize = (Get-Item "SMBVirtualized-GTK.msi").Length
+          Write-Host "MSI file size: $msiSize bytes"
+        } else {
+          Write-Error "❌ MSI file was not created!"
+          exit 1
+        }
+
+    - name: Upload MSI Installer
+      uses: actions/upload-artifact@v4
+      with:
+        name: SMBVirtualized-GTK.msi
+        path: artifacts/build/windows/SMBVirtualized-GTK.msi
+
+    - name: Upload Portable ZIP
+      uses: actions/upload-artifact@v4
+      with:
+        name: SMBVirtualized-GTK-Portable.zip
+        path: artifacts/SMBVirtualized-GTK-Portable.zip
+
+  create-release:
+    needs: [build-linux, build-msi-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: github.event_name == 'push'
+    
+    steps:
+    - name: Download MSI Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: SMBVirtualized-GTK.msi
+        path: release
+
+    - name: Download Portable Artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: SMBVirtualized-GTK-Portable.zip
+        path: release
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          release/SMBVirtualized-GTK.msi
+          release/SMBVirtualized-GTK-Portable.zip
+        tag_name: ${{ github.ref == 'refs/heads/master' && format('v{0}', github.run_number) || format('dev-v{0}', github.run_number) }}
+        name: ${{ github.ref == 'refs/heads/master' && format('Release v{0}', github.run_number) || format('Dev Build v{0}', github.run_number) }}
+        draft: false
+        prerelease: ${{ github.ref != 'refs/heads/master' }}
+        make_latest: ${{ github.ref == 'refs/heads/master' }}
+        body: |
+          ## ${{ github.ref == 'refs/heads/master' && 'Stable Release' || 'Development Build' }}
+          
+          **Version:** ${{ needs.build-linux.outputs.version }}  
+          **Commit:** ${{ github.sha }}  
+          **Build:** #${{ github.run_number }}  
+          
+          ### 🎮 Super Mario Brothers Virtualized
+          A high-performance NES emulator built with GTK3, specifically optimized for Super Mario Brothers gameplay.
+          
+          ### 📦 Downloads
+          - **SMBVirtualized-GTK.msi** - Windows installer with uninstall support and .NES file association
+          - **SMBVirtualized-GTK-Portable.zip** - Portable version (no installation required)
+          
+          ### ✨ Installer Features
+          - ✅ User/Machine installation scope choice
+          - ✅ Custom installation directory
+          - ✅ Start menu shortcuts with uninstall option
+          - ✅ Optional desktop shortcut
+          - ✅ .NES file association for double-click ROM loading
+          - ✅ Proper uninstall support
+          - ✅ MIT License agreement
+          - ✅ Registry cleanup on uninstall
+          - ✅ Add/Remove Programs integration
+          
+          ### 🎯 Virtualization Features
+          - NES CPU (6502) Virtualization
+          - Picture Processing Unit (PPU) virtualization
+          - Audio Processing Unit (APU) with sound
+          - Controller input support
+          - Video filtering and enhancement options
+          - Configuration management
+          
+          ### 🛠️ Technical Details
+          - Built on: Linux (Fedora 41 container)
+          - MSI compiled on: Windows Latest
+          - GTK3 runtime included
+          - All dependencies bundled
+          - Cross-compiled with MinGW-w64
+          
+          ### 🕹️ Usage
+          1. Install using the MSI installer or extract the portable ZIP
+          2. Launch "Super Mario Brothers Virtualized" from Start Menu or Desktop
+          3. Load your legally-obtained NES ROM files
+          4. Configure controls and display options as needed
+          5. Enjoy classic NES gaming!
+          
+          ---
+          *Built with ❤️ using GitHub Actions*
+          
+          **Note:** This emulator does not include ROM files. You must provide your own legally-obtained NES ROM files.
