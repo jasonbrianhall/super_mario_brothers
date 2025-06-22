@@ -189,8 +189,8 @@ jobs:
                            Guid="85114FA9-FB15-4DB8-9F62-6A23158CBAFA"
                            Win64="no">
                     <File Id="MainEXE" 
-                          Name="SMB.exe" 
-                          Source="SMB.exe" 
+                          Name="SMBC.exe" 
+                          Source="SMBC.exe" 
                           KeyPath="yes">
                       <!-- File associations could go here -->
                     </File>
@@ -270,7 +270,7 @@ jobs:
                   <Component Id="ApplicationShortcuts" Guid="413A99F3-B168-4D24-A086-FDE8AE601352">
                     <Shortcut Id="ApplicationStartMenu" 
                              Name="Super Mario Brothers" 
-                             Target="[INSTALLFOLDER]SMB.exe" 
+                             Target="[INSTALLFOLDER]SMBC.exe" 
                              WorkingDirectory="INSTALLFOLDER"
                              Description="Launch Super Mario Brothers Game"
                              Icon="TetrimoneIcon"/>
@@ -292,7 +292,7 @@ jobs:
                   <Condition>DESKTOP_SHORTCUT</Condition>
                   <Shortcut Id="DesktopShortcut" 
                            Name="Super Mario Brothers" 
-                           Target="[INSTALLFOLDER]SMB.exe"
+                           Target="[INSTALLFOLDER]SMBC.exe"
                            WorkingDirectory="INSTALLFOLDER"
                            Description="Launch Super Mario Brothers Game"
                            Icon="TetrimoneIcon"/>
