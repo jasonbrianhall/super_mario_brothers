@@ -747,18 +747,48 @@ void GTKMainWindow::showAudioSettings()
     // TODO: Implement audio settings dialog
 }
 
+// Replace the showAboutDialog() method in GTKMainWindow.cpp:
+
 void GTKMainWindow::showAboutDialog() 
 {
     GtkWidget* dialog = gtk_about_dialog_new();
     
     gtk_about_dialog_set_program_name(GTK_ABOUT_DIALOG(dialog), APP_TITLE);
     gtk_about_dialog_set_version(GTK_ABOUT_DIALOG(dialog), "1.0");
+    
+    // Updated comments with Nintendo acknowledgment and fair use notice
     gtk_about_dialog_set_comments(GTK_ABOUT_DIALOG(dialog), 
-        "A Super Mario Bros virtualizer built with SDL2 and GTK+");
+        "A Super Mario Bros virtualizer built with SDL2 and GTK+\n\n"
+        "Super Mario Bros is a trademark of Nintendo Co., Ltd.\n"
+        "This virtualizer is an independent implementation and is not affiliated with Nintendo.\n\n"
+        "IMPORTANT LEGAL NOTICE:\n"
+        "You must legally own a copy of Super Mario Bros to use this virtualizer.\n"
+        "This software is intended for fair use and educational purposes only.\n"
+        "Game data is embedded within this software for convenience.\n\n"
+        "Special thanks to Nintendo for creating such an iconic and beloved game!"
+    );
+    
     gtk_about_dialog_set_license_type(GTK_ABOUT_DIALOG(dialog), GTK_LICENSE_MIT_X11);
     
-    const char* authors[] = {"Jason Hall", NULL};
+    // Updated copyright to include Nintendo acknowledgment
+    gtk_about_dialog_set_copyright(GTK_ABOUT_DIALOG(dialog), 
+        "Copyright © 2024 Jason Hall (Virtualizer)\n"
+        "Super Mario Bros © 1985 Nintendo Co., Ltd."
+    );
+    
+    const char* authors[] = {
+        "Jason Hall (Virtualizer Developer)", 
+        "",
+        "Original Game:",
+        "Shigeru Miyamoto (Game Designer)",
+        "Nintendo Co., Ltd. (Publisher)",
+        NULL
+    };
     gtk_about_dialog_set_authors(GTK_ABOUT_DIALOG(dialog), authors);
+    
+    // Add website link (optional)
+    gtk_about_dialog_set_website(GTK_ABOUT_DIALOG(dialog), "https://www.nintendo.com");
+    gtk_about_dialog_set_website_label(GTK_ABOUT_DIALOG(dialog), "Nintendo Official Website");
     
     gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(window));
     gtk_dialog_run(GTK_DIALOG(dialog));
