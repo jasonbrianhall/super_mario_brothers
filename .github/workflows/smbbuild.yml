@@ -523,4 +523,4 @@ jobs:
           ---
           *Built with ❤️ using GitHub Actions*
           
-          **Note:** This virtualizer does not include ROM files. You must provide your own legally-obtained NES ROM files.
+          **Note:** This virtualizer embeds the NES ROM for your convenience.  You must legally own the original game or some form of it to use this product in order to meet fair use requirements.
