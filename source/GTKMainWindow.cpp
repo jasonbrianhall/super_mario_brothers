@@ -558,6 +558,10 @@ void GTKMainWindow::gameLoop()
 
     // Initialize controller system for both players
     Controller& controller1 = engine.getController1();
+    
+    // IMPORTANT: Load controller configuration AFTER Configuration::initialize() has been called
+    controller1.loadConfiguration();
+    
     bool joystickInitialized = controller1.initJoystick();
     if (joystickInitialized) {
         std::cout << "Controller system initialized successfully!" << std::endl;
@@ -566,11 +570,13 @@ void GTKMainWindow::gameLoop()
         if (controller1.isJoystickConnected(PLAYER_2))
             std::cout << "Player 2 joystick connected" << std::endl;
             
-        controller1.setJoystickPolling(false);
-        std::cout << "Using event-driven joystick input only" << std::endl;
+        // Use configuration setting for joystick polling
+        controller1.setJoystickPolling(Configuration::getJoystickPollingEnabled());
+        std::cout << "Joystick polling: " << (Configuration::getJoystickPollingEnabled() ? "enabled" : "disabled") << std::endl;
     } else {
         std::cout << "No joysticks found. Using keyboard controls only." << std::endl;
     }
+
 
     updateStatusBar("Game started");
 
