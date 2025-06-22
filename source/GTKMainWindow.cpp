@@ -161,30 +161,48 @@ void GTKMainWindow::createStatusBar()
 
 void GTKMainWindow::toggleFullscreen() 
 {
-    static bool isFullscreen = false;
+    GdkWindow* gdkWindow = gtk_widget_get_window(window);
+    if (!gdkWindow) {
+        // Window not realized yet, just return
+        return;
+    }
     
-    if (!isFullscreen) {
-        // Hide the menu bar and status bar
+    GdkWindowState state = gdk_window_get_state(gdkWindow);
+    
+    if (state & GDK_WINDOW_STATE_FULLSCREEN) {
+        // Currently fullscreen, exit it
+        exitFullscreen();
+    } else {
+        // Not fullscreen, enter it
         gtk_widget_hide(menubar);
         gtk_widget_hide(statusbar);
-        
-        // Go fullscreen
         gtk_window_fullscreen(GTK_WINDOW(window));
-        isFullscreen = true;
-    } else {
-        exitFullscreen();
+        updateStatusBar("Fullscreen mode - Press F11 or Escape to exit");
     }
 }
 
 void GTKMainWindow::exitFullscreen() 
 {
-    // Show the menu bar and status bar
-    gtk_widget_show(menubar);
-    gtk_widget_show(statusbar);
+    GdkWindow* gdkWindow = gtk_widget_get_window(window);
+    if (!gdkWindow) {
+        // Window not realized yet, just return
+        return;
+    }
     
-    // Exit fullscreen
-    gtk_window_unfullscreen(GTK_WINDOW(window));
+    GdkWindowState state = gdk_window_get_state(gdkWindow);
+    
+    if (state & GDK_WINDOW_STATE_FULLSCREEN) {
+        // Exit fullscreen
+        gtk_window_unfullscreen(GTK_WINDOW(window));
+        
+        // Show the menu bar and status bar
+        gtk_widget_show(menubar);
+        gtk_widget_show(statusbar);
+        
+        updateStatusBar("Windowed mode");
+    }
 }
+
 
 // GTK drawing callback - renders the game frame
 gboolean GTKMainWindow::onGameDraw(GtkWidget* widget, cairo_t* cr, gpointer user_data) 
@@ -252,15 +270,8 @@ gboolean GTKMainWindow::onKeyPress(GtkWidget* widget, GdkEventKey* event, gpoint
     if (smbEngine) {
         Controller& controller1 = smbEngine->getController1();
         
-        // Handle special keys first
-        if (event->keyval == GDK_KEY_r || event->keyval == GDK_KEY_R) {
-            smbEngine->reset();
-            window->updateStatusBar("Game reset");
-            return TRUE;
-        }
-        
-        // Handle fullscreen toggle (F key)
-        if (event->keyval == GDK_KEY_f || event->keyval == GDK_KEY_F) {
+        // Handle fullscreen toggle (F11 key - standard)
+        if (event->keyval == GDK_KEY_F11) {
             window->toggleFullscreen();
             return TRUE;
         }
