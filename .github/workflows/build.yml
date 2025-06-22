@@ -138,7 +138,7 @@ jobs:
         }
         
         # Determine the main executable name (adjust as needed based on your build)
-        $mainExe = "super_mario_brothers.exe"  # Update this to match your actual executable name
+        $mainExe = "smbc.exe"  # Update this to match your actual executable name
         
         # Create advanced WXS installer
         @"
