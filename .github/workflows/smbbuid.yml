@@ -154,7 +154,7 @@ jobs:
             <Package InstallerVersion="500" 
                      Compressed="yes" 
                      InstallScope="perMachine" 
-                     Description="Super Mario Brothers Virtualized - NES Emulator"
+                     Description="Super Mario Brothers Virtualized - NES Virtualizer"
                      Comments="Built with GitHub Actions"
                      Manufacturer="Jason Brian Hall" />
             
@@ -481,7 +481,7 @@ jobs:
           **Build:** #${{ github.run_number }}  
           
           ### 🎮 Super Mario Brothers Virtualized
-          A high-performance NES emulator built with GTK3, specifically optimized for Super Mario Brothers gameplay.
+          A high-performance NES virtualizer built with GTK3, specifically optimized for Super Mario Brothers gameplay.
           
           ### 📦 Downloads
           - **SMBVirtualized-GTK.msi** - Windows installer with uninstall support and .NES file association
@@ -523,4 +523,4 @@ jobs:
           ---
           *Built with ❤️ using GitHub Actions*
           
-          **Note:** This emulator does not include ROM files. You must provide your own legally-obtained NES ROM files.
+          **Note:** This virtualizer does not include ROM files. You must provide your own legally-obtained NES ROM files.
