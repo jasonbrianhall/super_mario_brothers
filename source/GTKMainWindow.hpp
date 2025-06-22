@@ -13,7 +13,14 @@
 class SMBEngine;
 
 // Include Player enum from Controller
-enum Player { PLAYER_1 = 0, PLAYER_2 = 1 };
+#ifndef PLAYER_ENUM_DEFINED
+#define PLAYER_ENUM_DEFINED
+enum Player
+{
+    PLAYER_1 = 0,
+    PLAYER_2 = 1
+};
+#endif // PLAYER_ENUM_DEFINED
 
 class GTKMainWindow {
 public:
