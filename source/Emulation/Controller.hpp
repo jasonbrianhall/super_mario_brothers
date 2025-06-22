@@ -6,6 +6,9 @@
 #include <array>
 #include <iostream>
 
+#ifndef CONTROLLER_ENUMS_INCLUDED
+#define CONTROLLER_ENUMS_INCLUDED
+
 /**
  * Buttons found on a standard controller.
  */
@@ -24,11 +27,13 @@ enum ControllerButton
 /**
  * Player identifiers
  */
-enum Player
+/*enum Player
 {
     PLAYER_1 = 0,
     PLAYER_2 = 1
-};
+};*/
+
+#endif // CONTROLLER_ENUMS_INCLUDED
 
 /**
  * Emulates NES game controller devices for two players.

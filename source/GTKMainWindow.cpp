@@ -1,4 +1,6 @@
-#include "Main.hpp"
+// Replace your GTKMainWindow.cpp with this corrected version:
+
+#include "GTKMainWindow.hpp"
 #include "SMB/SMBEngine.hpp"
 #include "Emulation/Controller.hpp"
 #include "Configuration.hpp"
@@ -15,7 +17,6 @@
 #ifdef _WIN32
     WindowsAudio* windowsAudio;
 #endif
-
 
 // Global variables for the game engine
 static SMBEngine* smbEngine = nullptr;
@@ -468,10 +469,31 @@ void GTKMainWindow::gameLoop()
         memset(prevFrameBuffer, 0, RENDER_WIDTH * RENDER_HEIGHT * sizeof(uint32_t));
     }
 
-    // Initialize the SMB engine with embedded ROM data - MOVED UP BEFORE AUDIO INIT
+    // Initialize the SMB engine with embedded ROM data
     SMBEngine engine(const_cast<uint8_t*>(smbRomData));
     smbEngine = &engine;
     engine.reset();
+
+    // Initialize controller system for both players
+    Controller& controller1 = engine.getController1();
+    
+    // IMPORTANT: Load controller configuration AFTER Configuration::initialize() has been called
+    controller1.loadConfiguration();
+    
+    bool joystickInitialized = controller1.initJoystick();
+    if (joystickInitialized) {
+        std::cout << "Controller system initialized successfully!" << std::endl;
+        if (controller1.isJoystickConnected(PLAYER_1))
+            std::cout << "Player 1 joystick connected" << std::endl;
+        if (controller1.isJoystickConnected(PLAYER_2))
+            std::cout << "Player 2 joystick connected" << std::endl;
+            
+        // Use configuration setting for joystick polling
+        controller1.setJoystickPolling(Configuration::getJoystickPollingEnabled());
+        std::cout << "Joystick polling: " << (Configuration::getJoystickPollingEnabled() ? "enabled" : "disabled") << std::endl;
+    } else {
+        std::cout << "No joysticks found. Using keyboard controls only." << std::endl;
+    }
 
     // Initialize audio AFTER engine is created
     bool audioInitialized = false;
@@ -555,28 +577,6 @@ void GTKMainWindow::gameLoop()
         windowsAudio->start();
     }
 #endif
-
-    // Initialize controller system for both players
-    Controller& controller1 = engine.getController1();
-    
-    // IMPORTANT: Load controller configuration AFTER Configuration::initialize() has been called
-    controller1.loadConfiguration();
-    
-    bool joystickInitialized = controller1.initJoystick();
-    if (joystickInitialized) {
-        std::cout << "Controller system initialized successfully!" << std::endl;
-        if (controller1.isJoystickConnected(PLAYER_1))
-            std::cout << "Player 1 joystick connected" << std::endl;
-        if (controller1.isJoystickConnected(PLAYER_2))
-            std::cout << "Player 2 joystick connected" << std::endl;
-            
-        // Use configuration setting for joystick polling
-        controller1.setJoystickPolling(Configuration::getJoystickPollingEnabled());
-        std::cout << "Joystick polling: " << (Configuration::getJoystickPollingEnabled() ? "enabled" : "disabled") << std::endl;
-    } else {
-        std::cout << "No joysticks found. Using keyboard controls only." << std::endl;
-    }
-
 
     updateStatusBar("Game started");
 
@@ -772,12 +772,6 @@ void GTKMainWindow::showAudioSettings()
     // TODO: Implement audio settings dialog
 }
 
-void GTKMainWindow::showControlSettings() 
-{
-    updateStatusBar("Opening control settings...");
-    // TODO: Implement control settings dialog
-}
-
 void GTKMainWindow::showAboutDialog() 
 {
     GtkWidget* dialog = gtk_about_dialog_new();
@@ -796,6 +790,452 @@ void GTKMainWindow::showAboutDialog()
     gtk_widget_destroy(dialog);
     
     updateStatusBar("Ready");
+}
+
+void GTKMainWindow::showControlSettings() 
+{
+    updateStatusBar("Opening control settings...");
+    
+    // Create the dialog
+    GtkWidget* dialog = gtk_dialog_new_with_buttons(
+        "Controller Settings",
+        GTK_WINDOW(window),
+        GTK_DIALOG_MODAL,
+        "Cancel", GTK_RESPONSE_CANCEL,
+        "Apply", GTK_RESPONSE_APPLY,
+        "OK", GTK_RESPONSE_OK,
+        NULL
+    );
+    
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 600, 500);
+    
+    // Get the content area
+    GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    
+    // Create notebook for tabs
+    GtkWidget* notebook = gtk_notebook_new();
+    gtk_container_add(GTK_CONTAINER(content_area), notebook);
+    
+    // Create Player 1 tab
+    GtkWidget* player1_tab = createPlayerControlTab(PLAYER_1);
+    GtkWidget* player1_label = gtk_label_new("Player 1");
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), player1_tab, player1_label);
+    
+    // Create Player 2 tab
+    GtkWidget* player2_tab = createPlayerControlTab(PLAYER_2);
+    GtkWidget* player2_label = gtk_label_new("Player 2");
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), player2_tab, player2_label);
+    
+    // Create General Settings tab
+    GtkWidget* general_tab = createGeneralControlTab();
+    GtkWidget* general_label = gtk_label_new("General");
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook), general_tab, general_label);
+    
+    gtk_widget_show_all(dialog);
+    
+    // Run the dialog
+    gint response = gtk_dialog_run(GTK_DIALOG(dialog));
+    
+    if (response == GTK_RESPONSE_OK || response == GTK_RESPONSE_APPLY) {
+        // Save the settings
+        saveControllerSettings();
+        
+        // Reload controller configuration
+        if (smbEngine) {
+            Controller& controller = smbEngine->getController1();
+            controller.loadConfiguration();
+            updateStatusBar("Controller settings saved and applied");
+        } else {
+            updateStatusBar("Controller settings saved");
+        }
+        
+        // Save configuration to file
+        Configuration::save();
+    }
+    
+    if (response == GTK_RESPONSE_APPLY) {
+        // Don't close dialog on Apply, just save
+        gtk_widget_destroy(dialog);
+        showControlSettings(); // Reopen the dialog
+        return;
+    }
+    
+    gtk_widget_destroy(dialog);
+    updateStatusBar("Ready");
+}
+
+GtkWidget* GTKMainWindow::createPlayerControlTab(Player player)
+{
+    GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_container_set_border_width(GTK_CONTAINER(vbox), 10);
+    
+    const char* playerName = (player == PLAYER_1) ? "Player 1" : "Player 2";
+    
+    // Player label
+    GtkWidget* player_label = gtk_label_new(NULL);
+    gchar* markup = g_markup_printf_escaped("<b>%s Controls</b>", playerName);
+    gtk_label_set_markup(GTK_LABEL(player_label), markup);
+    g_free(markup);
+    gtk_box_pack_start(GTK_BOX(vbox), player_label, FALSE, FALSE, 0);
+    
+    // Create keyboard section
+    GtkWidget* keyboard_frame = gtk_frame_new("Keyboard Controls");
+    GtkWidget* keyboard_grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(keyboard_grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(keyboard_grid), 10);
+    gtk_container_set_border_width(GTK_CONTAINER(keyboard_grid), 10);
+    gtk_container_add(GTK_CONTAINER(keyboard_frame), keyboard_grid);
+    
+    // Store widgets for later access
+    std::string prefix = (player == PLAYER_1) ? "p1_" : "p2_";
+    
+    // Create keyboard input fields
+    createKeyInputRow(keyboard_grid, 0, "Up:", prefix + "key_up");
+    createKeyInputRow(keyboard_grid, 1, "Down:", prefix + "key_down");
+    createKeyInputRow(keyboard_grid, 2, "Left:", prefix + "key_left");
+    createKeyInputRow(keyboard_grid, 3, "Right:", prefix + "key_right");
+    createKeyInputRow(keyboard_grid, 4, "A Button:", prefix + "key_a");
+    createKeyInputRow(keyboard_grid, 5, "B Button:", prefix + "key_b");
+    createKeyInputRow(keyboard_grid, 6, "Select:", prefix + "key_select");
+    createKeyInputRow(keyboard_grid, 7, "Start:", prefix + "key_start");
+    
+    gtk_box_pack_start(GTK_BOX(vbox), keyboard_frame, FALSE, FALSE, 0);
+    
+    // Create joystick section
+    GtkWidget* joystick_frame = gtk_frame_new("Joystick/Gamepad Controls");
+    GtkWidget* joystick_grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(joystick_grid), 5);
+    gtk_grid_set_column_spacing(GTK_GRID(joystick_grid), 10);
+    gtk_container_set_border_width(GTK_CONTAINER(joystick_grid), 10);
+    gtk_container_add(GTK_CONTAINER(joystick_frame), joystick_grid);
+    
+    // Create joystick button input fields
+    createButtonInputRow(joystick_grid, 0, "A Button:", prefix + "joy_a");
+    createButtonInputRow(joystick_grid, 1, "B Button:", prefix + "joy_b");
+    createButtonInputRow(joystick_grid, 2, "Start:", prefix + "joy_start");
+    createButtonInputRow(joystick_grid, 3, "Select:", prefix + "joy_select");
+    
+    gtk_box_pack_start(GTK_BOX(vbox), joystick_frame, FALSE, FALSE, 0);
+    
+    // Load current values
+    loadPlayerControlValues(player);
+    
+    return vbox;
+}
+
+GtkWidget* GTKMainWindow::createGeneralControlTab()
+{
+    GtkWidget* vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_container_set_border_width(GTK_CONTAINER(vbox), 10);
+    
+    // General settings label
+    GtkWidget* general_label = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(general_label), "<b>General Controller Settings</b>");
+    gtk_box_pack_start(GTK_BOX(vbox), general_label, FALSE, FALSE, 0);
+    
+    // Joystick polling checkbox
+    GtkWidget* polling_check = gtk_check_button_new_with_label("Enable joystick polling (compatibility mode)");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(polling_check), Configuration::getJoystickPollingEnabled());
+    controlWidgets["joystick_polling"] = polling_check;
+    gtk_box_pack_start(GTK_BOX(vbox), polling_check, FALSE, FALSE, 0);
+    
+    // Deadzone setting
+    GtkWidget* deadzone_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    GtkWidget* deadzone_label = gtk_label_new("Joystick Deadzone:");
+    GtkWidget* deadzone_spin = gtk_spin_button_new_with_range(1000, 20000, 500);
+    gtk_spin_button_set_value(GTK_SPIN_BUTTON(deadzone_spin), Configuration::getJoystickDeadzone());
+    controlWidgets["joystick_deadzone"] = deadzone_spin;
+    gtk_box_pack_start(GTK_BOX(deadzone_hbox), deadzone_label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(deadzone_hbox), deadzone_spin, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(vbox), deadzone_hbox, FALSE, FALSE, 0);
+    
+    // Info label
+    GtkWidget* info_label = gtk_label_new(
+        "Joystick polling mode is for older controllers that don't send proper events.\n"
+        "Modern gamepads should work fine with polling disabled.\n\n"
+        "Deadzone controls how far the analog stick must be moved before registering input.\n"
+        "Higher values = less sensitive, Lower values = more sensitive."
+    );
+    gtk_label_set_line_wrap(GTK_LABEL(info_label), TRUE);
+    gtk_widget_set_margin_top(info_label, 20);
+    gtk_box_pack_start(GTK_BOX(vbox), info_label, FALSE, FALSE, 0);
+    
+    // Controller detection section
+    GtkWidget* detection_frame = gtk_frame_new("Connected Controllers");
+    GtkWidget* detection_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    gtk_container_set_border_width(GTK_CONTAINER(detection_vbox), 10);
+    gtk_container_add(GTK_CONTAINER(detection_frame), detection_vbox);
+    
+    // Refresh button
+    GtkWidget* refresh_button = gtk_button_new_with_label("Refresh Controller List");
+    g_signal_connect(refresh_button, "clicked", G_CALLBACK(onRefreshControllers), this);
+    gtk_box_pack_start(GTK_BOX(detection_vbox), refresh_button, FALSE, FALSE, 0);
+    
+    // Controller list
+    GtkWidget* controller_list = gtk_label_new("Click 'Refresh Controller List' to detect controllers");
+    controlWidgets["controller_list"] = controller_list;
+    gtk_label_set_line_wrap(GTK_LABEL(controller_list), TRUE);
+    gtk_box_pack_start(GTK_BOX(detection_vbox), controller_list, FALSE, FALSE, 0);
+    
+    gtk_box_pack_start(GTK_BOX(vbox), detection_frame, TRUE, TRUE, 0);
+    
+    return vbox;
+}
+
+void GTKMainWindow::createKeyInputRow(GtkWidget* grid, int row, const char* label, const std::string& key)
+{
+    GtkWidget* label_widget = gtk_label_new(label);
+    gtk_widget_set_halign(label_widget, GTK_ALIGN_START);
+    
+    GtkWidget* entry = gtk_entry_new();
+    gtk_entry_set_width_chars(GTK_ENTRY(entry), 15);
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "Click and press key");
+    
+    // Make entry non-editable but focusable for key capture
+    gtk_editable_set_editable(GTK_EDITABLE(entry), FALSE);
+    g_signal_connect(entry, "key-press-event", G_CALLBACK(onKeyCapture), g_strdup(key.c_str()));
+    
+    // Store widget for later access
+    controlWidgets[key] = entry;
+    
+    gtk_grid_attach(GTK_GRID(grid), label_widget, 0, row, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), entry, 1, row, 1, 1);
+}
+
+void GTKMainWindow::createButtonInputRow(GtkWidget* grid, int row, const char* label, const std::string& key)
+{
+    GtkWidget* label_widget = gtk_label_new(label);
+    gtk_widget_set_halign(label_widget, GTK_ALIGN_START);
+    
+    GtkWidget* spin = gtk_spin_button_new_with_range(0, 31, 1);
+    
+    // Store widget for later access
+    controlWidgets[key] = spin;
+    
+    gtk_grid_attach(GTK_GRID(grid), label_widget, 0, row, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), spin, 1, row, 1, 1);
+}
+
+void GTKMainWindow::loadPlayerControlValues(Player player)
+{
+    std::string prefix = (player == PLAYER_1) ? "p1_" : "p2_";
+    
+    // Load keyboard values
+    if (player == PLAYER_1) {
+        setKeyWidgetValue(prefix + "key_up", Configuration::getPlayer1KeyUp());
+        setKeyWidgetValue(prefix + "key_down", Configuration::getPlayer1KeyDown());
+        setKeyWidgetValue(prefix + "key_left", Configuration::getPlayer1KeyLeft());
+        setKeyWidgetValue(prefix + "key_right", Configuration::getPlayer1KeyRight());
+        setKeyWidgetValue(prefix + "key_a", Configuration::getPlayer1KeyA());
+        setKeyWidgetValue(prefix + "key_b", Configuration::getPlayer1KeyB());
+        setKeyWidgetValue(prefix + "key_select", Configuration::getPlayer1KeySelect());
+        setKeyWidgetValue(prefix + "key_start", Configuration::getPlayer1KeyStart());
+        
+        // Load joystick values
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(controlWidgets[prefix + "joy_a"]), Configuration::getPlayer1JoystickButtonA());
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(controlWidgets[prefix + "joy_b"]), Configuration::getPlayer1JoystickButtonB());
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(controlWidgets[prefix + "joy_start"]), Configuration::getPlayer1JoystickButtonStart());
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(controlWidgets[prefix + "joy_select"]), Configuration::getPlayer1JoystickButtonSelect());
+    } else {
+        setKeyWidgetValue(prefix + "key_up", Configuration::getPlayer2KeyUp());
+        setKeyWidgetValue(prefix + "key_down", Configuration::getPlayer2KeyDown());
+        setKeyWidgetValue(prefix + "key_left", Configuration::getPlayer2KeyLeft());
+        setKeyWidgetValue(prefix + "key_right", Configuration::getPlayer2KeyRight());
+        setKeyWidgetValue(prefix + "key_a", Configuration::getPlayer2KeyA());
+        setKeyWidgetValue(prefix + "key_b", Configuration::getPlayer2KeyB());
+        setKeyWidgetValue(prefix + "key_select", Configuration::getPlayer2KeySelect());
+        setKeyWidgetValue(prefix + "key_start", Configuration::getPlayer2KeyStart());
+        
+        // Load joystick values
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(controlWidgets[prefix + "joy_a"]), Configuration::getPlayer2JoystickButtonA());
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(controlWidgets[prefix + "joy_b"]), Configuration::getPlayer2JoystickButtonB());
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(controlWidgets[prefix + "joy_start"]), Configuration::getPlayer2JoystickButtonStart());
+        gtk_spin_button_set_value(GTK_SPIN_BUTTON(controlWidgets[prefix + "joy_select"]), Configuration::getPlayer2JoystickButtonSelect());
+    }
+}
+
+void GTKMainWindow::setKeyWidgetValue(const std::string& key, int scancode)
+{
+    if (controlWidgets.find(key) != controlWidgets.end()) {
+        const char* keyName = SDL_GetScancodeName(static_cast<SDL_Scancode>(scancode));
+        gtk_entry_set_text(GTK_ENTRY(controlWidgets[key]), keyName);
+        
+        // Store the scancode as widget data
+        g_object_set_data(G_OBJECT(controlWidgets[key]), "scancode", GINT_TO_POINTER(scancode));
+    }
+}
+
+void GTKMainWindow::saveControllerSettings()
+{
+    // Save Player 1 keyboard settings
+    Configuration::setPlayer1KeyUp(getKeyScancode("p1_key_up"));
+    Configuration::setPlayer1KeyDown(getKeyScancode("p1_key_down"));
+    Configuration::setPlayer1KeyLeft(getKeyScancode("p1_key_left"));
+    Configuration::setPlayer1KeyRight(getKeyScancode("p1_key_right"));
+    Configuration::setPlayer1KeyA(getKeyScancode("p1_key_a"));
+    Configuration::setPlayer1KeyB(getKeyScancode("p1_key_b"));
+    Configuration::setPlayer1KeySelect(getKeyScancode("p1_key_select"));
+    Configuration::setPlayer1KeyStart(getKeyScancode("p1_key_start"));
+    
+    // Save Player 1 joystick settings
+    Configuration::setPlayer1JoystickButtonA(gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(controlWidgets["p1_joy_a"])));
+    Configuration::setPlayer1JoystickButtonB(gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(controlWidgets["p1_joy_b"])));
+    Configuration::setPlayer1JoystickButtonStart(gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(controlWidgets["p1_joy_start"])));
+    Configuration::setPlayer1JoystickButtonSelect(gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(controlWidgets["p1_joy_select"])));
+    
+    // Save Player 2 keyboard settings
+    Configuration::setPlayer2KeyUp(getKeyScancode("p2_key_up"));
+    Configuration::setPlayer2KeyDown(getKeyScancode("p2_key_down"));
+    Configuration::setPlayer2KeyLeft(getKeyScancode("p2_key_left"));
+    Configuration::setPlayer2KeyRight(getKeyScancode("p2_key_right"));
+    Configuration::setPlayer2KeyA(getKeyScancode("p2_key_a"));
+    Configuration::setPlayer2KeyB(getKeyScancode("p2_key_b"));
+    Configuration::setPlayer2KeySelect(getKeyScancode("p2_key_select"));
+    Configuration::setPlayer2KeyStart(getKeyScancode("p2_key_start"));
+    
+    // Save Player 2 joystick settings
+    Configuration::setPlayer2JoystickButtonA(gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(controlWidgets["p2_joy_a"])));
+    Configuration::setPlayer2JoystickButtonB(gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(controlWidgets["p2_joy_b"])));
+    Configuration::setPlayer2JoystickButtonStart(gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(controlWidgets["p2_joy_start"])));
+    Configuration::setPlayer2JoystickButtonSelect(gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(controlWidgets["p2_joy_select"])));
+    
+    // Save general settings
+    Configuration::setJoystickPollingEnabled(gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(controlWidgets["joystick_polling"])));
+    Configuration::setJoystickDeadzone(gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(controlWidgets["joystick_deadzone"])));
+}
+
+int GTKMainWindow::getKeyScancode(const std::string& key)
+{
+    if (controlWidgets.find(key) != controlWidgets.end()) {
+        return GPOINTER_TO_INT(g_object_get_data(G_OBJECT(controlWidgets[key]), "scancode"));
+    }
+    return 0;
+}
+
+// Static callback functions
+gboolean GTKMainWindow::onKeyCapture(GtkWidget* widget, GdkEventKey* event, gpointer user_data)
+{
+    char* key = static_cast<char*>(user_data);
+    
+    // Convert GDK key to SDL scancode using the helper function
+    GTKMainWindow* window = static_cast<GTKMainWindow*>(g_object_get_data(G_OBJECT(widget), "window"));
+    if (!window) {
+        // Create a temporary instance to call the helper function
+        GTKMainWindow temp;
+        SDL_Scancode scancode = temp.gdk_keyval_to_sdl_scancode(event->keyval);
+        
+        if (scancode != SDL_SCANCODE_UNKNOWN) {
+            const char* keyName = SDL_GetScancodeName(scancode);
+            gtk_entry_set_text(GTK_ENTRY(widget), keyName);
+            
+            // Store the scancode as widget data
+            g_object_set_data(G_OBJECT(widget), "scancode", GINT_TO_POINTER(scancode));
+        }
+    }
+    
+    return TRUE; // Consume the event
+}
+
+void GTKMainWindow::onRefreshControllers(GtkButton* button, gpointer user_data)
+{
+    GTKMainWindow* window = static_cast<GTKMainWindow*>(user_data);
+    
+    if (smbEngine) {
+        Controller& controller = smbEngine->getController1();
+        
+        // Reinitialize joysticks
+        bool found = controller.initJoystick();
+        
+        std::string info = "Connected Controllers:\n";
+        
+        if (found) {
+            if (controller.isJoystickConnected(PLAYER_1)) {
+                info += "• Player 1: Connected\n";
+            }
+            if (controller.isJoystickConnected(PLAYER_2)) {
+                info += "• Player 2: Connected\n";
+            }
+        } else {
+            info += "No controllers detected.\n";
+        }
+        
+        info += "\nNote: Controllers may need to be reconnected\nafter changing settings.";
+        
+        if (window->controlWidgets.find("controller_list") != window->controlWidgets.end()) {
+            gtk_label_set_text(GTK_LABEL(window->controlWidgets["controller_list"]), info.c_str());
+        }
+    }
+}
+
+// Helper function to convert GDK keyval to SDL scancode
+SDL_Scancode GTKMainWindow::gdk_keyval_to_sdl_scancode(guint keyval)
+{
+    // This is a simplified mapping - you may want to expand this
+    switch (keyval) {
+        case GDK_KEY_Up: return SDL_SCANCODE_UP;
+        case GDK_KEY_Down: return SDL_SCANCODE_DOWN;
+        case GDK_KEY_Left: return SDL_SCANCODE_LEFT;
+        case GDK_KEY_Right: return SDL_SCANCODE_RIGHT;
+        case GDK_KEY_space: return SDL_SCANCODE_SPACE;
+        case GDK_KEY_Return: return SDL_SCANCODE_RETURN;
+        case GDK_KEY_Escape: return SDL_SCANCODE_ESCAPE;
+        case GDK_KEY_Tab: return SDL_SCANCODE_TAB;
+        case GDK_KEY_Shift_L: return SDL_SCANCODE_LSHIFT;
+        case GDK_KEY_Shift_R: return SDL_SCANCODE_RSHIFT;
+        case GDK_KEY_Control_L: return SDL_SCANCODE_LCTRL;
+        case GDK_KEY_Control_R: return SDL_SCANCODE_RCTRL;
+        case GDK_KEY_Alt_L: return SDL_SCANCODE_LALT;
+        case GDK_KEY_Alt_R: return SDL_SCANCODE_RALT;
+        case GDK_KEY_BackSpace: return SDL_SCANCODE_BACKSPACE;
+        case GDK_KEY_Delete: return SDL_SCANCODE_DELETE;
+        case GDK_KEY_Home: return SDL_SCANCODE_HOME;
+        case GDK_KEY_End: return SDL_SCANCODE_END;
+        case GDK_KEY_Page_Up: return SDL_SCANCODE_PAGEUP;
+        case GDK_KEY_Page_Down: return SDL_SCANCODE_PAGEDOWN;
+        case GDK_KEY_Insert: return SDL_SCANCODE_INSERT;
+        
+        // Function keys
+        case GDK_KEY_F1: return SDL_SCANCODE_F1;
+        case GDK_KEY_F2: return SDL_SCANCODE_F2;
+        case GDK_KEY_F3: return SDL_SCANCODE_F3;
+        case GDK_KEY_F4: return SDL_SCANCODE_F4;
+        case GDK_KEY_F5: return SDL_SCANCODE_F5;
+        case GDK_KEY_F6: return SDL_SCANCODE_F6;
+        case GDK_KEY_F7: return SDL_SCANCODE_F7;
+        case GDK_KEY_F8: return SDL_SCANCODE_F8;
+        case GDK_KEY_F9: return SDL_SCANCODE_F9;
+        case GDK_KEY_F10: return SDL_SCANCODE_F10;
+        case GDK_KEY_F11: return SDL_SCANCODE_F11;
+        case GDK_KEY_F12: return SDL_SCANCODE_F12;
+        
+        default:
+            // For letter keys
+            if (keyval >= GDK_KEY_a && keyval <= GDK_KEY_z) {
+                return static_cast<SDL_Scancode>(SDL_SCANCODE_A + (keyval - GDK_KEY_a));
+            }
+            if (keyval >= GDK_KEY_A && keyval <= GDK_KEY_Z) {
+                return static_cast<SDL_Scancode>(SDL_SCANCODE_A + (keyval - GDK_KEY_A));
+            }
+            // For number keys
+            if (keyval >= GDK_KEY_0 && keyval <= GDK_KEY_9) {
+                return static_cast<SDL_Scancode>(SDL_SCANCODE_0 + (keyval - GDK_KEY_0));
+            }
+            // Special characters
+            switch (keyval) {
+                case GDK_KEY_minus: return SDL_SCANCODE_MINUS;
+                case GDK_KEY_equal: return SDL_SCANCODE_EQUALS;
+                case GDK_KEY_bracketleft: return SDL_SCANCODE_LEFTBRACKET;
+                case GDK_KEY_bracketright: return SDL_SCANCODE_RIGHTBRACKET;
+                case GDK_KEY_backslash: return SDL_SCANCODE_BACKSLASH;
+                case GDK_KEY_semicolon: return SDL_SCANCODE_SEMICOLON;
+                case GDK_KEY_apostrophe: return SDL_SCANCODE_APOSTROPHE;
+                case GDK_KEY_grave: return SDL_SCANCODE_GRAVE;
+                case GDK_KEY_comma: return SDL_SCANCODE_COMMA;
+                case GDK_KEY_period: return SDL_SCANCODE_PERIOD;
+                case GDK_KEY_slash: return SDL_SCANCODE_SLASH;
+            }
+            return SDL_SCANCODE_UNKNOWN;
+    }
 }
 
 // Main function to use GTK version

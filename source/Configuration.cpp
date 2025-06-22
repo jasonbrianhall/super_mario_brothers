@@ -2,6 +2,9 @@
 
 #include "Configuration.hpp"
 
+// Static member to store config file name
+std::string Configuration::configFileName;
+
 /**
  * List of all supported configuration options.
  */
@@ -277,6 +280,8 @@ const std::string& ConfigurationOption::getPath() const
 
 void Configuration::initialize(const std::string& fileName)
 {
+    configFileName = fileName;  // Store filename for saving
+    
     // Check that the configuration file exists.
     // If it does not exist, we will fall back to default values.
     //
@@ -295,6 +300,124 @@ void Configuration::initialize(const std::string& fileName)
         {
             option->initializeValue(propertyTree);
         }
+    }
+}
+
+void Configuration::save()
+{
+    if (configFileName.empty()) {
+        std::cerr << "Configuration file name not set, cannot save!" << std::endl;
+        return;
+    }
+    
+    boost::property_tree::ptree propertyTree;
+    
+    // Build property tree from all configuration options
+    for (auto option : configurationOptions) {
+        // This is a bit tricky since we need to know the actual type
+        // We'll need to cast each option to its concrete type
+        
+        // For now, let's handle the common types manually
+        std::string path = option->getPath();
+        
+        if (path == "audio.enabled") {
+            propertyTree.put(path, audioEnabled.getValue());
+        } else if (path == "audio.frequency") {
+            propertyTree.put(path, audioFrequency.getValue());
+        } else if (path == "game.frame_rate") {
+            propertyTree.put(path, frameRate.getValue());
+        } else if (path == "video.palette_file") {
+            propertyTree.put(path, paletteFileName.getValue());
+        } else if (path == "video.scale") {
+            propertyTree.put(path, renderScale.getValue());
+        } else if (path == "game.rom_file") {
+            propertyTree.put(path, romFileName.getValue());
+        } else if (path == "video.scanlines") {
+            propertyTree.put(path, scanlinesEnabled.getValue());
+        } else if (path == "video.vsync") {
+            propertyTree.put(path, vsyncEnabled.getValue());
+        } else if (path == "video.hqdn3d") {
+            propertyTree.put(path, hqdn3dEnabled.getValue());
+        } else if (path == "video.hqdn3d_spatial") {
+            propertyTree.put(path, hqdn3dSpatialStrength.getValue());
+        } else if (path == "video.hqdn3d_temporal") {
+            propertyTree.put(path, hqdn3dTemporalStrength.getValue());
+        } else if (path == "video.antialiasing") {
+            propertyTree.put(path, antiAliasingEnabled.getValue());
+        } else if (path == "video.antialiasing_method") {
+            propertyTree.put(path, antiAliasingMethod.getValue());
+        }
+        // Input settings
+        else if (path == "input.player1.key.up") {
+            propertyTree.put(path, player1KeyUp.getValue());
+        } else if (path == "input.player1.key.down") {
+            propertyTree.put(path, player1KeyDown.getValue());
+        } else if (path == "input.player1.key.left") {
+            propertyTree.put(path, player1KeyLeft.getValue());
+        } else if (path == "input.player1.key.right") {
+            propertyTree.put(path, player1KeyRight.getValue());
+        } else if (path == "input.player1.key.a") {
+            propertyTree.put(path, player1KeyA.getValue());
+        } else if (path == "input.player1.key.b") {
+            propertyTree.put(path, player1KeyB.getValue());
+        } else if (path == "input.player1.key.select") {
+            propertyTree.put(path, player1KeySelect.getValue());
+        } else if (path == "input.player1.key.start") {
+            propertyTree.put(path, player1KeyStart.getValue());
+        }
+        // Player 2 keyboard
+        else if (path == "input.player2.key.up") {
+            propertyTree.put(path, player2KeyUp.getValue());
+        } else if (path == "input.player2.key.down") {
+            propertyTree.put(path, player2KeyDown.getValue());
+        } else if (path == "input.player2.key.left") {
+            propertyTree.put(path, player2KeyLeft.getValue());
+        } else if (path == "input.player2.key.right") {
+            propertyTree.put(path, player2KeyRight.getValue());
+        } else if (path == "input.player2.key.a") {
+            propertyTree.put(path, player2KeyA.getValue());
+        } else if (path == "input.player2.key.b") {
+            propertyTree.put(path, player2KeyB.getValue());
+        } else if (path == "input.player2.key.select") {
+            propertyTree.put(path, player2KeySelect.getValue());
+        } else if (path == "input.player2.key.start") {
+            propertyTree.put(path, player2KeyStart.getValue());
+        }
+        // Joystick settings
+        else if (path == "input.joystick.polling_enabled") {
+            propertyTree.put(path, joystickPollingEnabled.getValue());
+        } else if (path == "input.joystick.deadzone") {
+            propertyTree.put(path, joystickDeadzone.getValue());
+        }
+        // Player 1 joystick buttons
+        else if (path == "input.player1.joystick.button_a") {
+            propertyTree.put(path, player1JoystickButtonA.getValue());
+        } else if (path == "input.player1.joystick.button_b") {
+            propertyTree.put(path, player1JoystickButtonB.getValue());
+        } else if (path == "input.player1.joystick.button_start") {
+            propertyTree.put(path, player1JoystickButtonStart.getValue());
+        } else if (path == "input.player1.joystick.button_select") {
+            propertyTree.put(path, player1JoystickButtonSelect.getValue());
+        }
+        // Player 2 joystick buttons
+        else if (path == "input.player2.joystick.button_a") {
+            propertyTree.put(path, player2JoystickButtonA.getValue());
+        } else if (path == "input.player2.joystick.button_b") {
+            propertyTree.put(path, player2JoystickButtonB.getValue());
+        } else if (path == "input.player2.joystick.button_start") {
+            propertyTree.put(path, player2JoystickButtonStart.getValue());
+        } else if (path == "input.player2.joystick.button_select") {
+            propertyTree.put(path, player2JoystickButtonSelect.getValue());
+        }
+    }
+    
+    // Write to file
+    try {
+        std::ofstream configFile(configFileName);
+        boost::property_tree::ini_parser::write_ini(configFile, propertyTree);
+        std::cout << "Configuration saved to " << configFileName << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "Error saving configuration: " << e.what() << std::endl;
     }
 }
 
@@ -363,132 +486,85 @@ int Configuration::getAntiAliasingMethod()
     return antiAliasingMethod.getValue();
 }
 
-int Configuration::getPlayer1KeyUp()
-{
-    return player1KeyUp.getValue();
-}
+// Player 1 keyboard getters and setters
+int Configuration::getPlayer1KeyUp() { return player1KeyUp.getValue(); }
+void Configuration::setPlayer1KeyUp(int value) { player1KeyUp.setValue(value); }
 
-int Configuration::getPlayer1KeyDown()
-{
-    return player1KeyDown.getValue();
-}
+int Configuration::getPlayer1KeyDown() { return player1KeyDown.getValue(); }
+void Configuration::setPlayer1KeyDown(int value) { player1KeyDown.setValue(value); }
 
-int Configuration::getPlayer1KeyLeft()
-{
-    return player1KeyLeft.getValue();
-}
+int Configuration::getPlayer1KeyLeft() { return player1KeyLeft.getValue(); }
+void Configuration::setPlayer1KeyLeft(int value) { player1KeyLeft.setValue(value); }
 
-int Configuration::getPlayer1KeyRight()
-{
-    return player1KeyRight.getValue();
-}
+int Configuration::getPlayer1KeyRight() { return player1KeyRight.getValue(); }
+void Configuration::setPlayer1KeyRight(int value) { player1KeyRight.setValue(value); }
 
-int Configuration::getPlayer1KeyA()
-{
-    return player1KeyA.getValue();
-}
+int Configuration::getPlayer1KeyA() { return player1KeyA.getValue(); }
+void Configuration::setPlayer1KeyA(int value) { player1KeyA.setValue(value); }
 
-int Configuration::getPlayer1KeyB()
-{
-    return player1KeyB.getValue();
-}
+int Configuration::getPlayer1KeyB() { return player1KeyB.getValue(); }
+void Configuration::setPlayer1KeyB(int value) { player1KeyB.setValue(value); }
 
-int Configuration::getPlayer1KeySelect()
-{
-    return player1KeySelect.getValue();
-}
+int Configuration::getPlayer1KeySelect() { return player1KeySelect.getValue(); }
+void Configuration::setPlayer1KeySelect(int value) { player1KeySelect.setValue(value); }
 
-int Configuration::getPlayer1KeyStart()
-{
-    return player1KeyStart.getValue();
-}
+int Configuration::getPlayer1KeyStart() { return player1KeyStart.getValue(); }
+void Configuration::setPlayer1KeyStart(int value) { player1KeyStart.setValue(value); }
 
-int Configuration::getPlayer2KeyUp()
-{
-    return player2KeyUp.getValue();
-}
+// Player 2 keyboard getters and setters
+int Configuration::getPlayer2KeyUp() { return player2KeyUp.getValue(); }
+void Configuration::setPlayer2KeyUp(int value) { player2KeyUp.setValue(value); }
 
-int Configuration::getPlayer2KeyDown()
-{
-    return player2KeyDown.getValue();
-}
+int Configuration::getPlayer2KeyDown() { return player2KeyDown.getValue(); }
+void Configuration::setPlayer2KeyDown(int value) { player2KeyDown.setValue(value); }
 
-int Configuration::getPlayer2KeyLeft()
-{
-    return player2KeyLeft.getValue();
-}
+int Configuration::getPlayer2KeyLeft() { return player2KeyLeft.getValue(); }
+void Configuration::setPlayer2KeyLeft(int value) { player2KeyLeft.setValue(value); }
 
-int Configuration::getPlayer2KeyRight()
-{
-    return player2KeyRight.getValue();
-}
+int Configuration::getPlayer2KeyRight() { return player2KeyRight.getValue(); }
+void Configuration::setPlayer2KeyRight(int value) { player2KeyRight.setValue(value); }
 
-int Configuration::getPlayer2KeyA()
-{
-    return player2KeyA.getValue();
-}
+int Configuration::getPlayer2KeyA() { return player2KeyA.getValue(); }
+void Configuration::setPlayer2KeyA(int value) { player2KeyA.setValue(value); }
 
-int Configuration::getPlayer2KeyB()
-{
-    return player2KeyB.getValue();
-}
+int Configuration::getPlayer2KeyB() { return player2KeyB.getValue(); }
+void Configuration::setPlayer2KeyB(int value) { player2KeyB.setValue(value); }
 
-int Configuration::getPlayer2KeySelect()
-{
-    return player2KeySelect.getValue();
-}
+int Configuration::getPlayer2KeySelect() { return player2KeySelect.getValue(); }
+void Configuration::setPlayer2KeySelect(int value) { player2KeySelect.setValue(value); }
 
-int Configuration::getPlayer2KeyStart()
-{
-    return player2KeyStart.getValue();
-}
+int Configuration::getPlayer2KeyStart() { return player2KeyStart.getValue(); }
+void Configuration::setPlayer2KeyStart(int value) { player2KeyStart.setValue(value); }
 
-bool Configuration::getJoystickPollingEnabled()
-{
-    return joystickPollingEnabled.getValue();
-}
+// Joystick settings getters and setters
+bool Configuration::getJoystickPollingEnabled() { return joystickPollingEnabled.getValue(); }
+void Configuration::setJoystickPollingEnabled(bool value) { joystickPollingEnabled.setValue(value); }
 
-int Configuration::getJoystickDeadzone()
-{
-    return joystickDeadzone.getValue();
-}
+int Configuration::getJoystickDeadzone() { return joystickDeadzone.getValue(); }
+void Configuration::setJoystickDeadzone(int value) { joystickDeadzone.setValue(value); }
 
-int Configuration::getPlayer1JoystickButtonA()
-{
-    return player1JoystickButtonA.getValue();
-}
+// Player 1 joystick button getters and setters
+int Configuration::getPlayer1JoystickButtonA() { return player1JoystickButtonA.getValue(); }
+void Configuration::setPlayer1JoystickButtonA(int value) { player1JoystickButtonA.setValue(value); }
 
-int Configuration::getPlayer1JoystickButtonB()
-{
-    return player1JoystickButtonB.getValue();
-}
+int Configuration::getPlayer1JoystickButtonB() { return player1JoystickButtonB.getValue(); }
+void Configuration::setPlayer1JoystickButtonB(int value) { player1JoystickButtonB.setValue(value); }
 
-int Configuration::getPlayer1JoystickButtonStart()
-{
-    return player1JoystickButtonStart.getValue();
-}
+int Configuration::getPlayer1JoystickButtonStart() { return player1JoystickButtonStart.getValue(); }
+void Configuration::setPlayer1JoystickButtonStart(int value) { player1JoystickButtonStart.setValue(value); }
 
-int Configuration::getPlayer1JoystickButtonSelect()
-{
-    return player1JoystickButtonSelect.getValue();
-}
+int Configuration::getPlayer1JoystickButtonSelect() { return player1JoystickButtonSelect.getValue(); }
+void Configuration::setPlayer1JoystickButtonSelect(int value) { player1JoystickButtonSelect.setValue(value); }
 
-int Configuration::getPlayer2JoystickButtonA()
-{
-    return player2JoystickButtonA.getValue();
-}
+// Player 2 joystick button getters and setters
+int Configuration::getPlayer2JoystickButtonA() { return player2JoystickButtonA.getValue(); }
+void Configuration::setPlayer2JoystickButtonA(int value) { player2JoystickButtonA.setValue(value); }
 
-int Configuration::getPlayer2JoystickButtonB()
-{
-    return player2JoystickButtonB.getValue();
-}
+int Configuration::getPlayer2JoystickButtonB() { return player2JoystickButtonB.getValue(); }
+void Configuration::setPlayer2JoystickButtonB(int value) { player2JoystickButtonB.setValue(value); }
 
-int Configuration::getPlayer2JoystickButtonStart()
-{
-    return player2JoystickButtonStart.getValue();
-}
+int Configuration::getPlayer2JoystickButtonStart() { return player2JoystickButtonStart.getValue(); }
+void Configuration::setPlayer2JoystickButtonStart(int value) { player2JoystickButtonStart.setValue(value); }
 
-int Configuration::getPlayer2JoystickButtonSelect()
-{
-    return player2JoystickButtonSelect.getValue();
-}
+int Configuration::getPlayer2JoystickButtonSelect() { return player2JoystickButtonSelect.getValue(); }
+void Configuration::setPlayer2JoystickButtonSelect(int value) { player2JoystickButtonSelect.setValue(value); }
