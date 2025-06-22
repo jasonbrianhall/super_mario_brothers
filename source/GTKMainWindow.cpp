@@ -98,9 +98,20 @@ void GTKMainWindow::captureJoystickButton(int button)
         if (window->controlWidgets.find(window->currentCaptureWidget) != window->controlWidgets.end()) {
             GtkWidget* spin = window->controlWidgets[window->currentCaptureWidget];
             gtk_spin_button_set_value(GTK_SPIN_BUTTON(spin), button);
+            
+            // Update button label to show success
+            std::string detect_key = window->currentCaptureWidget + "_detect";
+            if (window->controlWidgets.find(detect_key) != window->controlWidgets.end()) {
+                GtkWidget* detect_button = window->controlWidgets[detect_key];
+                gtk_button_set_label(GTK_BUTTON(detect_button), "Captured!");
+            }
         }
         
-        window->stopJoystickCapture();
+        // Stop capture after a short delay
+        g_timeout_add(1000, [](gpointer data) -> gboolean {
+            static_cast<GTKMainWindow*>(data)->stopJoystickCapture();
+            return G_SOURCE_REMOVE;
+        }, window);
         
         delete capture_data;
         return G_SOURCE_REMOVE;
@@ -138,7 +149,18 @@ void GTKMainWindow::captureJoystickAxis(int axis, int value)
             }
         }
         
-        window->stopJoystickCapture();
+        // Update button label to show success
+        std::string detect_key = window->currentCaptureWidget + "_detect";
+        if (window->controlWidgets.find(detect_key) != window->controlWidgets.end()) {
+            GtkWidget* detect_button = window->controlWidgets[detect_key];
+            gtk_button_set_label(GTK_BUTTON(detect_button), "Captured!");
+        }
+        
+        // Stop capture after a short delay
+        g_timeout_add(1000, [](gpointer data) -> gboolean {
+            static_cast<GTKMainWindow*>(data)->stopJoystickCapture();
+            return G_SOURCE_REMOVE;
+        }, window);
         
         delete capture_data;
         return G_SOURCE_REMOVE;
@@ -172,10 +194,21 @@ void GTKMainWindow::captureJoystickHat(int hat, int value)
                     GtkWidget* movement_combo = window->controlWidgets[movement_type_key];
                     gtk_combo_box_set_active(GTK_COMBO_BOX(movement_combo), 1); // D-Pad option
                 }
+                
+                // Update button label to show success
+                std::string detect_key = window->currentCaptureWidget + "_detect";
+                if (window->controlWidgets.find(detect_key) != window->controlWidgets.end()) {
+                    GtkWidget* detect_button = window->controlWidgets[detect_key];
+                    gtk_button_set_label(GTK_BUTTON(detect_button), "Captured!");
+                }
             }
         }
         
-        window->stopJoystickCapture();
+        // Stop capture after a short delay
+        g_timeout_add(1000, [](gpointer data) -> gboolean {
+            static_cast<GTKMainWindow*>(data)->stopJoystickCapture();
+            return G_SOURCE_REMOVE;
+        }, window);
         
         delete capture_data;
         return G_SOURCE_REMOVE;
@@ -673,6 +706,47 @@ void GTKMainWindow::gameLoop()
     while (gameRunning) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            // First check if we're capturing joystick input for configuration
+            if (isCapturingJoystick) {
+                switch (event.type) {
+                case SDL_JOYBUTTONDOWN:
+                    captureJoystickButton(event.jbutton.button);
+                    continue; // Skip normal processing
+                    
+                case SDL_JOYAXISMOTION:
+                    // Only capture significant axis movement
+                    if (abs(event.jaxis.value) > 16000) {
+                        captureJoystickAxis(event.jaxis.axis, event.jaxis.value);
+                        continue; // Skip normal processing
+                    }
+                    break;
+                    
+                case SDL_JOYHATMOTION:
+                    // Only capture when hat is pressed (not centered)
+                    if (event.jhat.value != SDL_HAT_CENTERED) {
+                        captureJoystickHat(event.jhat.hat, event.jhat.value);
+                        continue; // Skip normal processing
+                    }
+                    break;
+                    
+                case SDL_CONTROLLERBUTTONDOWN:
+                    captureControllerButton(event.cbutton.button);
+                    continue; // Skip normal processing
+                    
+                case SDL_CONTROLLERAXISMOTION:
+                    // Only capture significant axis movement
+                    if (abs(event.caxis.value) > 16000) {
+                        captureControllerAxis(event.caxis.axis, event.caxis.value);
+                        continue; // Skip normal processing
+                    }
+                    break;
+                }
+                
+                // If we're capturing but this event wasn't handled, continue to skip normal processing
+                continue;
+            }
+            
+            // Normal game event processing (only when not capturing)
             switch (event.type) {
             // Process joystick events for both players
             case SDL_JOYAXISMOTION:
