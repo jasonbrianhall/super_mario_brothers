@@ -613,8 +613,8 @@ void GTKMainWindow::gameLoop()
 {
 #ifdef _WIN32
     // On Windows, force SDL to use DirectSound or WinMM to avoid WASAPI issues
-    SDL_SetHint(SDL_HINT_AUDIODRIVER, "directsound,winmm");
-    
+    SDL_SetHint(SDL_HINT_AUDIODRIVER, "directsound");
+    SDL_SetHint(SDL_HINT_AUDIO_RESAMPLING_MODE, "1"); // Linear resampling
     // Initialize SDL for joystick/gamecontroller only - we'll handle audio separately
     if (SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) < 0) {
         updateStatusBar("SDL initialization failed");
@@ -669,50 +669,7 @@ void GTKMainWindow::gameLoop()
     // Initialize audio AFTER engine is created
     bool audioInitialized = false;
     
-#ifdef _WIN32
-    // Try WinMM first on Windows
-    if (Configuration::getAudioEnabled()) {
-        windowsAudio = new WindowsAudio();
-        if (windowsAudio->initialize(Configuration::getAudioFrequency(), &engine)) {
-            audioInitialized = true;
-        } else {
-            delete windowsAudio;
-            windowsAudio = nullptr;
-        }
-    }
-    
-    // If WinMM failed, fall back to SDL with safe drivers
-    if (Configuration::getAudioEnabled() && !audioInitialized) {
-        if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
-            SDL_AudioSpec desiredSpec;
-            desiredSpec.freq = Configuration::getAudioFrequency();
-            desiredSpec.format = AUDIO_S16;
-            desiredSpec.channels = 1;
-            desiredSpec.samples = 1024;
-            desiredSpec.callback = [](void* userdata, uint8_t* buffer, int len) {
-                if (smbEngine != nullptr) {
-                    smbEngine->audioCallback(buffer, len);
-                }
-            };
-            desiredSpec.userdata = NULL;
 
-            SDL_AudioSpec obtainedSpec;
-            if (SDL_OpenAudio(&desiredSpec, &obtainedSpec) < 0) {
-                std::cout << "SDL_OpenAudio failed: " << SDL_GetError() << std::endl;
-                std::cout << "Continuing without audio..." << std::endl;
-            } else {
-                audioInitialized = true;
-                std::cout << "SDL Audio initialized (fallback):" << std::endl;
-                std::cout << "  Format: 16-bit" << std::endl;
-                std::cout << "  Frequency: " << obtainedSpec.freq << " Hz" << std::endl;
-                std::cout << "  Channels: " << (int)obtainedSpec.channels << std::endl;
-                std::cout << "  Buffer size: " << obtainedSpec.samples << std::endl;
-                SDL_PauseAudio(0);
-            }
-        }
-    }
-#else
-    // Non-Windows SDL audio initialization
     if (Configuration::getAudioEnabled()) {
         SDL_AudioSpec desiredSpec;
         desiredSpec.freq = Configuration::getAudioFrequency();
@@ -740,14 +697,7 @@ void GTKMainWindow::gameLoop()
             SDL_PauseAudio(0);
         }
     }
-#endif
 
-#ifdef _WIN32
-    // Start WinMM audio if it was initialized
-    if (windowsAudio) {
-        windowsAudio->start();
-    }
-#endif
 
     updateStatusBar("Game started");
 
