@@ -137,7 +137,7 @@ private:
   guchar* backBufferData;
   bool backBufferInitialized;
   void initializeBackBuffer();
-
+  static void onSettingsFullscreen(GtkMenuItem* item, gpointer user_data);
 };
 
 #endif // GTK_MAIN_WINDOW_HPP

@@ -273,11 +273,21 @@ void GTKMainWindow::createMenuBar()
     
     gtk_menu_shell_append(GTK_MENU_SHELL(menubar), fileMenuItem);
     
-    // Settings menu - only keep Controls
+    // Settings menu - updated with fullscreen option
     GtkWidget* settingsMenu = gtk_menu_new();
     GtkWidget* settingsMenuItem = gtk_menu_item_new_with_label("Settings");
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(settingsMenuItem), settingsMenu);
     
+    // Settings -> Toggle Fullscreen (NEW)
+    GtkWidget* fullscreenItem = gtk_menu_item_new_with_label("Toggle Fullscreen\tF11");
+    g_signal_connect(fullscreenItem, "activate", G_CALLBACK(onSettingsFullscreen), this);
+    gtk_menu_shell_append(GTK_MENU_SHELL(settingsMenu), fullscreenItem);
+    
+    // Settings -> Separator
+    GtkWidget* separator2 = gtk_separator_menu_item_new();
+    gtk_menu_shell_append(GTK_MENU_SHELL(settingsMenu), separator2);
+    
+    // Settings -> Controls
     GtkWidget* controlsItem = gtk_menu_item_new_with_label("Controls");
     g_signal_connect(controlsItem, "activate", G_CALLBACK(onSettingsControls), this);
     gtk_menu_shell_append(GTK_MENU_SHELL(settingsMenu), controlsItem);
@@ -298,6 +308,12 @@ void GTKMainWindow::createMenuBar()
     
     // Add menu bar to main container
     gtk_box_pack_start(GTK_BOX(vbox), menubar, FALSE, FALSE, 0);
+}
+
+static void GTKMainWindow::onSettingsFullscreen(GtkMenuItem* item, gpointer user_data) 
+{
+    GTKMainWindow* window = static_cast<GTKMainWindow*>(user_data);
+    window->toggleFullscreen();
 }
 
 void GTKMainWindow::createGameContainer() 
