@@ -27,7 +27,7 @@ Successfully converted ROM file to header and source:
   Variable: smbRomData[40976]
 ```
 
-## Optional, reconvert the source code (maybe you found a bug or just want to see how it works)
+## Optional, reconvert the Super Mario 6502 ASM (maybe you found a bug or just want to see how it works)
 
 ### This code builds the C++ code from smbdis.asm
 
