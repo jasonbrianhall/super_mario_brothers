@@ -1,4 +1,4 @@
-# Super Mario Brothers Virtualized
+i# Super Mario Brothers Virtualized
 
 This is not a remake. This is the original Super Mario Bros. running on a cycle-accurate, virtualized 6502 CPU, complete with emulated PPU and APU behavior. Built with GTK3+ for configuration and controls and SDL for input and audio—no video subsystem required—this project is a deep-dive into retro hardware emulation with a minimalist GUI.
 Core Features
@@ -12,6 +12,19 @@ Core Features
 * 🖥️ GTK3+ interface for launching, configuration, and state feedback
 
 * 🧩 Modular design for hacking, debugging, or embedding
+
+## Convert your legally obtained NES ROM
+
+``` bash
+cd source
+g++ rom_to_header.cpp  -o rom_to_header
+./rom_to_header  ~/nes/Super\ Mario\ Bros.\ \(JU\)\ \(PRG0\)\ \[\!].nes SMBRom smbRomData
+Successfully converted ROM file to header and source:
+  Input: /home/yourusername/nes/Super Mario Bros. (JU) (PRG0) [!].nes (40976 bytes)
+  Output Header: SMBRom.hpp
+  Output Source: SMBRom.cpp
+  Variable: smbRomData[40976]
+```
 
 ## Build & Run
 ``` bash
