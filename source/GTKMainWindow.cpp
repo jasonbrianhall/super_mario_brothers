@@ -1677,7 +1677,6 @@ void GTKMainWindow::onRefreshControllers(GtkButton* button, gpointer user_data)
 // Helper function to convert GDK keyval to SDL scancode
 SDL_Scancode GTKMainWindow::gdk_keyval_to_sdl_scancode(guint keyval)
 {
-    // This is a simplified mapping - you may want to expand this
     switch (keyval) {
         case GDK_KEY_Up: return SDL_SCANCODE_UP;
         case GDK_KEY_Down: return SDL_SCANCODE_DOWN;
