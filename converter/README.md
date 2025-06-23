@@ -1,0 +1,1 @@
+This converter currently only works with smbdis.asm.   I'm trying to get it working generically with any file create by nesgodisasm but right now, it's buggy as heck.  It won't generate certain labels and I have to manually add the labels back to the code, which consider 30+ labels, is time consuming.  Anyways, the goal is ca65 but that doesn't work yet.
