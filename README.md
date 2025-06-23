@@ -29,6 +29,8 @@ Successfully converted ROM file to header and source:
 
 ## Optional, reconvert the source code (maybe you found a bug or just want to see how it works)
 
+### This code builds the C++ code from smbdis.asm
+
 ``` bash
 cd converter
 python main.py smbdis.asm ../source/SMB/ smb_config/
