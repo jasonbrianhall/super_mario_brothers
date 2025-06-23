@@ -501,9 +501,8 @@ jobs:
           ### 🕹️ Usage
           1. Install using the MSI installer or extract the portable ZIP
           2. Launch "Super Mario Brothers Virtualized" from Start Menu or Desktop
-          3. Load your legally-obtained NES ROM files
-          4. Configure controls and display options as needed
-          5. Enjoy classic NES gaming!
+          3. Configure controls and display options as needed
+          4. Enjoy classic NES gaming!
           
           ---
           *Built with ❤️ using GitHub Actions*
