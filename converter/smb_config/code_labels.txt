@@ -1,0 +1,17 @@
+# Code Labels Configuration
+# One label per line - these labels will be treated as CODE (for goto statements)
+# Lines starting with # are comments
+#
+# Add labels here that are used in goto statements but might be misclassified
+# Common examples from compilation errors:
+MoveSubs
+BlockCode
+JmpEO
+ExScrnBd
+MoveAllSpritesOffscreen
+GetBlockBufferAddr
+MovePlatformDown
+PositionPlayerOnS_Plat
+BlockBufferColli_Head
+RetYC
+SetHFAt

@@ -1,0 +1,6 @@
+# Alias Labels Configuration
+# One label per line - these labels will be treated as ALIAS
+# Lines starting with # are comments
+#
+# Add labels here that are simple aliases to other labels
+# (Usually labels that just contain 'jmp SomeOtherLabel')
