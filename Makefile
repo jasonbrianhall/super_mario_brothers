@@ -5,7 +5,7 @@
 # Compiler settings
 CXX_LINUX = g++
 CXX_WIN = x86_64-w64-mingw32-g++
-CXXFLAGS_COMMON = -s -std=c++11 -Wno-c++11-narrowing -fpermissive
+CXXFLAGS_COMMON = -s -fpermissive
 
 # Debug flags
 DEBUG_FLAGS = -g -DDEBUG
