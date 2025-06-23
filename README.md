@@ -27,6 +27,13 @@ Successfully converted ROM file to header and source:
   Variable: smbRomData[40976]
 ```
 
+## Optional, reconvert the source code (maybe you found a bug or just want to see how it works)
+
+``` bash
+cd converter
+python main.py smbdis.asm ../source/SMB/ smb_config/
+```
+
 ## Build & Run
 ``` bash
 make
