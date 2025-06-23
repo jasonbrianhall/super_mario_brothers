@@ -1,4 +1,4 @@
-i# Super Mario Brothers Virtualized
+# Super Mario Brothers Virtualized
 
 This is not a remake. This is the original Super Mario Bros. running on a cycle-accurate, virtualized 6502 CPU, complete with emulated PPU and APU behavior. Built with GTK3+ for configuration and controls and SDL for input and audio—no video subsystem required—this project is a deep-dive into retro hardware emulation with a minimalist GUI.
 Core Features
