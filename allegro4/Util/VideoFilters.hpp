@@ -2,6 +2,7 @@
 #define VIDEO_FILTERS_HPP
 
 #include <cstdint>
+#include <allegro.h>
 
 /**
  * Apply HQDN3D (High Quality De-Noise 3D) filter to a buffer
@@ -42,11 +43,32 @@ void initHQDN3D(int width, int height);
 void cleanupHQDN3D();
 
 /**
- * Initialize the MSAA (Multi-Sample Anti-Aliasing) renderer
+ * Initialize enhanced rendering for Allegro 4
+ * This replaces the SDL MSAA functionality with Allegro-specific enhancements
  * 
- * @param renderer The SDL renderer to use
- * @return True if MSAA was successfully enabled, false otherwise
+ * @return True if enhanced rendering was successfully enabled, false otherwise
  */
-bool initMSAA(SDL_Renderer* renderer);
+bool initEnhancedRendering();
+
+/**
+ * Apply a simple 2x super-sampling anti-aliasing to a bitmap
+ * This is a software-based alternative to hardware MSAA for Allegro 4
+ * 
+ * @param target The target bitmap to render to
+ * @param source The source bitmap to scale down from
+ * @param sourceWidth Width of the source bitmap
+ * @param sourceHeight Height of the source bitmap
+ */
+void applySuperSampling(BITMAP* target, const uint32_t* source, int sourceWidth, int sourceHeight);
+
+/**
+ * Convert 32-bit ARGB color to Allegro RGB format
+ */
+int convertARGBToAllegro(uint32_t argb_color);
+
+/**
+ * Convert Allegro RGB color to 32-bit ARGB format
+ */
+uint32_t convertAllegroToARGB(int allegro_color);
 
 #endif // VIDEO_FILTERS_HPP

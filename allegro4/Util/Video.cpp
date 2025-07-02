@@ -140,42 +140,78 @@ void drawText(uint32_t* buffer, int xOffset, int yOffset, const std::string& tex
     }
 }
 
-SDL_Texture* generateScanlineTexture(SDL_Renderer* renderer)
+void applyScanlines(BITMAP* target, int scale)
 {
-    // Create a scanline texture for 3x rendering
-    SDL_Texture* scanlineTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, RENDER_WIDTH * 3, RENDER_HEIGHT * 3);
-    uint32_t* scanlineTextureBuffer = new uint32_t[RENDER_WIDTH * RENDER_HEIGHT * 3 * 3];
-    for (int y = 0; y < RENDER_HEIGHT; y++)
-    {
-        for (int x = 0; x < RENDER_WIDTH; x++)
-        {
-            for (int i = 0; i < 3; i++)
-            {
-                for (int j = 0; j < 3; j++)
-                {
-                    uint32_t color = 0xff000000;
-                    switch (j)
-                    {
-                    case 0:
-                        color |= 0xfdd6c7;
-                        break;
-                    case 1:
-                        color |= 0xbef5e1;
-                        break;
-                    case 2:
-                        color |= 0xcfe2ff;
-                        break;
-                    }
-                    scanlineTextureBuffer[((y * 3) + i) * (RENDER_WIDTH * 3) + (x * 3) + j] = color;
-                }
-            }
+    if (!target || scale < 2) return;
+    
+    // Apply scanlines by darkening every other line
+    for (int y = 1; y < target->h; y += 2) {
+        for (int x = 0; x < target->w; x++) {
+            int color = getpixel(target, x, y);
+            
+            // Extract RGB components and darken them
+            int r = getr(color);
+            int g = getg(color);
+            int b = getb(color);
+            
+            // Darken the scanline by reducing brightness
+            r = (r * 3) / 4;  // Reduce to 75% brightness
+            g = (g * 3) / 4;
+            b = (b * 3) / 4;
+            
+            putpixel(target, x, y, makecol(r, g, b));
         }
     }
-    SDL_SetTextureBlendMode(scanlineTexture, SDL_BLENDMODE_MOD);
-    SDL_UpdateTexture(scanlineTexture, NULL, scanlineTextureBuffer, sizeof(uint32_t) * RENDER_WIDTH * 3);
-    delete [] scanlineTextureBuffer;
+}
 
-    return scanlineTexture;
+BITMAP* createScanlineBitmap(int width, int height, int scale)
+{
+    int scaledWidth = width * scale;
+    int scaledHeight = height * scale;
+    
+    BITMAP* scanlineBitmap = create_bitmap(scaledWidth, scaledHeight);
+    if (!scanlineBitmap) {
+        return nullptr;
+    }
+    
+    // Create a scanline pattern with CRT-like RGB phosphor simulation
+    for (int y = 0; y < scaledHeight; y++) {
+        for (int x = 0; x < scaledWidth; x++) {
+            int color;
+            
+            // Create RGB phosphor pattern
+            int pixelX = x % scale;
+            int pixelY = y % scale;
+            
+            if (pixelY == 1) {
+                // Scanline - make it darker
+                color = makecol(32, 32, 32);
+            } else {
+                // Regular line with RGB phosphor simulation
+                switch (pixelX % 3) {
+                    case 0:
+                        color = makecol(255, 180, 150);  // Reddish phosphor
+                        break;
+                    case 1:
+                        color = makecol(150, 255, 180);  // Greenish phosphor
+                        break;
+                    case 2:
+                        color = makecol(150, 180, 255);  // Bluish phosphor
+                        break;
+                    default:
+                        color = makecol(200, 200, 200);  // Default
+                        break;
+                }
+            }
+            
+            putpixel(scanlineBitmap, x, y, color);
+        }
+    }
+    
+    // Set the bitmap to use additive blending mode if possible
+    // Note: Allegro 4 has limited blending modes compared to modern libraries
+    
+    return scanlineBitmap;
 }
 
 const uint32_t* loadPalette(const std::string& fileName)

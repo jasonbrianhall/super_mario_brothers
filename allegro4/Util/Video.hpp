@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <string>
 
-// SDL not needed for DOS version
+#include <allegro.h>
 
 /**
  * Constants for specific tiles in CHR.
@@ -42,9 +42,15 @@ void drawCHRTile(uint32_t* buffer, int xOffset, int yOffset, int tile, uint32_t 
 void drawText(uint32_t* buffer, int xOffset, int yOffset, const std::string& text, uint32_t palette = 0);
 
 /**
- * Generate a texture for a scanline overlay effect.
+ * Generate scanline pattern for CRT effect (Allegro 4 version)
+ * Instead of creating an SDL texture, this creates scanline data in memory
  */
-SDL_Texture* generateScanlineTexture(SDL_Renderer* renderer);
+void applyScanlines(BITMAP* target, int scale = 3);
+
+/**
+ * Create a scanline pattern bitmap for overlay effects
+ */
+BITMAP* createScanlineBitmap(int width, int height, int scale = 3);
 
 /**
  * Load a palette from file.

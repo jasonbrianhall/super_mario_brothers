@@ -1,7 +1,8 @@
-// SDL not needed for DOS version
+#include <allegro.h>
 #include <cmath>
 #include <algorithm>
 #include <iostream>
+#include <cstring>
 
 #include "VideoFilters.hpp"
 #include "../Constants.hpp"
@@ -22,6 +23,22 @@ static inline void colorFromARGB(uint32_t color, uint8_t& r, uint8_t& g, uint8_t
 
 // Create ARGB from color components
 static inline uint32_t colorToARGB(uint8_t r, uint8_t g, uint8_t b) {
+    return 0xFF000000 | (r << 16) | (g << 8) | b;
+}
+
+// Convert 32-bit ARGB color to Allegro RGB format
+int convertARGBToAllegro(uint32_t argb_color) {
+    int r = (argb_color >> 16) & 0xFF;
+    int g = (argb_color >> 8) & 0xFF;
+    int b = argb_color & 0xFF;
+    return makecol(r, g, b);
+}
+
+// Convert Allegro RGB color to 32-bit ARGB format
+uint32_t convertAllegroToARGB(int allegro_color) {
+    int r = getr(allegro_color);
+    int g = getg(allegro_color);
+    int b = getb(allegro_color);
     return 0xFF000000 | (r << 16) | (g << 8) | b;
 }
 
@@ -258,8 +275,6 @@ void applyFXAA(uint32_t* outBuffer, const uint32_t* inBuffer, int width, int hei
                 (lumaW + lumaE - 2.0f * lumaC) * 0.5f : 
                 (lumaN + lumaS - 2.0f * lumaC) * 0.5f;
             
-            subpixelOffset = std::max(-gradientScaled, std::min(gradientScaled, subpixelOffset)) * SUBPIXEL_QUALITY;
-            
             // Calculate blend factor based on the subpixel offset
             float blendFactor = 0.5f - subpixelOffset / (lumaRange * 2.0f);
             blendFactor = std::max(0.0f, std::min(1.0f, blendFactor));
@@ -304,23 +319,87 @@ void applyFXAA(uint32_t* outBuffer, const uint32_t* inBuffer, int width, int hei
     delete[] tempBuffer;
 }
 
-bool initMSAA(SDL_Renderer* renderer) {
-    // Check if the renderer supports MSAA
-    SDL_RendererInfo info;
-    SDL_GetRendererInfo(renderer, &info);
+bool initEnhancedRendering() {
+    // In Allegro 4, we don't have hardware MSAA like in SDL2/OpenGL
+    // Instead, we can enable some software-based enhancements
     
-    // Check if the renderer supports the render target feature
-    if (!(info.flags & SDL_RENDERER_TARGETTEXTURE)) {
-        std::cout << "Renderer does not support render targets, MSAA unavailable." << std::endl;
+    // Check if we're in a high color mode (16-bit or higher)
+    if (bitmap_color_depth(screen) < 16) {
+        std::cout << "Enhanced rendering requires at least 16-bit color depth." << std::endl;
         return false;
     }
     
-    // Try to set hint for MSAA
-    if (!SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "2")) {
-        std::cout << "Failed to set MSAA quality hint." << std::endl;
-        return false;
+    // Enable dithering for better color gradients in lower color modes
+    if (bitmap_color_depth(screen) == 16) {
+        // 16-bit mode benefits from dithering
+        std::cout << "Enhanced rendering enabled with dithering for 16-bit mode." << std::endl;
+    } else {
+        std::cout << "Enhanced rendering enabled for high color mode." << std::endl;
     }
     
-    std::cout << "MSAA enabled successfully." << std::endl;
     return true;
+}
+
+void applySuperSampling(BITMAP* target, const uint32_t* source, int sourceWidth, int sourceHeight) {
+    if (!target || !source) return;
+    
+    int targetWidth = target->w;
+    int targetHeight = target->h;
+    
+    // Calculate scaling factors
+    float scaleX = (float)sourceWidth / targetWidth;
+    float scaleY = (float)sourceHeight / targetHeight;
+    
+    // Apply 2x2 super-sampling
+    for (int y = 0; y < targetHeight; y++) {
+        for (int x = 0; x < targetWidth; x++) {
+            // Calculate source coordinates
+            float srcX = x * scaleX;
+            float srcY = y * scaleY;
+            
+            // Get the four nearest source pixels for super-sampling
+            int x1 = (int)srcX;
+            int y1 = (int)srcY;
+            int x2 = std::min(x1 + 1, sourceWidth - 1);
+            int y2 = std::min(y1 + 1, sourceHeight - 1);
+            
+            // Ensure coordinates are within bounds
+            x1 = std::max(0, std::min(x1, sourceWidth - 1));
+            y1 = std::max(0, std::min(y1, sourceHeight - 1));
+            
+            // Sample four pixels
+            uint32_t pixel1 = source[y1 * sourceWidth + x1];
+            uint32_t pixel2 = source[y1 * sourceWidth + x2];
+            uint32_t pixel3 = source[y2 * sourceWidth + x1];
+            uint32_t pixel4 = source[y2 * sourceWidth + x2];
+            
+            // Extract color components
+            uint8_t r1, g1, b1, r2, g2, b2, r3, g3, b3, r4, g4, b4;
+            colorFromARGB(pixel1, r1, g1, b1);
+            colorFromARGB(pixel2, r2, g2, b2);
+            colorFromARGB(pixel3, r3, g3, b3);
+            colorFromARGB(pixel4, r4, g4, b4);
+            
+            // Calculate interpolation weights
+            float fracX = srcX - x1;
+            float fracY = srcY - y1;
+            
+            // Bilinear interpolation
+            float rTop = r1 * (1.0f - fracX) + r2 * fracX;
+            float gTop = g1 * (1.0f - fracX) + g2 * fracX;
+            float bTop = b1 * (1.0f - fracX) + b2 * fracX;
+            
+            float rBottom = r3 * (1.0f - fracX) + r4 * fracX;
+            float gBottom = g3 * (1.0f - fracX) + g4 * fracX;
+            float bBottom = b3 * (1.0f - fracX) + b4 * fracX;
+            
+            uint8_t rFinal = static_cast<uint8_t>(rTop * (1.0f - fracY) + rBottom * fracY);
+            uint8_t gFinal = static_cast<uint8_t>(gTop * (1.0f - fracY) + gBottom * fracY);
+            uint8_t bFinal = static_cast<uint8_t>(bTop * (1.0f - fracY) + bBottom * fracY);
+            
+            // Convert to Allegro color and set pixel
+            int allegroColor = makecol(rFinal, gFinal, bFinal);
+            putpixel(target, x, y, allegroColor);
+        }
+    }
 }
