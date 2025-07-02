@@ -73,7 +73,7 @@ case "${1:-dos}" in
     ;;
 
 "dos")
-    echo "Building SMB emulator for DOS..."
+    echo "Building SMB virtualizer for DOS..."
     
     # Ensure Allegro is built
     ./build_dos.sh allegro
@@ -95,7 +95,7 @@ case "${1:-dos}" in
             echo 'Checking available libraries...' &&
             find $BUILD_DIR/allegro4-install -name '*.a' 2>/dev/null || echo 'No .a files found' &&
             echo 'Compiling DOS executable with Allegro 4...' &&
-            i586-pc-msdosdjgpp-g++ -s allegro4/dos_main.cpp \
+            g++ -s allegro4/dos_main.cpp \
                 allegro4/Configuration.cpp \
                 allegro4/Emulation/APU.cpp \
                 allegro4/Emulation/Controller.cpp \
@@ -139,11 +139,11 @@ case "${1:-dos}" in
 
 "run")
     if [ ! -f "$BUILD_DIR/smb.exe" ]; then
-        echo "SMB emulator not built yet. Building..."
+        echo "SMB virtualizer not built yet. Building..."
         ./build_dos.sh dos
     fi
     
-    echo "Running SMB emulator in DOSBox..."
+    echo "Running SMB virtualizer in DOSBox..."
     cd $BUILD_DIR && dosbox smb.exe
     ;;
 
