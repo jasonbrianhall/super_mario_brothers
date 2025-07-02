@@ -1,7 +1,7 @@
 #include <cmath>
 #include <cstring>
 
-#include <SDL2/SDL.h>
+// SDL not needed for DOS version
 
 #include "../Configuration.hpp"
 

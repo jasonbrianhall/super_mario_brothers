@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <string>
 
-#include <SDL2/SDL.h>
+// SDL not needed for DOS version
 
 /**
  * Constants for specific tiles in CHR.

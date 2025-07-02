@@ -1,4 +1,4 @@
-#include <SDL2/SDL.h>
+// SDL not needed for DOS version
 #include <cmath>
 #include <algorithm>
 #include <iostream>
