@@ -11,8 +11,6 @@ g++ -s allegro4/dos_main.cpp \
                 allegro4/Util/Video.cpp \
                 allegro4/Util/VideoFilters.cpp \
                 allegro4/SMBRom.cpp \
-                -I$BUILD_DIR/allegro4-install/include \
-                -L$BUILD_DIR/allegro4-install/lib \
-                -o $BUILD_DIR/smb.exe \
+                -o smb_allegro \
                 -O2 -lalleg -lm -fpermissive -w
 
