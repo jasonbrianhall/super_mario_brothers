@@ -19,7 +19,7 @@ case "${1:-dos}" in
         echo "Downloading CSDPMI..."
         cd $BUILD_DIR
         curl -L -o csdpmi7b.zip http://na.mirror.garr.it/mirrors/djgpp/current/v2misc/csdpmi7b.zip
-        unzip -o -q csdpmi7b.zip
+        unzip -o -q csdpmi7b.zip -d csdpmi
         rm csdpmi7b.zip
         cd ../..
     fi
@@ -33,9 +33,11 @@ case "${1:-dos}" in
     ./build_dos.sh setup
     
     if [ ! -d "$BUILD_DIR/allegro4-install" ]; then
-        echo "Downloading Allegro 4 source..."
+        echo "Downloading DJGPP-compatible Allegro 4 source..."
         cd $BUILD_DIR
-        curl -L -o allegro-4.4.3.1.tar.gz https://github.com/liballeg/allegro5/releases/download/4.4.3.1/allegro-4.4.3.1.tar.gz
+        
+        # Use the DJGPP cross-compilation fork instead
+        curl -L -o allegro-4.2.3.1-xc.tar.gz https://github.com/superjamie/allegro-4.2.3.1-xc/archive/refs/heads/master.tar.gz
         cd ../..
         
         echo "Building Allegro 4 in container..."
@@ -45,14 +47,25 @@ case "${1:-dos}" in
             --user root \
             $DJGPP_IMAGE \
             /bin/bash -c "
-                tar xzf allegro-4.4.3.1.tar.gz
-                cd allegro-4.4.3.1
-                chmod +x configure
-                ./configure --host=i586-pc-msdosdjgpp --enable-static --disable-shared --prefix=/workspace/allegro4-install
-                make
-                make install
+                tar xzf allegro-4.2.3.1-xc.tar.gz
+                cd allegro-4.2.3.1-xc-master
+                
+                # Build using the xmake script (DJGPP-specific)
+                chmod +x xmake.sh
+                ./xmake.sh lib
+                
+                # Create install directory structure
+                mkdir -p /workspace/allegro4-install/include
+                mkdir -p /workspace/allegro4-install/lib
+                
+                # Copy headers
+                cp -r include/* /workspace/allegro4-install/include/
+                
+                # Copy library
+                cp lib/djgpp/liballeg.a /workspace/allegro4-install/lib/
+                
                 chown -R $USER_ID:$GROUP_ID /workspace
-                echo 'Allegro 4 built successfully'
+                echo 'Allegro 4 built successfully with DJGPP cross-compilation fork'
             "
     else
         echo "Allegro 4 already built"
@@ -79,10 +92,18 @@ case "${1:-dos}" in
         $DJGPP_IMAGE \
         /bin/sh -c "
             cd /src && 
+            echo 'Checking available libraries...' &&
+            find $BUILD_DIR/allegro4-install -name '*.a' 2>/dev/null || echo 'No .a files found' &&
             echo 'Compiling DOS executable with Allegro 4...' &&
-            g++ -s allegro4/dos_main.cpp \
-                -I $BUILD_DIR/allegro4-install/include \
-                -L $BUILD_DIR/allegro4-install/lib \
+            i586-pc-msdosdjgpp-g++ -s allegro4/dos_main.cpp \
+                -I$BUILD_DIR/allegro4-install/include \
+                -L$BUILD_DIR/allegro4-install/lib \
+                -o $BUILD_DIR/smb.exe \
+                -O2 -lalleg -lm &&
+            echo 'Compiling DOS executable with Allegro 4...' &&
+            i586-pc-msdosdjgpp-g++ -s allegro4/dos_main.cpp \
+                -I$BUILD_DIR/allegro4-install/include \
+                -L$BUILD_DIR/allegro4-install/lib \
                 -o $BUILD_DIR/smb.exe \
                 -O2 -lalleg -lm &&
             echo 'Converting to COFF format...' &&
@@ -92,8 +113,18 @@ case "${1:-dos}" in
             echo 'DOS build complete!'
         "
     
-    # Copy DPMI server
-    cp $BUILD_DIR/csdpmi/bin/CWSDPMI.EXE $BUILD_DIR/
+    # Copy DPMI server (find it wherever it is)
+    echo "Looking for DPMI files..."
+    ls -la $BUILD_DIR/csdpmi/ 2>/dev/null || echo "CSDPMI directory not found"
+    find $BUILD_DIR -name "CWSDPMI.EXE" -o -name "cwsdpmi.exe" -o -name "CWSDSTUB.EXE" 2>/dev/null
+    
+    DPMI_FILE=$(find $BUILD_DIR -name "CWSDPMI.EXE" -o -name "cwsdpmi.exe" 2>/dev/null | head -1)
+    if [ -n "$DPMI_FILE" ]; then
+        cp "$DPMI_FILE" $BUILD_DIR/
+        echo "Copied DPMI server: $(basename "$DPMI_FILE")"
+    else
+        echo "Warning: DPMI server not found - DOS executable may need DPMI host"
+    fi
     
     echo ""
     echo "🎮 SMB DOS Emulator built with Allegro 4!"
