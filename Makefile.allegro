@@ -1,0 +1,68 @@
+#!/usr/bin/make -f
+# Simple Makefile for SMB DOS Emulator
+# Each indented line MUST start with a TAB character, not spaces
+
+DJGPP_IMAGE = djfdyuruiry/djgpp
+DOS_TARGET = smb.exe
+BUILD_DIR = build/dos
+
+USER_ID = $(shell id -u)
+GROUP_ID = $(shell id -g)
+
+# Source files
+SOURCES = allegro4/dos_main.cpp allegro4/Configuration.cpp allegro4/Emulation/APU.cpp allegro4/Emulation/Controller.cpp allegro4/Emulation/MemoryAccess.cpp allegro4/Emulation/PPU.cpp allegro4/SMB/SMB.cpp allegro4/SMB/SMBData.cpp allegro4/SMB/SMBEngine.cpp allegro4/Util/Video.cpp allegro4/Util/VideoFilters.cpp allegro4/SMBRom.cpp
+
+# URLs
+CSDPMI_URL = http://na.mirror.garr.it/mirrors/djgpp/current/v2misc/csdpmi7b.zip
+
+all: dos
+
+help:
+	@echo "SMB DOS Emulator Build System"
+	@echo "Available targets:"
+	@echo "  make dos     - Build for DOS"
+	@echo "  make setup   - Download dependencies"
+	@echo "  make run     - Run in DOSBox"
+	@echo "  make clean   - Clean build files"
+
+setup: pull-docker get-csdpmi
+
+pull-docker:
+	@echo "Pulling DJGPP Docker image..."
+	docker pull $(DJGPP_IMAGE)
+
+get-csdpmi:
+	@echo "Setting up build directory..."
+	mkdir -p $(BUILD_DIR)
+	@echo "Downloading CSDPMI..."
+	cd $(BUILD_DIR) && wget -q $(CSDPMI_URL)
+	cd $(BUILD_DIR) && unzip -q csdpmi7b.zip
+	cd $(BUILD_DIR) && rm csdpmi7b.zip
+	@echo "CSDPMI ready"
+
+check-allegro4:
+	@if [ ! -f "allegro4/dos_main.cpp" ]; then echo "ERROR: allegro4/dos_main.cpp not found!"; exit 1; fi
+	@echo "Source files OK"
+
+dos: setup check-allegro4
+	@echo "Copying allegro4 files..."
+	mkdir -p $(BUILD_DIR)/allegro4/Emulation $(BUILD_DIR)/allegro4/SMB $(BUILD_DIR)/allegro4/Util
+	cp -r allegro4/* $(BUILD_DIR)/allegro4/ 2>/dev/null || true
+	@echo "Building with DJGPP..."
+	docker run --rm -v $(PWD)/$(BUILD_DIR):/src:z -u $(USER_ID):$(GROUP_ID) $(DJGPP_IMAGE) /bin/sh -c "cd /src && i586-pc-msdosdjgpp-g++ -O2 -s -march=i386 -std=c++11 -DMSDOS $(SOURCES) -o $(DOS_TARGET) -lalleg -lm"
+	@echo "Creating DOS executable..."
+	docker run --rm -v $(PWD)/$(BUILD_DIR):/src:z -u $(USER_ID):$(GROUP_ID) $(DJGPP_IMAGE) /bin/sh -c "cd /src && i586-pc-msdosdjgpp-exe2coff $(DOS_TARGET) && cat csdpmi/bin/CWSDSTUB.EXE smb > $(DOS_TARGET) && rm smb"
+	cp $(BUILD_DIR)/csdpmi/bin/CWSDPMI.EXE $(BUILD_DIR)/
+	@echo "Build complete! Files in $(BUILD_DIR):"
+	ls -la $(BUILD_DIR)/*.exe $(BUILD_DIR)/*.EXE 2>/dev/null || true
+
+run: dos
+	@echo "Running in DOSBox..."
+	cd $(BUILD_DIR) && dosbox -c "mount c ." -c "c:" -c "smb.exe"
+
+clean:
+	@echo "Cleaning..."
+	rm -rf $(BUILD_DIR)
+	@echo "Clean complete"
+
+.PHONY: all help setup pull-docker get-csdpmi check-allegro4 dos run clean
