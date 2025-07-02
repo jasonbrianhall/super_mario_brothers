@@ -1,6 +1,8 @@
 #include <cmath>
 #include <cstring>
+#include <mutex>
 
+std::mutex audioMutex;
 // SDL not needed for DOS version
 
 #include "../Configuration.hpp"
@@ -531,7 +533,6 @@ void APU::output(uint8_t* buffer, int len)
 
 void APU::stepFrame()
 {
-    // Step the frame counter 4 times per frame, for 240Hz
     for (int i = 0; i < 4; i++)
     {
         frameValue = (frameValue + 1) % 5;
@@ -549,24 +550,15 @@ void APU::stepFrame()
             break;
         }
 
-        // Calculate the number of samples needed per 1/4 frame
-        //
         int frequency = Configuration::getAudioFrequency();
-
-        // Example: we need 735 samples per frame for 44.1KHz sound sampling
-        //
         int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
         if (i == 3)
         {
-            // Handle the remainder on the final tick of the frame counter
-            //
             samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
         }
-        
-        SDL_LockAudio();
 
-        // Step the timer ~3729 times per quarter frame for most channels
-        //
+        std::lock_guard<std::mutex> lock(audioMutex);  // 🔐 Replaces SDL_LockAudio()
+
         int j = 0;
         for (int stepIndex = 0; stepIndex < 3729; stepIndex++)
         {
@@ -585,8 +577,7 @@ void APU::stepFrame()
             triangle->stepTimer();
         }
         audioBufferLength += samplesToWrite;
-        
-        SDL_UnlockAudio();
+        // 🔓 No need for unlock—handled automatically by lock_guard
     }
 }
 

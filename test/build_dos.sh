@@ -32,8 +32,8 @@ case "${1:-dos}" in
     
     ./build_dos.sh setup
     
-    if [ ! -d "$BUILD_DIR/allegro4-install" ]; then
-        echo "Downloading DJGPP-compatible Allegro 4 allegro4..."
+    if [ ! -d "$BUILD_DIR/source-install" ]; then
+        echo "Downloading DJGPP-compatible Allegro 4 source..."
         cd $BUILD_DIR
         
         # Use the DJGPP cross-compilation fork instead
@@ -55,14 +55,14 @@ case "${1:-dos}" in
                 ./xmake.sh lib
                 
                 # Create install directory structure
-                mkdir -p /workspace/allegro4-install/include
-                mkdir -p /workspace/allegro4-install/lib
+                mkdir -p /workspace/source-install/include
+                mkdir -p /workspace/source-install/lib
                 
                 # Copy headers
-                cp -r include/* /workspace/allegro4-install/include/
+                cp -r include/* /workspace/source-install/include/
                 
                 # Copy library
-                cp lib/djgpp/liballeg.a /workspace/allegro4-install/lib/
+                cp lib/djgpp/liballeg.a /workspace/source-install/lib/
                 
                 chown -R $USER_ID:$GROUP_ID /workspace
                 echo 'Allegro 4 built successfully with DJGPP cross-compilation fork'
@@ -78,9 +78,9 @@ case "${1:-dos}" in
     # Ensure Allegro is built
     ./build_dos.sh allegro
     
-    # Check allegro4 files
-    if [ ! -f "allegro4/dos_main.cpp" ]; then
-        echo "ERROR: allegro4/dos_main.cpp not found!"
+    # Check source files
+    if [ ! -f "source/dos_main.cpp" ]; then
+        echo "ERROR: source/dos_main.cpp not found!"
         exit 1
     fi
     
@@ -93,22 +93,22 @@ case "${1:-dos}" in
         /bin/sh -c "
             cd /src && 
             echo 'Checking available libraries...' &&
-            find $BUILD_DIR/allegro4-install -name '*.a' 2>/dev/null || echo 'No .a files found' &&
+            find $BUILD_DIR/source-install -name '*.a' 2>/dev/null || echo 'No .a files found' &&
             echo 'Compiling DOS executable with Allegro 4...' &&
-            g++ -s allegro4/dos_main.cpp \
-                allegro4/Configuration.cpp \
-                allegro4/Emulation/APU.cpp \
-                allegro4/Emulation/Controller.cpp \
-                allegro4/Emulation/MemoryAccess.cpp \
-                allegro4/Emulation/PPU.cpp \
-                allegro4/SMB/SMB.cpp \
-                allegro4/SMB/SMBData.cpp \
-                allegro4/SMB/SMBEngine.cpp \
-                allegro4/Util/Video.cpp \
-                allegro4/Util/VideoFilters.cpp \
-                allegro4/SMBRom.cpp \
-                -I$BUILD_DIR/allegro4-install/include \
-                -L$BUILD_DIR/allegro4-install/lib \
+            g++ -s source/dos_main.cpp \
+                source/Configuration.cpp \
+                source/Emulation/APU.cpp \
+                source/Emulation/Controller.cpp \
+                source/Emulation/MemoryAccess.cpp \
+                source/Emulation/PPU.cpp \
+                source/SMB/SMB.cpp \
+                source/SMB/SMBData.cpp \
+                source/SMB/SMBEngine.cpp \
+                source/Util/Video.cpp \
+                source/Util/VideoFilters.cpp \
+                source/SMBRom.cpp \
+                -I$BUILD_DIR/source-install/include \
+                -L$BUILD_DIR/source-install/lib \
                 -o $BUILD_DIR/smb.exe \
                 -O2 -lalleg -lm -fpermissive -w &&
             echo 'Converting to COFF format...' &&
