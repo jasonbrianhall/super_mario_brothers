@@ -3,7 +3,7 @@
 #include <cstring>
 
 Controller::Controller(int playerNumber) 
-    : playerNumber(playerNumber), joystickAvailable(false), joystickIndex(-1)
+    : playerNumber(playerNumber), joystickAvailable(false), joystickIndex(-1), controllerLatch(0), shiftRegister(0)
 {
     // Initialize button states to false (not pressed)
     memset(buttonStates, false, sizeof(buttonStates));
@@ -31,8 +31,7 @@ bool Controller::initJoystick()
         
         if (joystickIndex >= 0 && joystickIndex < num_joysticks) {
             joystickAvailable = true;
-            std::cout << "Player " << playerNumber << " joystick initialized: " 
-                      << joy[joystickIndex].name << std::endl;
+            std::cout << "Player " << playerNumber << " joystick initialized: Joystick " << joystickIndex << std::endl;
             std::cout << "  Sticks: " << joy[joystickIndex].num_sticks 
                       << ", Buttons: " << joy[joystickIndex].num_buttons << std::endl;
             return true;
@@ -53,6 +52,11 @@ void Controller::updateJoystickState()
 
 void Controller::processKeyboardInput()
 {
+    // Clear button states first
+    for (int i = 0; i < NUM_BUTTONS; i++) {
+        buttonStates[i] = false;
+    }
+    
     // Process keyboard input based on configuration
     setButtonState(BUTTON_UP, key[getConfiguredScancode(BUTTON_UP)]);
     setButtonState(BUTTON_DOWN, key[getConfiguredScancode(BUTTON_DOWN)]);
@@ -143,6 +147,40 @@ uint8_t Controller::getButtonStates() const
     if (buttonStates[BUTTON_RIGHT]) states |= 0x80;
     
     return states;
+}
+
+// NES controller read implementation
+uint8_t Controller::readByte(int player)
+{
+    if (player == 1 && playerNumber == 1) {
+        // Return the current bit from the shift register
+        uint8_t result = (shiftRegister & 0x01) ? 0x01 : 0x00;
+        
+        // Shift the register for the next read
+        shiftRegister >>= 1;
+        
+        return result | 0x40; // Set bit 6 as per NES controller behavior
+    }
+    else if (player == 2 && playerNumber == 2) {
+        // Similar implementation for player 2
+        uint8_t result = (shiftRegister & 0x01) ? 0x01 : 0x00;
+        shiftRegister >>= 1;
+        return result | 0x40;
+    }
+    
+    return 0x40; // Default return for invalid reads
+}
+
+// NES controller write implementation (latch)
+void Controller::writeByte(uint8_t value)
+{
+    // When bit 0 goes from 1 to 0, latch the current button states
+    if ((controllerLatch & 0x01) && !(value & 0x01)) {
+        // Latch occurred - load current button states into shift register
+        shiftRegister = getButtonStates();
+    }
+    
+    controllerLatch = value;
 }
 
 void Controller::printButtonStates() const

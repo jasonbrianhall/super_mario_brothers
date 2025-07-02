@@ -27,8 +27,8 @@ SMBEngine::SMBEngine(uint8_t* romImage) :
 {
     apu = new APU();
     ppu = new PPU(*this);
-    controller1 = new Controller();
-    controller2 = new Controller();
+    controller1 = new Controller(1);  // Player 1
+    controller2 = new Controller(2);  // Player 2
 
     // CHR Location in ROM: Header (16 bytes) + 2 PRG pages (16k each)
     chr = (romImage + 16 + (16384 * 2));
@@ -185,7 +185,7 @@ uint8_t SMBEngine::readData(uint16_t address)
         case 0x4016:
             return controller1->readByte(PLAYER_1);
         case 0x4017:
-            return controller1->readByte(PLAYER_2);
+            return controller2->readByte(PLAYER_2);
         }
     }
 
@@ -253,6 +253,7 @@ void SMBEngine::writeData(uint16_t address, uint8_t value)
             break;
         case 0x4016:
             controller1->writeByte(value);
+            controller2->writeByte(value);  // Both controllers get the latch signal
             break;
         default:
             apu->writeRegister(address, value);

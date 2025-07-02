@@ -4,6 +4,10 @@
 #include <allegro.h>
 #include "../Configuration.hpp"
 
+// Player constants for NES controller emulation
+#define PLAYER_1 1
+#define PLAYER_2 2
+
 /**
  * Button constants for NES controller
  */
@@ -77,6 +81,19 @@ public:
     uint8_t getButtonStates() const;
 
     /**
+     * Read a byte from the controller (NES controller emulation)
+     * @param player Player number (1 or 2)
+     * @return Controller data byte
+     */
+    uint8_t readByte(int player);
+
+    /**
+     * Write a byte to the controller (NES controller emulation - latch)
+     * @param value Value to write (used for latching)
+     */
+    void writeByte(uint8_t value);
+
+    /**
      * Print current button states for debugging
      */
     void printButtonStates() const;
@@ -96,6 +113,10 @@ private:
     bool buttonStates[NUM_BUTTONS];  // Current button states
     bool joystickAvailable;     // Whether joystick is available
     int joystickIndex;          // Which joystick to use (0-based)
+    
+    // NES controller emulation state
+    uint8_t controllerLatch;    // Latch state for NES controller
+    uint8_t shiftRegister;      // Shift register for reading button states
     
     // Previous joystick button states for edge detection
     bool prevJoystickButtons[32]; // Allegro supports up to 32 buttons
