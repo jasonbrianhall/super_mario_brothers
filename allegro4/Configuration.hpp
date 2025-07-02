@@ -4,9 +4,35 @@
 #include <iostream>
 #include <list>
 #include <string>
+#include <map>
 
-#include <boost/property_tree/ini_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
+/**
+ * Simple INI file parser and writer
+ */
+class SimpleINI {
+public:
+    bool loadFromFile(const std::string& filename);
+    bool saveToFile(const std::string& filename);
+    
+    // Get value with default fallback
+    std::string getString(const std::string& section, const std::string& key, const std::string& defaultValue = "");
+    int getInt(const std::string& section, const std::string& key, int defaultValue = 0);
+    float getFloat(const std::string& section, const std::string& key, float defaultValue = 0.0f);
+    bool getBool(const std::string& section, const std::string& key, bool defaultValue = false);
+    
+    // Set values
+    void setString(const std::string& section, const std::string& key, const std::string& value);
+    void setInt(const std::string& section, const std::string& key, int value);
+    void setFloat(const std::string& section, const std::string& key, float value);
+    void setBool(const std::string& section, const std::string& key, bool value);
+    
+private:
+    std::map<std::string, std::map<std::string, std::string>> data;
+    
+    // Helper functions
+    std::string trim(const std::string& str);
+    void parsePath(const std::string& path, std::string& section, std::string& key);
+};
 
 /**
  * Base class for configuration options.
@@ -29,10 +55,14 @@ public:
   const std::string &getPath() const;
 
   /**
-   * Initialize the configuration option from the parsed property tree.
+   * Initialize the configuration option from the parsed INI data.
    */
-  virtual void
-  initializeValue(const boost::property_tree::ptree &propertyTree) = 0;
+  virtual void initializeValue(const SimpleINI &ini) = 0;
+
+  /**
+   * Save the configuration option to the INI data.
+   */
+  virtual void saveValue(SimpleINI &ini) = 0;
 
 private:
   std::string path;
@@ -49,7 +79,7 @@ public:
    * Constructor.
    */
   BasicConfigurationOption(const std::string &path, const T &defaultValue)
-      : ConfigurationOption(path), value(defaultValue) {}
+      : ConfigurationOption(path), value(defaultValue), defaultValue(defaultValue) {}
 
   /**
    * Get the value of the configuration option.
@@ -64,15 +94,16 @@ public:
   /**
    * Initialize the configuration option.
    */
-  void
-  initializeValue(const boost::property_tree::ptree &propertyTree) override {
-    value = propertyTree.get<T>(getPath(), value);
-    std::cout << "Configuration option \"" << getPath() << "\" set to \""
-              << value << "\"" << std::endl;
-  }
+  void initializeValue(const SimpleINI &ini) override;
+
+  /**
+   * Save the configuration option.
+   */
+  void saveValue(SimpleINI &ini) override;
 
 private:
   T value;
+  T defaultValue;
 };
 
 /**
@@ -284,7 +315,7 @@ private:
   static BasicConfigurationOption<bool> antiAliasingEnabled;
   static BasicConfigurationOption<int> antiAliasingMethod;
 
-  // Player 1 keyboard mappings (SDL_Scancode values stored as int)
+  // Player 1 keyboard mappings (Allegro key constants stored as int)
   static BasicConfigurationOption<int> player1KeyUp;
   static BasicConfigurationOption<int> player1KeyDown;
   static BasicConfigurationOption<int> player1KeyLeft;
