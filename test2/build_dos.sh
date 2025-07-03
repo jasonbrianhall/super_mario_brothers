@@ -9,7 +9,6 @@ GROUP_ID=$(id -g)
 
 SOURCE_FILES=(
     source/SDL.cpp
-    source/Main.cpp
     source/Configuration.cpp
     source/Emulation/APU.cpp
     source/Emulation/Controller.cpp
@@ -21,6 +20,7 @@ SOURCE_FILES=(
     source/Util/Video.cpp
     source/Util/VideoFilters.cpp
     source/SMBRom.cpp
+    source/Main.cpp
 )
 
 case "${1:-dos}" in
@@ -88,18 +88,17 @@ case "${1:-dos}" in
             /bin/sh -c "
                 g++ -c /src/$src \
                     -I/src/$BUILD_DIR/source-install/include \
-                    -I/src/third_party/boost \
                     -o /src/$obj \
                     -O2 -fpermissive -w
             "
     done
 
-    echo "Linking object files..."
-    OBJ_LIST=""
+    echo "Linking object files:"
     for src in "${SOURCE_FILES[@]}"; do
         obj="$OBJ_DIR/$(basename "${src%.cpp}.o")"
-        OBJ_LIST="$OBJ_LIST /src/$obj"
+        echo "  $obj"
     done
+
 
     docker run --rm \
         -v $(pwd):/src:z \
