@@ -1,6 +1,6 @@
 #include <cstdio>
 #include <iostream>
-
+#include <cstring>
 #include "SDL.h"
 
 #include "Emulation/Controller.hpp"
