@@ -1,6 +1,7 @@
-#include "Controller.hpp"
+#include <cstdint>
 #include <iostream>
 #include <cstring>
+#include "Controller.hpp"
 
 Controller::Controller(int playerNumber) 
     : playerNumber(playerNumber), joystickAvailable(false), joystickIndex(-1), controllerLatch(0), shiftRegister(0)

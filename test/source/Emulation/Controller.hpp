@@ -1,6 +1,9 @@
 #ifndef CONTROLLER_HPP
 #define CONTROLLER_HPP
 
+#include <cstdint>
+#include <iostream>
+#include <cstring>
 #include <allegro.h>
 #include "../Configuration.hpp"
 
