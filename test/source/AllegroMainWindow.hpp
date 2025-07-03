@@ -36,7 +36,7 @@ public:
 private:
     // Allegro components
     BITMAP* game_buffer;
-    
+    BITMAP* back_buffer;
     // Game state
     bool gameRunning;
     bool gamePaused;
@@ -125,10 +125,14 @@ private:
     void clearScreen();
     void drawText(int x, int y, const char* text, int color);
     void drawTextCentered(int y, const char* text, int color);
-    void drawGame();
     void drawStatusBar();
     void copyGameBuffer();
-    
+    void drawGame(BITMAP* target = screen);
+void drawMenu(BITMAP* target = screen);
+void drawDialog(BITMAP* target = screen);
+void drawStatusBar(BITMAP* target = screen);
+void drawText(BITMAP* target, int x, int y, const char* text, int color);
+void drawTextCentered(BITMAP* target, int y, const char* text, int color);
     // Utility functions
     void setStatusMessage(const char* msg);
     void updateStatusMessage();

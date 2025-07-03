@@ -70,7 +70,7 @@ bool AllegroMainWindow::initialize()
     setupMenu();
     loadControlConfig();
     
-    setStatusMessage("Super Mario Bros Emulator - Press ESC for menu");
+    setStatusMessage("Super Mario Bros Virtualizer - Press ESC for menu");
     
     return true;
 }
@@ -146,6 +146,13 @@ bool AllegroMainWindow::initializeGraphics()
     game_buffer = create_bitmap(RENDER_WIDTH, RENDER_HEIGHT);
     if (!game_buffer) {
         printf("Failed to create game buffer\n");
+        return false;
+    }
+    
+    // Create back buffer for double buffering (same size as screen)
+    back_buffer = create_bitmap(SCREEN_W, SCREEN_H);
+    if (!back_buffer) {
+        printf("Failed to create back buffer\n");
         return false;
     }
     
@@ -453,17 +460,27 @@ void AllegroMainWindow::checkPlayerInput(Player player)
 
 void AllegroMainWindow::updateAndDraw()
 {
-    clearScreen();
+    // Clear the back buffer instead of screen
+    clear_to_color(back_buffer, makecol(0, 0, 0));
     
+    // Draw everything to the back buffer
     if (currentDialog != DIALOG_NONE) {
-        drawDialog();
+        drawDialog(back_buffer);
     } else if (showingMenu) {
-        drawMenu();
+        drawMenu(back_buffer);
     } else {
-        drawGame();
+        drawGame(back_buffer);
     }
     
-    drawStatusBar();
+    drawStatusBar(back_buffer);
+    
+    // Copy back buffer to screen in one operation
+    blit(back_buffer, screen, 0, 0, 0, 0, SCREEN_W, SCREEN_H);
+    
+    // Optional: Add vsync to prevent tearing
+    #ifdef __DJGPP__
+    vsync();
+    #endif
 }
 
 void AllegroMainWindow::clearScreen()
@@ -471,7 +488,7 @@ void AllegroMainWindow::clearScreen()
     clear_to_color(screen, makecol(0, 0, 0));
 }
 
-void AllegroMainWindow::drawGame()
+void AllegroMainWindow::drawGame(BITMAP* target)
 {
     if (currentFrameBuffer) {
         // Convert 32-bit RGBA to 16-bit RGB for Allegro
@@ -479,27 +496,19 @@ void AllegroMainWindow::drawGame()
             for (int x = 0; x < RENDER_WIDTH; x++) {
                 uint32_t pixel = currentFrameBuffer[y * RENDER_WIDTH + x];
                 
-                // Extract RGB components - try different formats
-                int r, g, b;
+                // Extract RGB components
+                int r = (pixel >> 16) & 0xFF;
+                int g = (pixel >> 8) & 0xFF;
+                int b = pixel & 0xFF;
                 
-                // First try standard RGBA format
-                r = (pixel >> 16) & 0xFF;
-                g = (pixel >> 8) & 0xFF;
-                b = pixel & 0xFF;
-                
-                // If colors look wrong, try BGRA format instead:
-                // b = (pixel >> 16) & 0xFF;
-                // g = (pixel >> 8) & 0xFF;
-                // r = pixel & 0xFF;
-                
-                // Convert to 16-bit color - let Allegro handle the bit packing
+                // Convert to 16-bit color
                 int color16 = makecol(r, g, b);
                 
                 putpixel(game_buffer, x, y, color16);
             }
         }
         
-        // Scale and blit to screen
+        // Scale and blit to target buffer
         int scale_x = SCREEN_W / RENDER_WIDTH;
         int scale_y = SCREEN_H / RENDER_HEIGHT;
         int scale = (scale_x < scale_y) ? scale_x : scale_y;
@@ -511,40 +520,40 @@ void AllegroMainWindow::drawGame()
         int dest_x = (SCREEN_W - dest_w) / 2;
         int dest_y = (SCREEN_H - dest_h) / 2;
         
-        stretch_blit(game_buffer, screen, 0, 0, RENDER_WIDTH, RENDER_HEIGHT,
+        stretch_blit(game_buffer, target, 0, 0, RENDER_WIDTH, RENDER_HEIGHT,
                     dest_x, dest_y, dest_w, dest_h);
     }
 }
 
-void AllegroMainWindow::drawMenu()
+void AllegroMainWindow::drawMenu(BITMAP* target)
 {
     int menu_x = SCREEN_W / 2 - 100;
     int menu_y = SCREEN_H / 2 - (menuCount * 10);
     
     // Draw menu background
-    rectfill(screen, menu_x - 20, menu_y - 20, 
+    rectfill(target, menu_x - 20, menu_y - 20, 
              menu_x + 200, menu_y + menuCount * 20 + 20, 
              makecol(64, 64, 64));
     
     // Draw menu border
-    rect(screen, menu_x - 20, menu_y - 20, 
+    rect(target, menu_x - 20, menu_y - 20, 
          menu_x + 200, menu_y + menuCount * 20 + 20, 
          makecol(255, 255, 255));
     
     // Draw menu title
-    drawTextCentered(menu_y - 10, "GAME MENU", makecol(255, 255, 0));
+    drawTextCentered(target, menu_y - 10, "GAME MENU", makecol(255, 255, 0));
     
     // Draw menu items
     for (int i = 0; i < menuCount; i++) {
         int color = (i == selectedMenuItem) ? makecol(255, 255, 0) : makecol(255, 255, 255);
         if (i == selectedMenuItem) {
-            drawText(menu_x - 10, menu_y + i * 20, ">", color);
+            drawText(target, menu_x - 10, menu_y + i * 20, ">", color);
         }
-        drawText(menu_x, menu_y + i * 20, mainMenu[i].text, color);
+        drawText(target, menu_x, menu_y + i * 20, mainMenu[i].text, color);
     }
 }
 
-void AllegroMainWindow::drawDialog()
+void AllegroMainWindow::drawDialog(BITMAP* target)
 {
     int dialog_x = SCREEN_W / 4;
     int dialog_y = SCREEN_H / 4;
@@ -552,56 +561,56 @@ void AllegroMainWindow::drawDialog()
     int dialog_h = SCREEN_H / 2;
     
     // Draw dialog background
-    rectfill(screen, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
+    rectfill(target, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
              makecol(32, 32, 32));
     
     // Draw dialog border
-    rect(screen, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
+    rect(target, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
          makecol(255, 255, 255));
     
     switch (currentDialog) {
         case DIALOG_ABOUT:
-            drawTextCentered(dialog_y + 20, "SUPER MARIO BROS EMULATOR", makecol(255, 255, 0));
-            drawTextCentered(dialog_y + 40, "Version 1.0", makecol(255, 255, 255));
-            drawTextCentered(dialog_y + 60, "Built with Allegro 4", makecol(255, 255, 255));
-            drawTextCentered(dialog_y + 100, "Original game (c) Nintendo", makecol(255, 255, 255));
-            drawTextCentered(dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
+            drawTextCentered(target, dialog_y + 20, "SUPER MARIO BROS Virtualizer", makecol(255, 255, 0));
+            drawTextCentered(target, dialog_y + 40, "Version 1.0", makecol(255, 255, 255));
+            drawTextCentered(target, dialog_y + 60, "Built with Allegro 4", makecol(255, 255, 255));
+            drawTextCentered(target, dialog_y + 100, "Original game (c) Nintendo", makecol(255, 255, 255));
+            drawTextCentered(target, dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
             break;
             
         case DIALOG_HELP:
-            drawTextCentered(dialog_y + 20, "HELP", makecol(255, 255, 0));
-            drawTextCentered(dialog_y + 50, "ESC - Show menu", makecol(255, 255, 255));
-            drawTextCentered(dialog_y + 70, "P - Pause game", makecol(255, 255, 255));
-            drawTextCentered(dialog_y + 90, "Ctrl+R - Reset game", makecol(255, 255, 255));
-            drawTextCentered(dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
+            drawTextCentered(target, dialog_y + 20, "HELP", makecol(255, 255, 0));
+            drawTextCentered(target, dialog_y + 50, "ESC - Show menu", makecol(255, 255, 255));
+            drawTextCentered(target, dialog_y + 70, "P - Pause game", makecol(255, 255, 255));
+            drawTextCentered(target, dialog_y + 90, "Ctrl+R - Reset game", makecol(255, 255, 255));
+            drawTextCentered(target, dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
             break;
             
         case DIALOG_CONTROLS_P1:
         case DIALOG_CONTROLS_P2:
-            // TODO: Implement control configuration dialog
-            drawTextCentered(dialog_y + 20, "CONTROL CONFIGURATION", makecol(255, 255, 0));
-            drawTextCentered(dialog_y + 50, "Not yet implemented", makecol(255, 255, 255));
-            drawTextCentered(dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
+            drawTextCentered(target, dialog_y + 20, "CONTROL CONFIGURATION", makecol(255, 255, 0));
+            drawTextCentered(target, dialog_y + 50, "Not yet implemented", makecol(255, 255, 255));
+            drawTextCentered(target, dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
             break;
     }
 }
 
-void AllegroMainWindow::drawStatusBar()
+void AllegroMainWindow::drawStatusBar(BITMAP* target)
 {
     int status_y = SCREEN_H - 20;
-    rectfill(screen, 0, status_y, SCREEN_W, SCREEN_H, makecol(64, 64, 64));
-    drawText(10, status_y + 5, statusMessage, makecol(255, 255, 255));
+    rectfill(target, 0, status_y, SCREEN_W, SCREEN_H, makecol(64, 64, 64));
+    drawText(target, 10, status_y + 5, statusMessage, makecol(255, 255, 255));
 }
 
-void AllegroMainWindow::drawText(int x, int y, const char* text, int color)
+
+void AllegroMainWindow::drawText(BITMAP* target, int x, int y, const char* text, int color)
 {
-    textout(screen, font, text, x, y, color);
+    textout(target, font, text, x, y, color);
 }
 
-void AllegroMainWindow::drawTextCentered(int y, const char* text, int color)
+void AllegroMainWindow::drawTextCentered(BITMAP* target, int y, const char* text, int color)
 {
     int x = (SCREEN_W - text_length(font, text)) / 2;
-    textout(screen, font, text, x, y, color);
+    textout(target, font, text, x, y, color);
 }
 
 void AllegroMainWindow::menuUp()
@@ -694,6 +703,11 @@ void AllegroMainWindow::shutdown()
         game_buffer = NULL;
     }
     
+    if (back_buffer) {
+        destroy_bitmap(back_buffer);
+        back_buffer = NULL;
+    }
+    
     // Save configuration before shutdown
     saveControlConfig();
     
@@ -728,7 +742,7 @@ void AllegroMainWindow::loadControlConfig()
 // Main function for DOS
 int main(int argc, char** argv) 
 {
-    printf("Super Mario Bros Emulator - DOS Version\n");
+    printf("Super Mario Bros Virtualizer - DOS Version\n");
     printf("Initializing...\n");
     
     AllegroMainWindow mainWindow;
