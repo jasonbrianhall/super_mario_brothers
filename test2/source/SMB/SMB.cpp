@@ -18,7 +18,7 @@ void SMBEngine::code(int mode)
 Start:
     /* sei */ // pretty standard 6502 type init here
     /* cld */
-    a = BOOST_BINARY(00010000); // init PPU control register 1 
+    a = 0b00010000; // init PPU control register 1 
     writeData(PPU_CTRL_REG1, a);
     x = 0xff; // reset stack pointer
     s = x;
@@ -58,9 +58,9 @@ Return_0:
     a = 0xa5; // set warm boot flag
     writeData(WarmBootValidation, a);
     writeData(PseudoRandomBitReg, a); // set seed for pseudorandom register
-    a = BOOST_BINARY(00001111);
+    a = 0b00001111;
     writeData(SND_MASTERCTRL_REG, a); // enable all sound channels except dmc
-    a = BOOST_BINARY(00000110);
+    a = 0b00000110;
     writeData(PPU_CTRL_REG2, a); // turn off clipping for OAM and background
     pushReturnIndex(1);
     goto MoveAllSpritesOffscreen;
@@ -70,7 +70,7 @@ Return_1:
 Return_2: // initialize both name tables
     ++M(DisableScreenFlag); // set flag to disable screen output
     a = M(Mirror_PPU_CTRL_REG1);
-    a |= BOOST_BINARY(10000000); // enable NMIs
+    a |= 0b10000000; // enable NMIs
     pushReturnIndex(3);
     goto WritePPUReg1;
 Return_3:
@@ -80,21 +80,21 @@ EndlessLoop: // endless loop, need I say more?
 
 NonMaskableInterrupt:
     a = M(Mirror_PPU_CTRL_REG1); // disable NMIs in mirror reg
-    a &= BOOST_BINARY(01111111); // save all other bits
+    a &= 0b01111111; // save all other bits
     writeData(Mirror_PPU_CTRL_REG1, a);
-    a &= BOOST_BINARY(01111110); // alter name table address to be $2800
+    a &= 0b01111110; // alter name table address to be $2800
     writeData(PPU_CTRL_REG1, a); // (essentially $2000) but save other bits
     a = M(Mirror_PPU_CTRL_REG2); // disable OAM and background display by default
-    a &= BOOST_BINARY(11100110);
+    a &= 0b11100110;
     y = M(DisableScreenFlag); // get screen disable flag
     if (!z)
         goto ScreenOff; // if set, used bits as-is
     a = M(Mirror_PPU_CTRL_REG2); // otherwise reenable bits and save them
-    a |= BOOST_BINARY(00011110);
+    a |= 0b00011110;
 
 ScreenOff: // save bits for later but not in register at the moment
     writeData(Mirror_PPU_CTRL_REG2, a);
-    a &= BOOST_BINARY(11100111); // disable screen for now
+    a &= 0b11100111; // disable screen for now
     writeData(PPU_CTRL_REG2, a);
     x = M(PPU_STATUS); // reset flip-flop and reset scroll registers to zero
     a = 0x00;
@@ -177,10 +177,10 @@ PauseSkip:
     x = 0x00;
     y = 0x07;
     a = M(PseudoRandomBitReg); // get first memory location of LSFR bytes
-    a &= BOOST_BINARY(00000010); // mask out all but d1
+    a &= 0b00000010; // mask out all but d1
     writeData(0x00, a); // save here
     a = M(PseudoRandomBitReg + 1); // get second memory location
-    a &= BOOST_BINARY(00000010); // mask out all but d1
+    a &= 0b00000010; // mask out all but d1
     a ^= M(0x00); // perform exclusive-OR on d1 from first and second bytes
     c = 0; // if neither or both are set, carry will be clear
     if (z)
@@ -199,7 +199,7 @@ RotPRandomBit: // rotate carry into d7, and rotate last bit into carry
 
 Sprite0Clr: // wait for sprite 0 flag to clear, which will
     a = M(PPU_STATUS);
-    a &= BOOST_BINARY(01000000); // not happen until vblank has ended
+    a &= 0b01000000; // not happen until vblank has ended
     if (!z)
         goto Sprite0Clr;
     a = M(GamePauseStatus); // if in pause mode, do not bother with sprites at all
@@ -215,7 +215,7 @@ Return_11:
 
 Sprite0Hit: // do sprite #0 hit detection
     a = M(PPU_STATUS);
-    a &= BOOST_BINARY(01000000);
+    a &= 0b01000000;
     if (z)
         goto Sprite0Hit;
     y = 0x14; // small delay, to wait until we hit horizontal blank time
@@ -244,7 +244,7 @@ Return_12: // otherwise do one of many, many possible subroutines
 SkipMainOper: // reset flip-flop
     a = M(PPU_STATUS);
     pla();
-    a |= BOOST_BINARY(10000000); // reactivate NMIs
+    a |= 0b10000000; // reactivate NMIs
     writeData(PPU_CTRL_REG1, a);
     return; // we are done until the next frame!
 
@@ -276,7 +276,7 @@ ChkStart: // check to see if start is pressed
     if (z)
         goto ClrPauseTimer;
     a = M(GamePauseStatus); // check to see if timer flag is set
-    a &= BOOST_BINARY(10000000); // and if so, do not reset timer (residual,
+    a &= 0b10000000; // and if so, do not reset timer (residual,
     if (!z)
         goto ExitPause; // joypad reading routine makes this unnecessary)
     a = 0x2b; // set pause timer
@@ -285,14 +285,14 @@ ChkStart: // check to see if start is pressed
     y = a;
     ++y; // set pause sfx queue for next pause mode
     writeData(PauseSoundQueue, y);
-    a ^= BOOST_BINARY(00000001); // invert d0 and set d7
-    a |= BOOST_BINARY(10000000);
+    a ^= 0b00000001; // invert d0 and set d7
+    a |= 0b10000000;
     if (!z)
         goto SetPause; // unconditional branch
 
 ClrPauseTimer: // clear timer flag if timer is at zero and start button
     a = M(GamePauseStatus);
-    a &= BOOST_BINARY(01111111); // is not pressed
+    a &= 0b01111111; // is not pressed
 
 SetPause:
     writeData(GamePauseStatus, a);
@@ -461,7 +461,7 @@ SelectBLogic: // if select or B pressed, check demo timer one last time
     if (z)
         goto IncWorldSel; // note this will not be run if world selection is disabled
     a = M(NumberOfPlayers); // if no, must have been the select button, therefore
-    a ^= BOOST_BINARY(00000001); // change number of players and draw icon accordingly
+    a ^= 0b00000001; // change number of players and draw icon accordingly
     writeData(NumberOfPlayers, a);
     pushReturnIndex(14);
     goto DrawMushroomIcon;
@@ -472,7 +472,7 @@ IncWorldSel: // increment world select number
     x = M(WorldSelectNumber);
     ++x;
     a = x;
-    a &= BOOST_BINARY(00000111); // mask out higher bits
+    a &= 0b00000111; // mask out higher bits
     writeData(WorldSelectNumber, a); // store as current world select number
     pushReturnIndex(15);
     goto GoContinue;
@@ -869,7 +869,7 @@ LoadNumTiles: // load point value here
     a >>= 1;
     x = a; // use as X offset, essentially the digit
     a = M(ScoreUpdateData + y); // load again and this time
-    a &= BOOST_BINARY(00001111); // mask out the high nybble
+    a &= 0b00001111; // mask out the high nybble
     writeData(DigitModifier + x, a); // store as amount to add to the digit
     pushReturnIndex(27);
     goto AddToScore;
@@ -1363,7 +1363,7 @@ CheckPlayerName:
     compare(y, GameOverModeValue);
     if (z)
         goto ChkLuigi;
-    a ^= BOOST_BINARY(00000001); // if not, must be time up, invert d0 to do other player
+    a ^= 0b00000001; // if not, must be time up, invert d0 to do other player
 
 ChkLuigi:
     a >>= 1;
@@ -1441,7 +1441,7 @@ RenderAreaGraphics:
 DrawMTLoop: // store init value of 0 or incremented offset for buffer
     writeData(0x01, x);
     a = M(MetatileBuffer + x); // get first metatile number, and mask out all but 2 MSB
-    a &= BOOST_BINARY(11000000);
+    a &= 0b11000000;
     writeData(0x03, a); // store attribute table bits here
     a <<= 1; // note that metatile format is:
     a.rol(); // %xx000000 - attribute table bits, 
@@ -1456,8 +1456,8 @@ DrawMTLoop: // store init value of 0 or incremented offset for buffer
     a <<= 1;
     writeData(0x02, a);
     a = M(AreaParserTaskNum); // get current task number for level processing and
-    a &= BOOST_BINARY(00000001); // mask out all but LSB, then invert LSB, multiply by 2
-    a ^= BOOST_BINARY(00000001); // to get the correct column position in the metatile,
+    a &= 0b00000001; // mask out all but LSB, then invert LSB, multiply by 2
+    a ^= 0b00000001; // to get the correct column position in the metatile,
     a <<= 1; // then add to the tile offset so we can draw either side
     a += M(0x02); // of the metatiles
     y = a;
@@ -1518,13 +1518,13 @@ SetAttrib: // get previously saved bits from before
     writeData(VRAM_Buffer2_Offset, y); // store new buffer offset
     ++M(CurrentNTAddr_Low); // increment name table address low
     a = M(CurrentNTAddr_Low); // check current low byte
-    a &= BOOST_BINARY(00011111); // if no wraparound, just skip this part
+    a &= 0b00011111; // if no wraparound, just skip this part
     if (!z)
         goto ExitDrawM;
     a = 0x80; // if wraparound occurs, make sure low byte stays
     writeData(CurrentNTAddr_Low, a); // just under the status bar
     a = M(CurrentNTAddr_High); // and then invert d2 of the name table address high
-    a ^= BOOST_BINARY(00000100); // to move onto the next appropriate name table
+    a ^= 0b00000100; // to move onto the next appropriate name table
     writeData(CurrentNTAddr_High, a);
 
 ExitDrawM: // jump to set buffer to $0341 and leave
@@ -1532,18 +1532,18 @@ ExitDrawM: // jump to set buffer to $0341 and leave
 
 RenderAttributeTables:
     a = M(CurrentNTAddr_Low); // get low byte of next name table address
-    a &= BOOST_BINARY(00011111); // to be written to, mask out all but 5 LSB,
+    a &= 0b00011111; // to be written to, mask out all but 5 LSB,
     c = 1; // subtract four 
     a -= 0x04;
-    a &= BOOST_BINARY(00011111); // mask out bits again and store
+    a &= 0b00011111; // mask out bits again and store
     writeData(0x01, a);
     a = M(CurrentNTAddr_High); // get high byte and branch if borrow not set
     if (c)
         goto SetATHigh;
-    a ^= BOOST_BINARY(00000100); // otherwise invert d2
+    a ^= 0b00000100; // otherwise invert d2
 
 SetATHigh: // mask out all other bits
-    a &= BOOST_BINARY(00000100);
+    a &= 0b00000100;
     a |= 0x23; // add $2300 to the high byte and store
     writeData(0x00, a);
     a = M(0x01); // get low byte - 4, divide by 4, add offset for
@@ -1790,8 +1790,8 @@ JumpEngine:
 InitializeNameTables:
     a = M(PPU_STATUS); // reset flip-flop
     a = M(Mirror_PPU_CTRL_REG1); // load mirror of ppu reg $2000
-    a |= BOOST_BINARY(00010000); // set sprites for first 4k and background for second 4k
-    a &= BOOST_BINARY(11110000); // clear rest of lower nybble, leave higher alone
+    a |= 0b00010000; // set sprites for first 4k and background for second 4k
+    a &= 0b11110000; // clear rest of lower nybble, leave higher alone
     pushReturnIndex(45);
     goto WritePPUReg1;
 Return_45:
@@ -1859,12 +1859,12 @@ PortLoop: // push previous bit onto stack
         goto PortLoop; // count down bits left
     writeData(SavedJoypadBits + x, a); // save controller status here always
     pha();
-    a &= BOOST_BINARY(00110000); // check for select or start
+    a &= 0b00110000; // check for select or start
     a &= M(JoypadBitMask + x); // if neither saved state nor current state
     if (z)
         goto Save8Bits; // have any of these two set, branch
     pla();
-    a &= BOOST_BINARY(11001111); // otherwise store without select
+    a &= 0b11001111; // otherwise store without select
     writeData(SavedJoypadBits + x, a); // or start bits and leave
     goto Return;
 
@@ -1887,10 +1887,10 @@ WriteBufferToScreen:
     a <<= 1; // shift to left and save in stack
     pha();
     a = M(Mirror_PPU_CTRL_REG1); // load mirror of $2000,
-    a |= BOOST_BINARY(00000100); // set ppu to increment by 32 by default
+    a |= 0b00000100; // set ppu to increment by 32 by default
     if (c)
         goto SetupWrites; // if d7 of third byte was clear, ppu will
-    a &= BOOST_BINARY(11111011); // only increment by 1
+    a &= 0b11111011; // only increment by 1
 
 SetupWrites: // write to register
     pushReturnIndex(48);
@@ -1900,7 +1900,7 @@ Return_48:
     a <<= 1;
     if (!c)
         goto GetLength; // if d6 of third byte was clear, do not repeat byte
-    a |= BOOST_BINARY(00000010); // otherwise set d1 and increment Y
+    a |= 0b00000010; // otherwise set d1 and increment Y
     ++y;
 
 GetLength: // shift back to the right to get proper length
@@ -1968,7 +1968,7 @@ Return_49: // use first nybble to print the coin display
 OutputNumbers:
     c = 0; // add 1 to low nybble
     a += 0x01;
-    a &= BOOST_BINARY(00001111); // mask out high nybble
+    a &= 0b00001111; // mask out high nybble
     compare(a, 0x06);
     if (c)
         goto ExitOutputN;
@@ -2149,7 +2149,7 @@ StartPage: // set as value here
     goto GetScreenPosition;
 Return_54: // get pixel coordinates for screen borders
     y = 0x20; // if on odd numbered page, use $2480 as start of rendering
-    a &= BOOST_BINARY(00000001); // otherwise use $2080, this address used later as name table
+    a &= 0b00000001; // otherwise use $2080, this address used later as name table
     if (z)
         goto SetInitNTHigh; // address for rendering of game area
     y = 0x24;
@@ -2461,7 +2461,7 @@ GetHalfway: // get halfway page number with offset
     a >>= 1;
 
 MaskHPNyb: // mask out all but lower nybble
-    a &= BOOST_BINARY(00001111);
+    a &= 0b00001111;
     compare(a, M(ScreenLeft_PageLoc));
     if (z)
         goto SetHalfway; // left side of screen must be at the halfway page,
@@ -2559,7 +2559,7 @@ TransposePlayers:
     if (n)
         goto ExTrans; // branch if not
     a = M(CurrentPlayer); // invert bit to update
-    a ^= BOOST_BINARY(00000001); // which player is on the screen
+    a ^= 0b00000001; // which player is on the screen
     writeData(CurrentPlayer, a);
     x = 0x06;
 
@@ -2638,7 +2638,7 @@ AreaParserTasks:
 IncrementColumnPos:
     ++M(CurrentColumnPos); // increment column where we're at
     a = M(CurrentColumnPos);
-    a &= BOOST_BINARY(00001111); // mask out higher nybble
+    a &= 0b00001111; // mask out higher nybble
     if (!z)
         goto NoColWrap;
     writeData(CurrentColumnPos, a); // if no bits left set, wrap back to zero (0-f)
@@ -2647,7 +2647,7 @@ IncrementColumnPos:
 NoColWrap: // increment column offset where we're at
     ++M(BlockBufferColumnPos);
     a = M(BlockBufferColumnPos);
-    a &= BOOST_BINARY(00011111); // mask out all but 5 LSB (0-1f)
+    a &= 0b00011111; // mask out all but 5 LSB (0-1f)
     writeData(BlockBufferColumnPos, a); // and save
     goto Return;
 
@@ -2781,7 +2781,7 @@ TerrLoop: // get one of the terrain rendering bit data
     if (z)
         goto NoCloud2;
     a = M(0x00); // if not, mask out all but d3
-    a &= BOOST_BINARY(00001000);
+    a &= 0b00001000;
     writeData(0x00, a);
 
 NoCloud2: // start at beginning of bitmasks
@@ -2833,7 +2833,7 @@ Return_70: // get block buffer address from where we're at
 ChkMTLow:
     writeData(0x00, y);
     a = M(MetatileBuffer + x); // load stored metatile number
-    a &= BOOST_BINARY(11000000); // mask out all but 2 MSB
+    a &= 0b11000000; // mask out all but 2 MSB
     a <<= 1;
     a.rol(); // make %xx000000 into %000000xx
     a.rol();
@@ -2895,7 +2895,7 @@ Chk1Row13:
     ++y; // if so, reread second byte of level object
     a = M(W(AreaData) + y);
     --y; // decrement to get ready to read first byte
-    a &= BOOST_BINARY(01000000); // check for d6 set (if not, object is page control)
+    a &= 0b01000000; // check for d6 set (if not, object is page control)
     if (!z)
         goto CheckRear;
     a = M(AreaObjectPageSel); // if page select is set, do not reread
@@ -2903,7 +2903,7 @@ Chk1Row13:
         goto CheckRear;
     ++y; // if d6 not set, reread second byte
     a = M(W(AreaData) + y);
-    a &= BOOST_BINARY(00011111); // mask out all but 5 LSB and store in page control
+    a &= 0b00011111; // mask out all but 5 LSB and store in page control
     writeData(AreaObjectPageLoc, a);
     ++M(AreaObjectPageSel); // increment page select
     goto NextAObj;
@@ -3010,18 +3010,18 @@ ChkRow13: // row 13?
     writeData(0x07, a);
     ++y; // get next byte
     a = M(W(AreaData) + y);
-    a &= BOOST_BINARY(01000000); // mask out all but d6 (page control obj bit)
+    a &= 0b01000000; // mask out all but d6 (page control obj bit)
     if (z)
         goto LeavePar; // if d6 clear, branch to leave (we handled this earlier)
     a = M(W(AreaData) + y); // otherwise, get byte again
-    a &= BOOST_BINARY(01111111); // mask out d7
+    a &= 0b01111111; // mask out d7
     compare(a, 0x4b); // check for loop command in low nybble
     if (!z)
         goto Mask2MSB; // (plus d6 set for object other than page control)
     ++M(LoopCommand); // if loop command, set loop command flag
 
 Mask2MSB: // mask out d7 and d6
-    a &= BOOST_BINARY(00111111);
+    a &= 0b00111111;
     goto NormObj; // and jump
 
 ChkSRows: // row 12-15?
@@ -3030,13 +3030,13 @@ ChkSRows: // row 12-15?
         goto SpecObj;
     ++y; // if not, get second byte of level object
     a = M(W(AreaData) + y);
-    a &= BOOST_BINARY(01110000); // mask out all but d6-d4
+    a &= 0b01110000; // mask out all but d6-d4
     if (!z)
         goto LrgObj; // if any bits set, branch to handle large object
     a = 0x16;
     writeData(0x07, a); // otherwise set offset of 24 for small object
     a = M(W(AreaData) + y); // reload second byte of level object
-    a &= BOOST_BINARY(00001111); // mask out higher nybble and jump
+    a &= 0b00001111; // mask out higher nybble and jump
     goto NormObj;
 
 LrgObj: // store value here (branch for large objects)
@@ -3045,7 +3045,7 @@ LrgObj: // store value here (branch for large objects)
     if (!z)
         goto NotWPipe;
     a = M(W(AreaData) + y); // if not, reload second byte
-    a &= BOOST_BINARY(00001000); // mask out all but d3 (usage control bit)
+    a &= 0b00001000; // mask out all but d3 (usage control bit)
     if (z)
         goto NotWPipe; // if d3 clear, branch to get original value
     a = 0x00; // otherwise, nullify value for warp pipe
@@ -3058,7 +3058,7 @@ NotWPipe: // get value and jump ahead
 SpecObj: // branch here for rows 12-15
     ++y;
     a = M(W(AreaData) + y);
-    a &= BOOST_BINARY(01110000); // get next byte and mask out all but d6-d4
+    a &= 0b01110000; // get next byte and mask out all but d6-d4
 
 MoveAOId: // move d6-d4 to lower nybble
     a >>= 1;
@@ -3077,7 +3077,7 @@ NormObj: // store value here (branch for small objects and rows 13 and 14)
         goto InitRear;
     y = M(AreaDataOffset); // if not, get old offset of level pointer
     a = M(W(AreaData) + y); // and reload first byte
-    a &= BOOST_BINARY(00001111);
+    a &= 0b00001111;
     compare(a, 0x0e); // row 14?
     if (!z)
         goto LeavePar;
@@ -3107,7 +3107,7 @@ LoopCmdE:
 BackColC: // get first byte again
     y = M(AreaDataOffset);
     a = M(W(AreaData) + y);
-    a &= BOOST_BINARY(11110000); // mask out low nybble and move high to low
+    a &= 0b11110000; // mask out low nybble and move high to low
     a >>= 1;
     a >>= 1;
     a >>= 1;
@@ -3230,15 +3230,15 @@ AlterAreaAttributes:
     ++y; // load second byte
     a = M(W(AreaData) + y);
     pha(); // save in stack for now
-    a &= BOOST_BINARY(01000000);
+    a &= 0b01000000;
     if (!z)
         goto Alter2; // branch if d6 is set
     pla();
     pha(); // pull and push offset to copy to A
-    a &= BOOST_BINARY(00001111); // mask out high nybble and store as
+    a &= 0b00001111; // mask out high nybble and store as
     writeData(TerrainControl, a); // new terrain height type bits
     pla();
-    a &= BOOST_BINARY(00110000); // pull and mask out all but d5 and d4
+    a &= 0b00110000; // pull and mask out all but d5 and d4
     a >>= 1; // move bits to lower nybble and store
     a >>= 1; // as new background scenery bits
     a >>= 1;
@@ -3250,7 +3250,7 @@ AlterAreaAttributes:
 
 Alter2:
     pla();
-    a &= BOOST_BINARY(00000111); // mask out all but 3 LSB
+    a &= 0b00000111; // mask out all but 3 LSB
     compare(a, 0x04); // if four or greater, set color control bits
     if (!c)
         goto SetFore; // and nullify foreground scenery bits
@@ -3288,7 +3288,7 @@ Return_75: // load identifier for piranha plants and do sub
 
 ScrollLockObject:
     a = M(ScrollLock); // invert scroll lock to turn it on
-    a ^= BOOST_BINARY(00000001);
+    a ^= 0b00000001;
     writeData(ScrollLock, a);
     goto Return;
 
@@ -4150,11 +4150,11 @@ LenSet:
 GetLrgObjAttrib:
     y = M(AreaObjOffsetBuffer + x); // get offset saved from area obj decoding routine
     a = M(W(AreaData) + y); // get first byte of level object
-    a &= BOOST_BINARY(00001111);
+    a &= 0b00001111;
     writeData(0x07, a); // save row location
     ++y;
     a = M(W(AreaData) + y); // get next byte, save lower nybble (length or height)
-    a &= BOOST_BINARY(00001111); // as Y, then leave
+    a &= 0b00001111; // as Y, then leave
     y = a;
     goto Return;
 
@@ -4192,7 +4192,7 @@ GetBlockBufferAddr:
     a = M(BlockBufferAddr + 2 + y); // of indirect here
     writeData(0x07, a);
     pla();
-    a &= BOOST_BINARY(00001111); // pull from stack, mask out high nybble
+    a &= 0b00001111; // pull from stack, mask out high nybble
     c = 0;
     a += M(BlockBufferAddr + y); // add to low byte
     writeData(0x06, a); // store here and leave
@@ -4207,7 +4207,7 @@ Return_123: // find it and store it here
     writeData(AreaPointer, a);
 
 GetAreaType: // mask out all but d6 and d5
-    a &= BOOST_BINARY(01100000);
+    a &= 0b01100000;
     a <<= 1;
     a.rol();
     a.rol();
@@ -4235,7 +4235,7 @@ GetAreaDataAddrs:
 Return_124:
     y = a;
     a = M(AreaPointer); // mask out all but 5 LSB
-    a &= BOOST_BINARY(00011111);
+    a &= 0b00011111;
     writeData(AreaAddrsLOffset, a); // save as low offset
     a = M(EnemyAddrHOffsets + y); // load base value with 2 altered MSB,
     c = 0; // then add base value to 5 LSB, result
@@ -4257,7 +4257,7 @@ Return_124:
     y = 0x00; // load first byte of header
     a = M(W(AreaData) + y);
     pha(); // save it to the stack for now
-    a &= BOOST_BINARY(00000111); // save 3 LSB for foreground scenery or bg color control
+    a &= 0b00000111; // save 3 LSB for foreground scenery or bg color control
     compare(a, 0x04);
     if (!c)
         goto StoreFore;
@@ -4268,13 +4268,13 @@ StoreFore: // if less, save value here as foreground scenery
     writeData(ForegroundScenery, a);
     pla(); // pull byte from stack and push it back
     pha();
-    a &= BOOST_BINARY(00111000); // save player entrance control bits
+    a &= 0b00111000; // save player entrance control bits
     a >>= 1; // shift bits over to LSBs
     a >>= 1;
     a >>= 1;
     writeData(PlayerEntranceCtrl, a); // save value here as player entrance control
     pla(); // pull byte again but do not push it back
-    a &= BOOST_BINARY(11000000); // save 2 MSB for game timer setting
+    a &= 0b11000000; // save 2 MSB for game timer setting
     c = 0;
     a.rol(); // rotate bits over to LSBs
     a.rol();
@@ -4283,23 +4283,23 @@ StoreFore: // if less, save value here as foreground scenery
     ++y;
     a = M(W(AreaData) + y); // load second byte of header
     pha(); // save to stack
-    a &= BOOST_BINARY(00001111); // mask out all but lower nybble
+    a &= 0b00001111; // mask out all but lower nybble
     writeData(TerrainControl, a);
     pla(); // pull and push byte to copy it to A
     pha();
-    a &= BOOST_BINARY(00110000); // save 2 MSB for background scenery type
+    a &= 0b00110000; // save 2 MSB for background scenery type
     a >>= 1;
     a >>= 1; // shift bits to LSBs
     a >>= 1;
     a >>= 1;
     writeData(BackgroundScenery, a); // save as background scenery
     pla();
-    a &= BOOST_BINARY(11000000);
+    a &= 0b11000000;
     c = 0;
     a.rol(); // rotate bits over to LSBs
     a.rol();
     a.rol();
-    compare(a, BOOST_BINARY(00000011)); // if set to 3, store here
+    compare(a, 0b00000011); // if set to 3, store here
     if (!z)
         goto StoreStyle; // and nullify other value
     writeData(CloudTypeOverride, a); // otherwise store value in other place
@@ -4526,7 +4526,7 @@ ScrollScreen:
     a &= 0x01; // get LSB of page location
     writeData(0x00, a); // save as temp variable for PPU register 1 mirror
     a = M(Mirror_PPU_CTRL_REG1); // get PPU register 1 mirror
-    a &= BOOST_BINARY(11111110); // save all bits except d0
+    a &= 0b11111110; // save all bits except d0
     a |= M(0x00); // get saved bit here and save in PPU register 1
     writeData(Mirror_PPU_CTRL_REG1, a); // mirror to be used to set name table later
     pushReturnIndex(145);
@@ -4552,7 +4552,7 @@ Return_146: // get horizontal offscreen bits for player
         goto KeepOnscr; // branch with default offset
     ++y; // otherwise use different offset (right side)
     a = M(0x00);
-    a &= BOOST_BINARY(00100000); // check offscreen bits for d5 set
+    a &= 0b00100000; // check offscreen bits for d5 set
     if (z)
         goto InitPlatScrl; // if not set, branch ahead of this part
 
@@ -4741,15 +4741,15 @@ DisJoyp: // disable controller bits
 
 SaveJoyp: // otherwise store A and B buttons in $0a
     a = M(SavedJoypadBits);
-    a &= BOOST_BINARY(11000000);
+    a &= 0b11000000;
     writeData(A_B_Buttons, a);
     a = M(SavedJoypadBits); // store left and right buttons in $0c
-    a &= BOOST_BINARY(00000011);
+    a &= 0b00000011;
     writeData(Left_Right_Buttons, a);
     a = M(SavedJoypadBits); // store up and down buttons in $0b
-    a &= BOOST_BINARY(00001100);
+    a &= 0b00001100;
     writeData(Up_Down_Buttons, a);
-    a &= BOOST_BINARY(00000100); // check for pressing down
+    a &= 0b00000100; // check for pressing down
     if (z)
         goto SizeChk; // if not, branch
     a = M(Player_State); // check player's state
@@ -4821,7 +4821,7 @@ Return_155: // do collision detection and process
     if (!c)
         goto PlayerHole;
     a = M(Player_SprAttrib);
-    a &= BOOST_BINARY(11011111); // otherwise nullify player's
+    a &= 0b11011111; // otherwise nullify player's
     writeData(Player_SprAttrib, a); // background priority flag
 
 PlayerHole: // check player's vertical high byte
@@ -4897,7 +4897,7 @@ Vine_AutoClimb:
         goto SetEntr;
 
 AutoClimb: // set controller bits override to up
-    a = BOOST_BINARY(00001000);
+    a = 0b00001000;
     writeData(JoypadOverride, a);
     y = 0x03; // set player state to climbing
     writeData(Player_State, y);
@@ -4964,7 +4964,7 @@ EnterSidePipe:
     writeData(Player_X_Speed, a);
     y = 0x01; // set controller right button by default
     a = M(Player_X_Position); // mask out higher nybble of player's
-    a &= BOOST_BINARY(00001111); // horizontal position
+    a &= 0b00001111; // horizontal position
     if (!z)
         goto RightPipe;
     writeData(Player_X_Speed, a); // if lower nybble = 0, set as horizontal speed
@@ -5057,7 +5057,7 @@ CyclePlayerPalette:
     a &= 0x03; // mask out all but d1-d0 (previously d3-d2)
     writeData(0x00, a); // store result here to use as palette bits
     a = M(Player_SprAttrib); // get player attributes
-    a &= BOOST_BINARY(11111100); // save any other bits but palette bits
+    a &= 0b11111100; // save any other bits but palette bits
     a |= M(0x00); // add palette bits
     writeData(Player_SprAttrib, a); // store as new player attributes
     goto Return; // and leave
@@ -5071,7 +5071,7 @@ Return_162: // do sub to init timer control and run player control routine
 
 ResetPalStar:
     a = M(Player_SprAttrib); // get player attributes
-    a &= BOOST_BINARY(11111100); // mask out palette bits to force palette 0
+    a &= 0b11111100; // mask out palette bits to force palette 0
     writeData(Player_SprAttrib, a); // store as new player attributes
     goto Return; // and leave
 
@@ -5134,7 +5134,7 @@ ChkStop: // get player collision bits
     ++M(StarFlagTaskControl); // otherwise set task control now (this gets ball rolling!)
 
 InCastle: // set player's background priority bit to
-    a = BOOST_BINARY(00100000);
+    a = 0b00100000;
     writeData(Player_SprAttrib, a); // give illusion of being inside the castle
 
 RdyNextA:
@@ -5181,7 +5181,7 @@ PlayerMovementSubs:
     if (!z)
         goto ProcMove; // if not on the ground, branch
     a = M(Up_Down_Buttons); // load controller bits for up and down
-    a &= BOOST_BINARY(00000100); // single out bit for down button
+    a &= 0b00000100; // single out bit for down button
 
 SetCrouch: // store value in crouch flag
     writeData(CrouchingFlag, a);
@@ -5357,7 +5357,7 @@ CSetFDir:
     a += M(ClimbAdderHigh + x); // from the player's page location
     writeData(Player_PageLoc, a);
     a = M(Left_Right_Buttons); // get left/right controller bits again
-    a ^= BOOST_BINARY(00000011); // invert them and store them while player
+    a ^= 0b00000011; // invert them and store them while player
     writeData(PlayerFacingDir, a); // is on vine to face player in opposite direction
 
 ExitCSub: // then leave
@@ -5382,7 +5382,7 @@ PlayerPhysicsSub:
     if (z)
         goto ProcClimb; // if not pressing up or down, branch
     ++y;
-    a &= BOOST_BINARY(00001000); // check for pressing up
+    a &= 0b00001000; // check for pressing up
     if (!z)
         goto ProcClimb;
     ++y;
@@ -5600,7 +5600,7 @@ GetPlayerAnimSpeed:
 
 ChkSkid: // get controller bits
     a = M(SavedJoypadBits);
-    a &= BOOST_BINARY(01111111); // mask out A button
+    a &= 0b01111111; // mask out A button
     if (z)
         goto SetAnimSpd; // if no other buttons pressed, branch ahead of all this
     a &= 0x03; // mask out all others except left and right
@@ -5705,7 +5705,7 @@ ProcFireball_Bubble:
     if (!z)
         goto ProcFireballs; // if button pressed in previous frame, branch
     a = M(FireballCounter); // load fireball counter
-    a &= BOOST_BINARY(00000001); // get LSB and use as offset for buffer
+    a &= 0b00000001; // get LSB and use as offset for buffer
     x = a;
     a = M(Fireball_State + x); // load fireball state
     if (!z)
@@ -5832,7 +5832,7 @@ Return_183: // get bounding box coordinates
     goto FireballBGCollision;
 Return_184: // do fireball to background collision detection
     a = M(FBall_OffscreenBits); // get fireball offscreen bits
-    a &= BOOST_BINARY(11001100); // mask out certain bits
+    a &= 0b11001100; // mask out certain bits
     if (!z)
         goto EraseFB; // if any bits still set, branch to kill fireball
     pushReturnIndex(185);
@@ -6163,7 +6163,7 @@ Return_193: // get offscreen information
     y = a;
     --y; // subtract one from frame control,
     a = y; // the only way a poor nmos 6502 can
-    a &= BOOST_BINARY(00000010); // mask out all but d1, original value still in Y
+    a &= 0b00000010; // mask out all but d1, original value still in Y
     if (!z)
         goto DownJSpr; // if set, branch to move player up
     ++M(Player_Y_Position);
@@ -6294,7 +6294,7 @@ Return_199:
     if (!z)
         goto VDrawLoop; // do not yet match, loop back to draw more vine
     a = M(Enemy_OffscreenBits);
-    a &= BOOST_BINARY(00001100); // mask offscreen bits
+    a &= 0b00001100; // mask offscreen bits
     if (z)
         goto WrCMTile; // if none of the saved offscreen bits set, skip ahead
     --y; // otherwise decrement Y to get proper offset again
@@ -6426,8 +6426,8 @@ BulletBillHandler:
     if (!z)
         goto ChkDSte; // if bullet bill's state set, branch to check defeated state
     a = M(Enemy_OffscreenBits); // otherwise load offscreen bits
-    a &= BOOST_BINARY(00001100); // mask out bits
-    compare(a, BOOST_BINARY(00001100)); // check to see if all bits are set
+    a &= 0b00001100; // mask out bits
+    compare(a, 0b00001100); // check to see if all bits are set
     if (z)
         goto KillBB; // if so, branch to kill this object
     y = 0x01; // set to move right by default
@@ -6457,7 +6457,7 @@ SetupBB: // set bullet bill's moving direction
 
 ChkDSte: // check enemy state for d5 set
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(00100000);
+    a &= 0b00100000;
     if (z)
         goto BBFly; // if not set, skip to move horizontally
     pushReturnIndex(206);
@@ -6494,11 +6494,11 @@ Return_212:
 
 SpawnHammerObj:
     a = M(PseudoRandomBitReg + 1); // get pseudorandom bits from
-    a &= BOOST_BINARY(00000111); // second part of LSFR
+    a &= 0b00000111; // second part of LSFR
     if (!z)
         goto SetMOfs; // if any bits are set, branch and use as offset
     a = M(PseudoRandomBitReg + 1);
-    a &= BOOST_BINARY(00001000); // get d3 from same part of LSFR
+    a &= 0b00001000; // get d3 from same part of LSFR
 
 SetMOfs: // use either d3 or d2-d0 for offset here
     y = a;
@@ -6533,7 +6533,7 @@ ProcHammerObj:
     if (!z)
         goto RunHSubs; // skip all of this code and go to last subs at the end
     a = M(Misc_State + x); // otherwise get hammer's state
-    a &= BOOST_BINARY(01111111); // mask out d7
+    a &= 0b01111111; // mask out d7
     y = M(HammerEnemyOffset + x); // get enemy object offset that spawned this hammer
     compare(a, 0x02); // check hammer's state
     if (z)
@@ -6564,7 +6564,7 @@ SetHSpd:
     a = 0xfe;
     writeData(Misc_Y_Speed + x, a); // set hammer's vertical speed
     a = M(Enemy_State + y); // get enemy object state
-    a &= BOOST_BINARY(11110111); // mask out d3
+    a &= 0b11110111; // mask out d3
     writeData(Enemy_State + y, a); // store new state
     x = M(Enemy_MovingDir + y); // get enemy's moving direction
     --x; // decrement to use as offset
@@ -6844,7 +6844,7 @@ StrType: // store type here
     writeData(PowerUpType, a);
 
 PutBehind:
-    a = BOOST_BINARY(00100000);
+    a = 0b00100000;
     writeData(Enemy_SprAttrib + 5, a); // set background priority bit
     a = Sfx_GrowPowerUp;
     writeData(Square2SoundQueue, a); // load power-up reveal sound and leave
@@ -6903,7 +6903,7 @@ GrowThePowerUp:
         goto ChkPUSte; // branch ahead to last part here
     a = 0x10;
     writeData(Enemy_X_Speed + x, a); // otherwise set horizontal speed
-    a = BOOST_BINARY(10000000);
+    a = 0b10000000;
     writeData(Enemy_State + 5, a); // and then set d7 in power-up object's state
     a <<= 1; // shift once to init A
     writeData(Enemy_SprAttrib + 5, a); // initialize background priority bit set here
@@ -7395,7 +7395,7 @@ MoveObjectHorizontally:
     compare(a, 0x08); // if < 8, branch, do not change
     if (!c)
         goto SaveXSpd;
-    a |= BOOST_BINARY(11110000); // otherwise alter high nybble
+    a |= 0b11110000; // otherwise alter high nybble
 
 SaveXSpd: // save result here
     writeData(0x00, a);
@@ -7599,7 +7599,7 @@ ChkUpM: // get value from stack
     if (z)
         goto ExVMove; // if set to zero, branch to leave
     a = M(0x02);
-    a ^= BOOST_BINARY(11111111); // otherwise get two's compliment of maximum speed
+    a ^= 0b11111111; // otherwise get two's compliment of maximum speed
     y = a;
     ++y;
     writeData(0x07, y); // store two's compliment here
@@ -7648,7 +7648,7 @@ ChkAreaTsk: // check number of tasks to perform
 
 ChkBowserF: // get data from stack
     pla();
-    a &= BOOST_BINARY(00001111); // mask out high nybble
+    a &= 0b00001111; // mask out high nybble
     y = a;
     a = M(Enemy_Flag + y); // use as pointer and load same place with different offset
     if (!z)
@@ -7784,7 +7784,7 @@ ProcessEnemyData:
     goto CheckFrenzyBuffer; // if found, jump to check frenzy buffer, otherwise
 
 CheckEndofBuffer:
-    a &= BOOST_BINARY(00001111); // check for special row $0e
+    a &= 0b00001111; // check for special row $0e
     compare(a, 0x0e);
     if (z)
         goto CheckRightBounds; // if found, branch, otherwise
@@ -7793,7 +7793,7 @@ CheckEndofBuffer:
         goto CheckRightBounds; // if not at end of buffer, branch
     ++y;
     a = M(W(EnemyData) + y); // check for specific value here
-    a &= BOOST_BINARY(00111111); // not sure what this was intended for, exactly
+    a &= 0b00111111; // not sure what this was intended for, exactly
     compare(a, 0x2e); // this part is quite possibly residual code
     if (z)
         goto CheckRightBounds; // but it has the effect of keeping enemies out of
@@ -7805,7 +7805,7 @@ CheckRightBounds:
     a = M(ScreenRight_X_Pos); // add 48 to pixel coordinate of right boundary
     c = 0;
     a += 0x30;
-    a &= BOOST_BINARY(11110000); // store high nybble
+    a &= 0b11110000; // store high nybble
     writeData(0x07, a);
     a = M(ScreenRight_PageLoc); // add carry to page location of right boundary
     a += 0x00;
@@ -7834,7 +7834,7 @@ CheckPageCtrlRow:
         goto PositionEnemyObj; // branch without reading second byte
     ++y;
     a = M(W(EnemyData) + y); // otherwise, get second byte, mask out 2 MSB
-    a &= BOOST_BINARY(00111111);
+    a &= 0b00111111;
     writeData(EnemyObjectPageLoc, a); // store as page control for enemy object data
     ++M(EnemyDataOffset); // increment enemy object data offset 2 bytes
     ++M(EnemyDataOffset);
@@ -7845,7 +7845,7 @@ PositionEnemyObj:
     a = M(EnemyObjectPageLoc); // store page control as page location
     writeData(Enemy_PageLoc + x, a); // for enemy object
     a = M(W(EnemyData) + y); // get first byte of enemy object
-    a &= BOOST_BINARY(11110000);
+    a &= 0b11110000;
     writeData(Enemy_X_Position + x, a); // store column position
     compare(a, M(ScreenRight_X_Pos)); // check column position against right boundary
     a = M(Enemy_PageLoc + x); // without subtracting, then subtract borrow
@@ -7853,7 +7853,7 @@ PositionEnemyObj:
     if (c)
         goto CheckRightExtBounds; // if enemy object beyond or at boundary, branch
     a = M(W(EnemyData) + y);
-    a &= BOOST_BINARY(00001111); // check for special row $0e
+    a &= 0b00001111; // check for special row $0e
     compare(a, 0x0e); // if found, jump elsewhere
     if (z)
         goto ParseRow0e;
@@ -7879,7 +7879,7 @@ CheckRightExtBounds:
         goto ParseRow0e; // (necessary if branched to $c1cb)
     ++y;
     a = M(W(EnemyData) + y); // get second byte of object
-    a &= BOOST_BINARY(01000000); // check to see if hard mode bit is set
+    a &= 0b01000000; // check to see if hard mode bit is set
     if (z)
         goto CheckForEnemyGroup; // if not, branch to check for group enemy objects
     a = M(SecondaryHardMode); // if set, check to see if secondary hard mode flag
@@ -7888,7 +7888,7 @@ CheckRightExtBounds:
 
 CheckForEnemyGroup:
     a = M(W(EnemyData) + y); // get second byte and mask out 2 MSB
-    a &= BOOST_BINARY(00111111);
+    a &= 0b00111111;
     compare(a, 0x37); // check for value below $37
     if (!c)
         goto BuzzyBeetleMutate;
@@ -7964,7 +7964,7 @@ ParseRow0e:
     writeData(AreaPointer, a); // to addresses for level and enemy object data
     ++y;
     a = M(W(EnemyData) + y); // get third byte again, and this time mask out
-    a &= BOOST_BINARY(00011111); // the 3 MSB from before, save as page number to be
+    a &= 0b00011111; // the 3 MSB from before, save as page number to be
     writeData(EntrancePage, a); // used upon entry to area, if area is entered
 
 NotUse:
@@ -7973,7 +7973,7 @@ NotUse:
 CheckThreeBytes:
     y = M(EnemyDataOffset); // load current offset for enemy object data
     a = M(W(EnemyData) + y); // get first byte
-    a &= BOOST_BINARY(00001111); // check for special row $0e
+    a &= 0b00001111; // check for special row $0e
     compare(a, 0x0e);
     if (!z)
         goto Inc2B;
@@ -8237,7 +8237,7 @@ InitCheepCheep:
     goto SmallBBox;
 Return_276: // set vertical bounding box, speed, init others
     a = M(PseudoRandomBitReg + x); // check one portion of LSFR
-    a &= BOOST_BINARY(00010000); // get d4 from it
+    a &= 0b00010000; // get d4 from it
     writeData(CheepCheepMoveMFlag + x, a); // save as movement flag of some sort
     a = M(Enemy_Y_Position + x);
     writeData(CheepCheepOrigYPos + x, a); // save original vertical coordinate here
@@ -8337,7 +8337,7 @@ CreateSpiny:
     a -= 0x08;
     writeData(Enemy_Y_Position + x, a);
     a = M(PseudoRandomBitReg + x); // get 2 LSB of LSFR and save to Y
-    a &= BOOST_BINARY(00000011);
+    a &= 0b00000011;
     y = a;
     x = 0x02;
 
@@ -8361,11 +8361,11 @@ Return_280: // move enemy, change direction, get value - difference
         goto SetSpSpd; // if moving faster than a certain amount, branch elsewhere
     y = a; // otherwise save value in A to Y for now
     a = M(PseudoRandomBitReg + 1 + x);
-    a &= BOOST_BINARY(00000011); // get one of the LSFR parts and save the 2 LSB
+    a &= 0b00000011; // get one of the LSFR parts and save the 2 LSB
     if (z)
         goto UsePosv; // branch if neither bits are set
     a = y;
-    a ^= BOOST_BINARY(11111111); // otherwise get two's compliment of Y
+    a ^= 0b11111111; // otherwise get two's compliment of Y
     y = a;
     ++y;
 
@@ -8434,7 +8434,7 @@ InitFlyingCheepCheep:
     goto SmallBBox;
 Return_283: // jump to set bounding box size $09 and init other values
     a = M(PseudoRandomBitReg + 1 + x);
-    a &= BOOST_BINARY(00000011); // set pseudorandom offset here
+    a &= 0b00000011; // set pseudorandom offset here
     y = a;
     a = M(FlyCCTimerData + y); // load timer with pseudorandom offset
     writeData(FrenzyEnemyTimer, a);
@@ -8450,7 +8450,7 @@ MaxCC: // store whatever pseudorandom bits are in Y
     if (c)
         goto ChpChpEx; // if X => Y, branch to leave
     a = M(PseudoRandomBitReg + x);
-    a &= BOOST_BINARY(00000011); // get last two bits of LSFR, first part
+    a &= 0b00000011; // get last two bits of LSFR, first part
     writeData(0x00, a); // and store in two places
     writeData(0x01, a);
     a = 0xfb; // set vertical speed for cheep-cheep
@@ -8471,11 +8471,11 @@ GSeed: // save to stack
     a += M(0x00); // add to last two bits of LSFR we saved earlier
     writeData(0x00, a); // save it there
     a = M(PseudoRandomBitReg + 1 + x);
-    a &= BOOST_BINARY(00000011); // if neither of the last two bits of second LSFR set,
+    a &= 0b00000011; // if neither of the last two bits of second LSFR set,
     if (z)
         goto RSeed; // skip this part and save contents of $00
     a = M(PseudoRandomBitReg + 2 + x);
-    a &= BOOST_BINARY(00001111); // otherwise overwrite with lower nybble of
+    a &= 0b00001111; // otherwise overwrite with lower nybble of
     writeData(0x00, a); // third LSFR part
 
 RSeed: // get value from stack we saved earlier
@@ -8492,7 +8492,7 @@ RSeed: // get value from stack we saved earlier
         goto D2XPos1;
     y = M(0x00); // get first LSFR or third LSFR lower nybble
     a = y; // and check for d1 set
-    a &= BOOST_BINARY(00000010);
+    a &= 0b00000010;
     if (z)
         goto D2XPos1; // if d1 not set, branch
     a = M(Enemy_X_Speed + x);
@@ -8504,7 +8504,7 @@ RSeed: // get value from stack we saved earlier
 
 D2XPos1: // get first LSFR or third LSFR lower nybble again
     a = y;
-    a &= BOOST_BINARY(00000010);
+    a &= 0b00000010;
     if (z)
         goto D2XPos2; // check for d1 set again, branch again if not set
     a = M(Player_X_Position); // get player's horizontal position
@@ -8568,7 +8568,7 @@ FSLoop: // increment one slot
         goto FSLoop; // if set, branch and keep checking
     writeData(DuplicateObj_Offset, y); // otherwise set offset here
     a = x; // transfer original enemy buffer offset
-    a |= BOOST_BINARY(10000000); // store with d7 set as flag in new enemy
+    a |= 0b10000000; // store with d7 set as flag in new enemy
     writeData(Enemy_Flag + y, a); // slot as well as enemy offset
     a = M(Enemy_PageLoc + x);
     writeData(Enemy_PageLoc + y, a); // copy page location and horizontal coordinates
@@ -8612,7 +8612,7 @@ Return_285: // get timer data based on flame counter
 SetFrT: // set timer accordingly
     writeData(FrenzyEnemyTimer, a);
     a = M(PseudoRandomBitReg + x);
-    a &= BOOST_BINARY(00000011); // get 2 LSB from first part of LSFR
+    a &= 0b00000011; // get 2 LSB from first part of LSFR
     writeData(BowserFlamePRandomOfs + x, a); // set here
     y = a; // use as offset
     a = M(FlameYPosData + y); // load vertical position based on pseudorandom offset
@@ -8640,7 +8640,7 @@ SpawnFromMouth:
     a += 0x08;
     writeData(Enemy_Y_Position + x, a); // save as flame's vertical position
     a = M(PseudoRandomBitReg + x);
-    a &= BOOST_BINARY(00000011); // get 2 LSB from first part of LSFR
+    a &= 0b00000011; // get 2 LSB from first part of LSFR
     writeData(Enemy_YMF_Dummy + x, a); // save here
     y = a; // use as offset
     a = M(FlameYPosData + y); // get value here using bits as offset
@@ -8743,7 +8743,7 @@ ChkW2: // check world number
 
 Get17ID:
     a = y;
-    a &= BOOST_BINARY(00000001); // mask out all but last bit of offset
+    a &= 0b00000001; // mask out all but last bit of offset
     y = a;
     a = M(SwimCC_IDData + y); // load identifier for cheep-cheeps
 
@@ -8758,7 +8758,7 @@ Set17ID: // store whatever's in A as enemy identifier
 
 GetRBit: // get first part of LSFR
     a = M(PseudoRandomBitReg + x);
-    a &= BOOST_BINARY(00000111); // mask out all but 3 LSB
+    a &= 0b00000111; // mask out all but 3 LSB
 
 ChkRBit: // use as offset
     y = a;
@@ -8768,7 +8768,7 @@ ChkRBit: // use as offset
         goto AddFBit;
     ++y; // increment offset
     a = y;
-    a &= BOOST_BINARY(00000111); // mask out all but 3 LSB thus keeping it 0-7
+    a &= 0b00000111; // mask out all but 3 LSB thus keeping it 0-7
     goto ChkRBit; // do another check
 
 AddFBit: // add bit to already set bits in filter
@@ -9407,9 +9407,9 @@ MovePodoboo:
     goto InitPodoboo;
 Return_324: // otherwise set up podoboo again
     a = M(PseudoRandomBitReg + 1 + x); // get part of LSFR
-    a |= BOOST_BINARY(10000000); // set d7
+    a |= 0b10000000; // set d7
     writeData(Enemy_Y_MoveForce + x, a); // store as movement force
-    a &= BOOST_BINARY(00001111); // mask out high nybble
+    a &= 0b00001111; // mask out high nybble
     a |= 0x06; // set for at least six intervals
     writeData(EnemyIntervalTimer + x, a); // store as new enemy timer
     a = 0xf9;
@@ -9420,7 +9420,7 @@ PdbM: // branch to impose gravity on podoboo
 
 ProcHammerBro:
     a = M(Enemy_State + x); // check hammer bro's enemy state for d5 set
-    a &= BOOST_BINARY(00100000);
+    a &= 0b00100000;
     if (z)
         goto ChkJH; // if not set, go ahead with code
     goto MoveDefeatedEnemy; // otherwise jump to something else
@@ -9431,7 +9431,7 @@ ChkJH: // check jump timer
         goto HammerBroJumpCode; // if expired, branch to jump
     --M(HammerBroJumpTimer + x); // otherwise decrement jump timer
     a = M(Enemy_OffscreenBits);
-    a &= BOOST_BINARY(00001100); // check offscreen bits
+    a &= 0b00001100; // check offscreen bits
     if (!z)
         goto MoveHammerBroXDir; // if hammer bro a little offscreen, skip to movement code
     a = M(HammerThrowingTimer + x); // check hammer throwing timer
@@ -9446,7 +9446,7 @@ Return_325: // do a sub here to spawn hammer object
     if (!c)
         goto DecHT; // if carry clear, hammer not spawned, skip to decrement timer
     a = M(Enemy_State + x);
-    a |= BOOST_BINARY(00001000); // set d3 in enemy state for hammer throw
+    a |= 0b00001000; // set d3 in enemy state for hammer throw
     writeData(Enemy_State + x, a);
     goto MoveHammerBroXDir; // jump to move hammer bro
 
@@ -9456,7 +9456,7 @@ DecHT: // decrement timer
 
 HammerBroJumpCode:
     a = M(Enemy_State + x); // get hammer bro's enemy state
-    a &= BOOST_BINARY(00000111); // mask out all but 3 LSB
+    a &= 0b00000111; // mask out all but 3 LSB
     compare(a, 0x01); // check for d0 set (for jumping)
     if (z)
         goto MoveHammerBroXDir; // if set, branch ahead to moving code
@@ -9495,13 +9495,13 @@ HJump: // get jump length timer data using offset from before
     a = M(HammerBroJumpLData + y);
     writeData(EnemyFrameTimer + x, a); // save in enemy timer
     a = M(PseudoRandomBitReg + 1 + x);
-    a |= BOOST_BINARY(11000000); // get contents of part of LSFR, set d7 and d6, then
+    a |= 0b11000000; // get contents of part of LSFR, set d7 and d6, then
     writeData(HammerBroJumpTimer + x, a); // store in jump timer
 
 MoveHammerBroXDir:
     y = 0xfc; // move hammer bro a little to the left
     a = M(FrameCounter);
-    a &= BOOST_BINARY(01000000); // change hammer bro's direction every 64 frames
+    a &= 0b01000000; // change hammer bro's direction every 64 frames
     if (!z)
         goto Shimmy;
     y = 0x04; // if d6 set in counter, move him a little to the right
@@ -9527,7 +9527,7 @@ SetShim: // set moving direction
 MoveNormalEnemy:
     y = 0x00; // init Y to leave horizontal movement as-is 
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(01000000); // check enemy state for d6 set, if set skip
+    a &= 0b01000000; // check enemy state for d6 set, if set skip
     if (!z)
         goto FallE; // to move enemy vertically, then horizontally if necessary
     a = M(Enemy_State + x);
@@ -9535,11 +9535,11 @@ MoveNormalEnemy:
     if (c)
         goto SteadM; // if set, branch to move enemy horizontally
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(00100000); // check enemy state for d5 set
+    a &= 0b00100000; // check enemy state for d5 set
     if (!z)
         goto MoveDefeatedEnemy; // if set, branch to move defeated enemy object
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(00000111); // check d2-d0 of enemy state for any set bits
+    a &= 0b00000111; // check d2-d0 of enemy state for any set bits
     if (z)
         goto SteadM; // if enemy in normal state, branch to move enemy horizontally
     compare(a, 0x05);
@@ -9558,7 +9558,7 @@ Return_327:
     compare(a, 0x02);
     if (z)
         goto MEHor; // if found, branch to move enemy horizontally
-    a &= BOOST_BINARY(01000000); // check for d6 set
+    a &= 0b01000000; // check for d6 set
     if (z)
         goto SteadM; // if not set, branch to something else
     a = M(Enemy_ID + x);
@@ -9659,7 +9659,7 @@ ProcMoveRedPTroopa:
     if (c)
         goto MoveRedPTUpOrDown; // if current => original, skip ahead to more code
     a = M(FrameCounter); // get frame counter
-    a &= BOOST_BINARY(00000111); // mask out all but 3 LSB
+    a &= 0b00000111; // mask out all but 3 LSB
     if (!z)
         goto NoIncPT; // if any bits set, branch to leave
     ++M(Enemy_Y_Position + x); // otherwise increment red paratroopa's vertical position
@@ -9688,11 +9688,11 @@ Return_332: // do sub to increment primary and secondary counters
 Return_333: // do sub to move green paratroopa accordingly, and horizontally
     y = 0x01; // set Y to move green paratroopa down
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00000011); // check frame counter 2 LSB for any bits set
+    a &= 0b00000011; // check frame counter 2 LSB for any bits set
     if (!z)
         goto NoMGPT; // branch to leave if set to move up/down every fourth frame
     a = M(FrameCounter);
-    a &= BOOST_BINARY(01000000); // check frame counter for d6 set
+    a &= 0b01000000; // check frame counter for d6 set
     if (!z)
         goto YSway; // branch to move green paratroopa down if set
     y = 0xff; // otherwise set Y to move green paratroopa up
@@ -9715,7 +9715,7 @@ XMoveCntr_GreenPTroopa:
 XMoveCntr_Platform:
     writeData(0x01, a); // store value here
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00000011); // branch to leave if not on
+    a &= 0b00000011; // branch to leave if not on
     if (!z)
         goto NoIncXM; // every fourth frame
     y = M(XMoveSecondaryCounter + x); // get secondary counter
@@ -9753,7 +9753,7 @@ MoveWithXMCntrs:
     pha();
     y = 0x01; // set value here by default
     a = M(XMovePrimaryCounter + x);
-    a &= BOOST_BINARY(00000010); // if d1 of primary counter is
+    a &= 0b00000010; // if d1 of primary counter is
     if (!z)
         goto XMRight; // set, branch ahead of this part here
     a = M(XMoveSecondaryCounter + x);
@@ -9777,7 +9777,7 @@ Return_334:
 
 MoveBloober:
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(00100000); // check enemy state for d5 set
+    a &= 0b00100000; // check enemy state for d5 set
     if (!z)
         goto MoveDefeatedBloober; // branch if set to move defeated bloober
     y = M(SecondaryHardMode); // use secondary hard mode flag as offset
@@ -9850,11 +9850,11 @@ MoveDefeatedBloober:
 
 ProcSwimmingB:
     a = M(BlooperMoveCounter + x); // get enemy's movement counter
-    a &= BOOST_BINARY(00000010); // check for d1 set
+    a &= 0b00000010; // check for d1 set
     if (!z)
         goto ChkForFloatdown; // branch if set
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00000111); // get 3 LSB of frame counter
+    a &= 0b00000111; // get 3 LSB of frame counter
     pha(); // and save it to the stack
     a = M(BlooperMoveCounter + x); // get enemy's movement counter
     a >>= 1; // check for d0 set
@@ -9929,7 +9929,7 @@ ChkNearPlayer:
 
 MoveBulletBill:
     a = M(Enemy_State + x); // check bullet bill's enemy object state for d5 set
-    a &= BOOST_BINARY(00100000);
+    a &= 0b00100000;
     if (z)
         goto NotDefB; // if not set, continue with movement code
     goto MoveJ_EnemyVertically; // otherwise jump to move defeated bullet bill downwards
@@ -9941,7 +9941,7 @@ NotDefB: // set bullet bill's horizontal speed
 
 MoveSwimmingCheepCheep:
     a = M(Enemy_State + x); // check cheep-cheep's enemy object state
-    a &= BOOST_BINARY(00100000); // for d5 set
+    a &= 0b00100000; // for d5 set
     if (z)
         goto CCSwim; // if not set, continue with movement code
     goto MoveEnemySlowVert; // otherwise jump to move defeated cheep-cheep downwards
@@ -10025,7 +10025,7 @@ ProcFirebar:
     goto GetEnemyOffscreenBits;
 Return_337: // get offscreen information
     a = M(Enemy_OffscreenBits); // check for d3 set
-    a &= BOOST_BINARY(00001000); // if so, branch to leave
+    a &= 0b00001000; // if so, branch to leave
     if (!z)
         goto SkipFBar;
     a = M(TimerControl); // if master timer control set, branch
@@ -10035,7 +10035,7 @@ Return_337: // get offscreen information
     pushReturnIndex(338);
     goto FirebarSpin;
 Return_338: // modify current spinstate
-    a &= BOOST_BINARY(00011111); // mask out all but 5 LSB
+    a &= 0b00011111; // mask out all but 5 LSB
     writeData(FirebarSpinState_High + x, a); // and store as new high byte of spinstate
 
 SusFbar: // get high byte of spinstate
@@ -10283,11 +10283,11 @@ NoColFB: // get OAM data offset
 
 GetFirebarPosition:
     pha(); // save high byte of spinstate to the stack
-    a &= BOOST_BINARY(00001111); // mask out low nybble
+    a &= 0b00001111; // mask out low nybble
     compare(a, 0x09);
     if (!c)
         goto GetHAdder; // if lower than $09, branch ahead
-    a ^= BOOST_BINARY(00001111); // otherwise get two's compliment to oscillate
+    a ^= 0b00001111; // otherwise get two's compliment to oscillate
     c = 0;
     a += 0x01;
 
@@ -10304,11 +10304,11 @@ GetHAdder: // store result, modified or not, here
     pha(); // save it again because we still need it
     c = 0;
     a += 0x08; // add eight this time, to get vertical adder
-    a &= BOOST_BINARY(00001111); // mask out high nybble
+    a &= 0b00001111; // mask out high nybble
     compare(a, 0x09); // if lower than $09, branch ahead
     if (!c)
         goto GetVAdder;
-    a ^= BOOST_BINARY(00001111); // otherwise get two's compliment
+    a ^= 0b00001111; // otherwise get two's compliment
     c = 0;
     a += 0x01;
 
@@ -10334,7 +10334,7 @@ GetVAdder: // store result here
 
 MoveFlyingCheepCheep:
     a = M(Enemy_State + x); // check cheep-cheep's enemy state
-    a &= BOOST_BINARY(00100000); // for d5 set
+    a &= 0b00100000; // for d5 set
     if (z)
         goto FlyCC; // branch to continue code if not set
     a = 0x00;
@@ -10388,7 +10388,7 @@ BPGet: // load bg priority data and store (this is very likely
 
 MoveLakitu:
     a = M(Enemy_State + x); // check lakitu's enemy state
-    a &= BOOST_BINARY(00100000); // for d5 set
+    a &= 0b00100000; // for d5 set
     if (z)
         goto ChkLS; // if not set, continue with code
     goto MoveD_EnemyVertically; // otherwise jump to move defeated lakitu downwards
@@ -10480,7 +10480,7 @@ SetLMovD: // set horizontal direction depending on horizontal
 
 ChkPSpeed:
     a = M(0x00);
-    a &= BOOST_BINARY(00111100); // mask out all but four bits in the middle
+    a &= 0b00111100; // mask out all but four bits in the middle
     a >>= 1; // divide masked difference by four
     a >>= 1;
     writeData(0x00, a); // store as new value
@@ -10543,7 +10543,7 @@ BridgeCollapse:
     a = M(Enemy_State + x); // if bowser in normal state, skip all of this
     if (z)
         goto RemoveBridge;
-    a &= BOOST_BINARY(01000000); // if bowser's state has d6 clear, skip to silence music
+    a &= 0b01000000; // if bowser's state has d6 clear, skip to silence music
     if (z)
         goto SetM2;
     a = M(Enemy_Y_Position + x); // check bowser's vertical coordinate
@@ -10599,7 +10599,7 @@ Return_352: // set new vram buffer offset
     pushReturnIndex(353);
     goto InitVStf;
 Return_353: // initialize whatever vertical speed bowser has
-    a = BOOST_BINARY(01000000);
+    a = 0b01000000;
     writeData(Enemy_State + x, a); // set bowser's state to one of defeated states (d6 set)
     a = Sfx_BowserFall;
     writeData(Square2SoundQueue, a); // play bowser defeat sound
@@ -10609,7 +10609,7 @@ NoBFall: // jump to code that draws bowser
 
 RunBowser:
     a = M(Enemy_State + x); // if d5 in enemy state is not set
-    a &= BOOST_BINARY(00100000); // then branch elsewhere to run bowser
+    a &= 0b00100000; // then branch elsewhere to run bowser
     if (z)
         goto BowserControl;
     a = M(Enemy_Y_Position + x); // otherwise check vertical position
@@ -10654,12 +10654,12 @@ FeetTmr: // decrement timer to control bowser's feet
     a = 0x20; // otherwise, reset timer
     writeData(BowserFeetCounter, a);
     a = M(BowserBodyControls); // and invert bit used
-    a ^= BOOST_BINARY(00000001); // to control bowser's feet
+    a ^= 0b00000001; // to control bowser's feet
     writeData(BowserBodyControls, a);
 
 ResetMDr: // check frame counter
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00001111); // if not on every sixteenth frame, skip
+    a &= 0b00001111; // if not on every sixteenth frame, skip
     if (!z)
         goto B_FaceP; // ahead to continue code
     a = 0x02; // otherwise reset moving/facing direction every
@@ -10688,7 +10688,7 @@ Return_355: // get horizontal difference between player and bowser,
 
 GetPRCmp: // get frame counter
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00000011);
+    a &= 0b00000011;
     if (!z)
         goto HammerChk; // execute this code every fourth frame, otherwise branch
     a = M(Enemy_X_Position + x);
@@ -10696,7 +10696,7 @@ GetPRCmp: // get frame counter
     if (!z)
         goto GetDToO; // branch to skip this part
     a = M(PseudoRandomBitReg + x);
-    a &= BOOST_BINARY(00000011); // get pseudorandom offset
+    a &= 0b00000011; // get pseudorandom offset
     y = a;
     a = M(PRandomRange + y); // load value using pseudorandom offset
     writeData(MaxRangeFromOrigin, a); // and store here
@@ -10738,7 +10738,7 @@ Return_356: // otherwise start by moving bowser downwards
     if (!c)
         goto SetHmrTmr; // if world 1-5, skip this part (not time to throw hammers yet)
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00000011); // check to see if it's time to execute sub
+    a &= 0b00000011; // check to see if it's time to execute sub
     if (!z)
         goto SetHmrTmr; // if not, skip sub, otherwise
     pushReturnIndex(357);
@@ -10751,7 +10751,7 @@ SetHmrTmr: // get current vertical position
     if (!c)
         goto ChkFireB; // then skip to world number check for flames
     a = M(PseudoRandomBitReg + x);
-    a &= BOOST_BINARY(00000011); // get pseudorandom offset
+    a &= 0b00000011; // get pseudorandom offset
     y = a;
     a = M(PRandomRange + y); // get value using pseudorandom offset
     writeData(EnemyFrameTimer + x, a); // set for timer here
@@ -10786,7 +10786,7 @@ SpawnFBr: // check timer here
     a = 0x20;
     writeData(BowserFireBreathTimer, a); // set timer here
     a = M(BowserBodyControls);
-    a ^= BOOST_BINARY(10000000); // invert bowser's mouth bit to open
+    a ^= 0b10000000; // invert bowser's mouth bit to open
     writeData(BowserBodyControls, a); // and close bowser's mouth
     if (n)
         goto ChkFireB; // if bowser's mouth open, loop back
@@ -10868,7 +10868,7 @@ SetFlameTimer:
     y = M(BowserFlameTimerCtrl); // load counter as offset
     ++M(BowserFlameTimerCtrl); // increment
     a = M(BowserFlameTimerCtrl); // mask out all but 3 LSB
-    a &= BOOST_BINARY(00000111); // to keep in range of 0-7
+    a &= 0b00000111; // to keep in range of 0-7
     writeData(BowserFlameTimerCtrl, a);
     a = M(FlameTimerData + y); // load value to be used then leave
 
@@ -10919,7 +10919,7 @@ Return_364:
     writeData(0x00, a); // write first tile number
     y = 0x02; // load attributes without vertical flip by default
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00000010); // invert vertical flip bit every 2 frames
+    a &= 0b00000010; // invert vertical flip bit every 2 frames
     if (z)
         goto FlmeAt; // if d1 not set, write default value
     y = 0x82; // otherwise write value with vertical flip bit set
@@ -11088,7 +11088,7 @@ AwardGameTimerPoints:
     if (z)
         goto IncrementSFTask1; // if no time left on game timer at all, branch to next task
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00000100); // check frame counter for d2 set (skip ahead
+    a &= 0b00000100; // check frame counter for d2 set (skip ahead
     if (z)
         goto NoTTick; // for four frames every four frames) branch if not set
     a = Sfx_TimerTick;
@@ -11120,7 +11120,7 @@ Return_369:
     a <<= 1; // shift to high nybble
     a <<= 1;
     a <<= 1;
-    a |= BOOST_BINARY(00000100); // add four to set nybble for game timer
+    a |= 0b00000100; // add four to set nybble for game timer
     goto UpdateNumber; // jump to print the new score and game timer
 
 RaiseFlagSetoffFWorks:
@@ -11268,7 +11268,7 @@ RiseFallPiranhaPlant:
     writeData(EnemyFrameTimer + x, a); // set timer to delay piranha plant movement
 
 PutinPipe:
-    a = BOOST_BINARY(00100000); // set background priority bit in sprite
+    a = 0b00100000; // set background priority bit in sprite
     writeData(Enemy_SprAttrib + x, a); // attributes to give illusion of being inside pipe
     goto Return; // then leave
 
@@ -11510,7 +11510,7 @@ GetLRp: // save modified horizontal coordinate to stack
     a += 0x00; // add carry to page location
     writeData(0x02, a); // and save here
     pla(); // pull modified horizontal coordinate
-    a &= BOOST_BINARY(11110000); // from the stack, mask out low nybble
+    a &= 0b11110000; // from the stack, mask out low nybble
     a >>= 1; // and shift three bits to the right
     a >>= 1;
     a >>= 1;
@@ -11531,8 +11531,8 @@ GetHRp: // move vertical coordinate to A
     a.rol(); // rotate d7 to d0 and d6 into carry
     pha(); // save modified vertical coordinate to stack
     a.rol(); // rotate carry to d0, thus d7 and d6 are at 2 LSB
-    a &= BOOST_BINARY(00000011); // mask out all bits but d7 and d6, then set
-    a |= BOOST_BINARY(00100000); // d5 to get appropriate high byte of name table
+    a &= 0b00000011; // mask out all bits but d7 and d6, then set
+    a |= 0b00100000; // d5 to get appropriate high byte of name table
     writeData(0x01, a); // address, then store
     a = M(0x02); // get saved page location from earlier
     a &= 0x01; // mask out all but LSB
@@ -11541,7 +11541,7 @@ GetHRp: // move vertical coordinate to A
     a |= M(0x01); // rest of the bits of the high byte, to get
     writeData(0x01, a); // the proper name table and the right place on it
     pla(); // get modified vertical coordinate from stack
-    a &= BOOST_BINARY(11100000); // mask out low nybble and LSB of high nybble
+    a &= 0b11100000; // mask out low nybble and LSB of high nybble
     c = 0;
     a += M(0x00); // add to horizontal part saved here
     writeData(0x00, a); // save as name table low byte
@@ -11550,7 +11550,7 @@ GetHRp: // move vertical coordinate to A
     if (!c)
         goto ExPRp; // bottom of the screen, we're done, branch to leave
     a = M(0x00);
-    a &= BOOST_BINARY(10111111); // mask out d6 of low byte of name table address
+    a &= 0b10111111; // mask out d6 of low byte of name table address
     writeData(0x00, a);
 
 ExPRp: // leave!
@@ -11622,7 +11622,7 @@ YMovingPlatform:
     if (c)
         goto ChkYCenterPos; // ahead of all this
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00000111); // check for every eighth frame
+    a &= 0b00000111; // check for every eighth frame
     if (!z)
         goto SkipIY;
     ++M(Enemy_Y_Position + x); // increase vertical position every eighth frame
@@ -11864,7 +11864,7 @@ FireballEnemyCDLoop:
     a = y;
     pha(); // push fireball offset to the stack
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(00100000); // check to see if d5 is set in enemy state
+    a &= 0b00100000; // check to see if d5 is set in enemy state
     if (!z)
         goto NoFToECol; // if so, skip to next enemy slot
     a = M(Enemy_Flag + x); // check to see if buffer flag is set
@@ -11903,7 +11903,7 @@ Return_400: // do fireball-to-enemy collision detection
     x = M(ObjectOffset); // return fireball's original offset
     if (!c)
         goto NoFToECol; // if carry clear, no collision, thus do next enemy slot
-    a = BOOST_BINARY(10000000);
+    a = 0b10000000;
     writeData(Fireball_State + x, a); // set d7 in enemy state
     x = M(0x01); // get enemy offset
     pushReturnIndex(401);
@@ -11932,7 +11932,7 @@ Return_402: // get relative coordinate of enemy
     a = M(Enemy_Flag + x); // check buffer flag for d7 set
     if (!n)
         goto ChkBuzzyBeetle; // branch if not set to continue
-    a &= BOOST_BINARY(00001111); // otherwise mask out high nybble and
+    a &= 0b00001111; // otherwise mask out high nybble and
     x = a; // use low nybble as enemy offset
     a = M(Enemy_ID + x);
     compare(a, Bowser); // check enemy identifier for bowser
@@ -12003,8 +12003,8 @@ StnE: // do yet another sub
     goto ChkToStunEnemies;
 Return_404:
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(00011111); // mask out 2 MSB of enemy object's state
-    a |= BOOST_BINARY(00100000); // set d5 to defeat enemy and save as new state
+    a &= 0b00011111; // mask out 2 MSB of enemy object's state
+    a |= 0b00100000; // set d5 to defeat enemy and save as new state
     writeData(Enemy_State + x, a);
     a = 0x02; // award 200 points by default
     y = M(Enemy_ID + x); // check for hammer bro
@@ -12161,7 +12161,7 @@ Return_411: // if player object is completely offscreen or
     if (!z)
         goto NoPECol; // on next frame, branch to leave
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(00100000); // if enemy state has d5 set, branch to leave
+    a &= 0b00100000; // if enemy state has d5 set, branch to leave
     if (!z)
         goto NoPECol;
     pushReturnIndex(412);
@@ -12174,7 +12174,7 @@ Return_413: // do collision detection on player vs. enemy
     if (c)
         goto CheckForPUpCollision; // if collision, branch past this part here
     a = M(Enemy_CollisionBits + x);
-    a &= BOOST_BINARY(11111110); // otherwise, clear d0 of current enemy object's
+    a &= 0b11111110; // otherwise, clear d0 of current enemy object's
     writeData(Enemy_CollisionBits + x, a); // collision bit
 
 NoPECol:
@@ -12197,7 +12197,7 @@ EColl: // if star mario invincibility timer expired,
 
 HandlePECollisions:
     a = M(Enemy_CollisionBits + x); // check enemy collision bits for d0 set
-    a &= BOOST_BINARY(00000001); // or for being offscreen at all
+    a &= 0b00000001; // or for being offscreen at all
     a |= M(EnemyOffscrBitsMasked + x);
     if (!z)
         goto ExPEC; // branch to leave if either is true
@@ -12227,7 +12227,7 @@ HandlePECollisions:
     if (c)
         goto ChkForPlayerInjury;
     a = M(Enemy_State + x); // mask out all but 3 LSB of enemy state
-    a &= BOOST_BINARY(00000111);
+    a &= 0b00000111;
     compare(a, 0x02); // branch if enemy is in normal or falling state
     if (!c)
         goto ChkForPlayerInjury;
@@ -12238,7 +12238,7 @@ HandlePECollisions:
     a = Sfx_EnemySmack; // play smack enemy sound
     writeData(Square1SoundQueue, a);
     a = M(Enemy_State + x); // set d7 in enemy state, thus become moving shell
-    a |= BOOST_BINARY(10000000);
+    a |= 0b10000000;
     writeData(Enemy_State + x, a);
     pushReturnIndex(414);
     goto EnemyFacePlayer;
@@ -12395,7 +12395,7 @@ Return_417: // run sub to set floatey number controls
 Return_418: // run sub to kill enemy
     pla();
     writeData(Enemy_MovingDir + x, a); // return enemy movement direction from stack
-    a = BOOST_BINARY(00100000);
+    a = 0b00100000;
     writeData(Enemy_State + x, a); // set d5 in enemy state
     pushReturnIndex(419);
     goto InitVStf;
@@ -12411,7 +12411,7 @@ ChkForDemoteKoopa:
     compare(a, 0x09); // branch elsewhere if enemy object < $09
     if (!c)
         goto HandleStompedShellE;
-    a &= BOOST_BINARY(00000001); // demote koopa paratroopas to ordinary troopas
+    a &= 0b00000001; // demote koopa paratroopas to ordinary troopas
     writeData(Enemy_ID + x, a);
     y = 0x00; // return enemy to normal state
     writeData(Enemy_State + x, y);
@@ -12557,7 +12557,7 @@ Return_427: // do collision detection using the two enemies here
         goto NoEnemyCollision; // if carry clear, no collision, branch ahead of this
     a = M(Enemy_State + x);
     a |= M(Enemy_State + y); // check both enemy states for d7 set
-    a &= BOOST_BINARY(10000000);
+    a &= 0b10000000;
     if (!z)
         goto YesEC; // branch if at least one of them is set
     a = M(Enemy_CollisionBits + y); // load first enemy's collision-related bits
@@ -12596,7 +12596,7 @@ ExitECRoutine:
 ProcEnemyCollisions:
     a = M(Enemy_State + y); // check both enemy states for d5 set
     a |= M(Enemy_State + x);
-    a &= BOOST_BINARY(00100000); // if d5 is set in either state, or both, branch
+    a &= 0b00100000; // if d5 is set in either state, or both, branch
     if (!z)
         goto ExitProcessEColl; // to leave and do nothing else at this point
     a = M(Enemy_State + x);
@@ -12704,7 +12704,7 @@ RXSpd: // load horizontal speed
     ++y;
     writeData(Enemy_X_Speed + x, y); // store as new horizontal speed
     a = M(Enemy_MovingDir + x);
-    a ^= BOOST_BINARY(00000011); // invert moving direction and store, then leave
+    a ^= 0b00000011; // invert moving direction and store, then leave
     writeData(Enemy_MovingDir + x, a); // thus effectively turning the enemy around
 
 ExTA: // leave!!!
@@ -12780,7 +12780,7 @@ ChkSmallPlatLoop:
     pushReturnIndex(442);
     goto GetEnemyBoundBoxOfs;
 Return_442: // get bounding box offset in Y
-    a &= BOOST_BINARY(00000010); // if d1 of offscreen lower nybble bits was set
+    a &= 0b00000010; // if d1 of offscreen lower nybble bits was set
     if (!z)
         goto ExSPC; // then branch to leave
     a = M(BoundingBox_UL_YPos + y); // check top of platform's bounding box for being
@@ -12945,8 +12945,8 @@ GetEnemyBoundBoxOfsArg:
     a += 0x04;
     y = a; // send to Y
     a = M(Enemy_OffscreenBits); // get offscreen bits for enemy object
-    a &= BOOST_BINARY(00001111); // save low nybble
-    compare(a, BOOST_BINARY(00001111)); // check for all bits set
+    a &= 0b00001111; // save low nybble
+    compare(a, 0b00001111); // check for all bits set
     goto Return;
 
 //------------------------------------------------------------------------
@@ -13265,10 +13265,10 @@ PipeDwnS: // check player's attributes
     writeData(Square1SoundQueue, y); // otherwise load pipedown/injury sound
 
 PlyrPipe:
-    a |= BOOST_BINARY(00100000);
+    a |= 0b00100000;
     writeData(Player_SprAttrib, a); // set background priority bit in player attributes
     a = M(Player_X_Position);
-    a &= BOOST_BINARY(00001111); // get lower nybble of player's horizontal coordinate
+    a &= 0b00001111; // get lower nybble of player's horizontal coordinate
     if (z)
         goto ChkGERtn; // if at zero, branch ahead to skip this part
     y = 0x00; // set default offset for timer setting data
@@ -13487,7 +13487,7 @@ NoJSFnd: // leave
 
 HandlePipeEntry:
     a = M(Up_Down_Buttons); // check saved controller bits from earlier
-    a &= BOOST_BINARY(00000100); // for pressing down
+    a &= 0b00000100; // for pressing down
     if (z)
         goto ExPipeE; // if not pressing down, branch to leave
     a = M(0x00);
@@ -13504,12 +13504,12 @@ HandlePipeEntry:
     writeData(GameEngineSubroutine, a); // set to run vertical pipe entry routine on next frame
     a = Sfx_PipeDown_Injury;
     writeData(Square1SoundQueue, a); // load pipedown/injury sound
-    a = BOOST_BINARY(00100000);
+    a = 0b00100000;
     writeData(Player_SprAttrib, a); // set background priority bit in player's attributes
     a = M(WarpZoneControl); // check warp zone control
     if (z)
         goto ExPipeE; // branch to leave if none found
-    a &= BOOST_BINARY(00000011); // mask out all but 2 LSB
+    a &= 0b00000011; // mask out all but 2 LSB
     a <<= 1;
     a <<= 1; // multiply by four
     x = a; // save as offset to warp zone numbers (starts at left pipe)
@@ -13633,7 +13633,7 @@ CoinSd:
 
 GetMTileAttrib:
     y = a; // save metatile value into Y
-    a &= BOOST_BINARY(11000000); // mask out all but 2 MSB
+    a &= 0b11000000; // mask out all but 2 MSB
     a <<= 1;
     a.rol(); // shift and rotate d7-d6 to d1-d0
     a.rol();
@@ -13647,7 +13647,7 @@ ExEBG: // leave
 
 EnemyToBGCollisionDet:
     a = M(Enemy_State + x); // check enemy state for d6 set
-    a &= BOOST_BINARY(00100000);
+    a &= 0b00100000;
     if (!z)
         goto ExEBG; // if set, branch to leave
     pushReturnIndex(470);
@@ -13741,13 +13741,13 @@ ChkToStunEnemies:
         goto SetStun; // are only necessary if branching from $d7a1
 
 Demote: // erase all but LSB, essentially turning enemy object
-    a &= BOOST_BINARY(00000001);
+    a &= 0b00000001;
     writeData(Enemy_ID + x, a); // into green or red koopa troopa to demote them
 
 SetStun: // load enemy state
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(11110000); // save high nybble
-    a |= BOOST_BINARY(00000010);
+    a &= 0b11110000; // save high nybble
+    a |= 0b00000010;
     writeData(Enemy_State + x, a); // set d1 of enemy state
     --M(Enemy_Y_Position + x);
     --M(Enemy_Y_Position + x); // subtract two pixels from enemy's vertical position
@@ -13801,7 +13801,7 @@ LandEnemyProperly:
     if (c)
         goto ChkForRedKoopa; // branch if lower nybble in range of $0d-$0f before subtract
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(01000000); // branch if d6 in enemy state is set
+    a &= 0b01000000; // branch if d6 in enemy state is set
     if (!z)
         goto LandEnemyInitState;
     a = M(Enemy_State + x);
@@ -13859,7 +13859,7 @@ ProcEnemyDirection:
     a = 0x08;
     writeData(Enemy_X_Speed + x, a); // set horizontal speed accordingly
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00000111); // if timed appropriately, spiny will skip over
+    a &= 0b00000111; // if timed appropriately, spiny will skip over
     if (z)
         goto LandEnemyInitState; // trying to face the player
 
@@ -13886,7 +13886,7 @@ LandEnemyInitState:
     goto EnemyLanding;
 Return_479: // land enemy properly
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(10000000); // if d7 of enemy state is set, branch
+    a &= 0b10000000; // if d7 of enemy state is set, branch
     if (!z)
         goto NMovShellFallBit;
     a = 0x00; // otherwise initialize enemy state and leave
@@ -13897,7 +13897,7 @@ Return_479: // land enemy properly
 
 NMovShellFallBit:
     a = M(Enemy_State + x); // nullify d6 of enemy state, save other bits
-    a &= BOOST_BINARY(10111111); // and store, then leave
+    a &= 0b10111111; // and store, then leave
     writeData(Enemy_State + x, a);
     goto Return;
 
@@ -13919,7 +13919,7 @@ Chk2MSBSt: // save enemy state into Y
     if (!c)
         goto GetSteFromD; // branch if not set
     a = M(Enemy_State + x);
-    a |= BOOST_BINARY(01000000); // set d6
+    a |= 0b01000000; // set d6
     goto SetD6Ste; // jump ahead of this part
 
 GetSteFromD: // load new enemy state with old as offset
@@ -14006,8 +14006,8 @@ EnemyLanding:
     goto InitVStf;
 Return_482: // do something here to vertical speed and something else
     a = M(Enemy_Y_Position + x);
-    a &= BOOST_BINARY(11110000); // save high nybble of vertical coordinate, and
-    a |= BOOST_BINARY(00001000); // set d3, then store, probably used to set enemy object
+    a &= 0b11110000; // save high nybble of vertical coordinate, and
+    a |= 0b00001000; // set d3, then store, probably used to set enemy object
     writeData(Enemy_Y_Position + x, a); // neatly on whatever it's landing on
     goto Return;
 
@@ -14078,7 +14078,7 @@ UnderHammerBro:
     if (!z)
         goto NoUnderHammerBro; // branch if not expired
     a = M(Enemy_State + x);
-    a &= BOOST_BINARY(10001000); // save d7 and d3 from enemy state, nullify other bits
+    a &= 0b10001000; // save d7 and d3 from enemy state, nullify other bits
     writeData(Enemy_State + x, a); // and store
     pushReturnIndex(489);
     goto EnemyLanding;
@@ -14504,7 +14504,7 @@ Return_496: // get address of block buffer into $06, $07
     a = M(SprObject_Y_Position + x); // get vertical coordinate of object
     c = 0;
     a += M(BlockBuffer_Y_Adder + y); // add it to value obtained using Y as offset
-    a &= BOOST_BINARY(11110000); // mask out low nybble
+    a &= 0b11110000; // mask out low nybble
     c = 1;
     a -= 0x20; // subtract 32 pixels for the status bar
     writeData(0x02, a); // store result here
@@ -14522,7 +14522,7 @@ RetXC: // otherwise load horizontal coordinate
     a = M(SprObject_X_Position + x);
 
 RetYC: // and mask out high nybble
-    a &= BOOST_BINARY(00001111);
+    a &= 0b00001111;
     writeData(0x04, a); // store masked out result here
     a = M(0x03); // get saved content of block buffer
     goto Return; // and leave
@@ -14549,11 +14549,11 @@ Return_497: // stack six sprites on top of each other vertically
     writeData(Sprite_X_Position + 4 + y, a); // to give characteristic staggered vine shape to
     writeData(Sprite_X_Position + 12 + y, a); // our vertical stack of sprites
     writeData(Sprite_X_Position + 20 + y, a);
-    a = BOOST_BINARY(00100001); // set bg priority and palette attribute bits
+    a = 0b00100001; // set bg priority and palette attribute bits
     writeData(Sprite_Attributes + y, a); // set in first, third and fifth sprites
     writeData(Sprite_Attributes + 8 + y, a);
     writeData(Sprite_Attributes + 16 + y, a);
-    a |= BOOST_BINARY(01000000); // additionally, set horizontal flip bit
+    a |= 0b01000000; // additionally, set horizontal flip bit
     writeData(Sprite_Attributes + 4 + y, a); // for second, fourth and sixth sprites
     writeData(Sprite_Attributes + 12 + y, a);
     writeData(Sprite_Attributes + 20 + y, a);
@@ -14628,7 +14628,7 @@ DrawHammer:
     if (!z)
         goto ForceHPose; // if master timer control set, skip this part
     a = M(Misc_State + x); // otherwise get hammer's state
-    a &= BOOST_BINARY(01111111); // mask out d7
+    a &= 0b01111111; // mask out d7
     compare(a, 0x01); // check to see if set to 1 yet
     if (z)
         goto GetHPose; // if so, branch
@@ -14642,7 +14642,7 @@ GetHPose: // get frame counter
     a = M(FrameCounter);
     a >>= 1; // move d3-d2 to d1-d0
     a >>= 1;
-    a &= BOOST_BINARY(00000011); // mask out all but d1-d0 (changes every four frames)
+    a &= 0b00000011; // mask out all but d1-d0 (changes every four frames)
     x = a; // use as timing offset
 
 RenderH: // get relative vertical coordinate
@@ -14669,7 +14669,7 @@ RenderH: // get relative vertical coordinate
     writeData(Sprite_Attributes + 4 + y, a); // note in this case they use the same data
     x = M(ObjectOffset); // get misc object offset
     a = M(Misc_OffscreenBits);
-    a &= BOOST_BINARY(11111100); // check offscreen bits
+    a &= 0b11111100; // check offscreen bits
     if (z)
         goto NoHOffscr; // if all bits clear, leave object alone
     a = 0x00;
@@ -14735,7 +14735,7 @@ ChkFlagOffscreen:
     x = M(ObjectOffset); // get object offset for flag
     y = M(Enemy_SprDataOffset + x); // get OAM data offset
     a = M(Enemy_OffscreenBits); // get offscreen bits
-    a &= BOOST_BINARY(00001110); // mask out all but d3-d1
+    a &= 0b00001110; // mask out all but d3-d1
     if (z)
         goto ExitDumpSpr; // if none of these bits set, branch to leave
 
@@ -14921,7 +14921,7 @@ JCoinGfxHandler:
     writeData(Sprite_X_Position + 4 + y, a); // store as X coordinate for first and second sprites
     a = M(FrameCounter); // get frame counter
     a >>= 1; // divide by 2 to alter every other frame
-    a &= BOOST_BINARY(00000011); // mask out d2-d1
+    a &= 0b00000011; // mask out d2-d1
     x = a; // use as graphical offset
     a = M(JumpingCoinTiles + x); // load tile number
     ++y; // increment OAM data offset to write tile numbers
@@ -14981,7 +14981,7 @@ Return_509: // branch to draw one row of our power-up object
     writeData(0x00, a); // store power-up type here now
     a = M(FrameCounter); // get frame counter
     a >>= 1; // divide by 2 to change colors every two frames
-    a &= BOOST_BINARY(00000011); // mask out all but d1 and d0 (previously d2 and d1)
+    a &= 0b00000011; // mask out all but d1 and d0 (previously d2 and d1)
     a |= M(Enemy_SprAttrib + 5); // add background priority bit if any set
     writeData(Sprite_Attributes + y, a); // set as new palette bits for top left and
     writeData(Sprite_Attributes + 4 + y, a); // top right sprites for fire flower and star
@@ -14994,10 +14994,10 @@ Return_509: // branch to draw one row of our power-up object
 
 FlipPUpRightSide:
     a = M(Sprite_Attributes + 4 + y);
-    a |= BOOST_BINARY(01000000); // set horizontal flip bit for top right sprite
+    a |= 0b01000000; // set horizontal flip bit for top right sprite
     writeData(Sprite_Attributes + 4 + y, a);
     a = M(Sprite_Attributes + 12 + y);
-    a |= BOOST_BINARY(01000000); // set horizontal flip bit for bottom right sprite
+    a |= 0b01000000; // set horizontal flip bit for bottom right sprite
     writeData(Sprite_Attributes + 12 + y, a); // note these are only done for fire flower and star power-ups
 
 PUpOfs: // jump to check to see if power-up is offscreen at all, then leave
@@ -15033,7 +15033,7 @@ EnemyGfxHandler:
 CheckForRetainerObj:
     a = M(Enemy_State + x); // store enemy state
     writeData(0xed, a);
-    a &= BOOST_BINARY(00011111); // nullify all but 5 LSB and use as Y
+    a &= 0b00011111; // nullify all but 5 LSB and use as Y
     y = a;
     a = M(Enemy_ID + x); // check for mushroom retainer/princess object
     compare(a, RetainerObject);
@@ -15053,7 +15053,7 @@ CheckForBulletBillCV:
     y = M(EnemyFrameTimer + x); // get timer for enemy object
     if (z)
         goto SBBAt; // if expired, do not set priority bit
-    a |= BOOST_BINARY(00100000); // otherwise do so
+    a |= 0b00100000; // otherwise do so
 
 SBBAt: // set new sprite attributes
     writeData(0x04, a);
@@ -15107,16 +15107,16 @@ CheckForGoomba:
     writeData(0xec, x);
 
 GmbaAnim: // check for d5 set in enemy object state 
-    a &= BOOST_BINARY(00100000);
+    a &= 0b00100000;
     a |= M(TimerControl); // or timer disable flag set
     if (!z)
         goto CheckBowserFront; // if either condition true, do not animate goomba
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00001000); // check for every eighth frame
+    a &= 0b00001000; // check for every eighth frame
     if (!z)
         goto CheckBowserFront;
     a = M(0x03);
-    a ^= BOOST_BINARY(00000011); // invert bits to flip horizontally every eight frames
+    a ^= 0b00000011; // invert bits to flip horizontally every eight frames
     writeData(0x03, a); // leave alone otherwise
 
 CheckBowserFront:
@@ -15139,7 +15139,7 @@ CheckBowserFront:
 
 ChkFrontSte: // check saved enemy state
     a = M(0xed);
-    a &= BOOST_BINARY(00100000); // if bowser not defeated, do not set flag
+    a &= 0b00100000; // if bowser not defeated, do not set flag
     if (z)
         goto DrawBowser;
 
@@ -15158,7 +15158,7 @@ CheckBowserRear:
 
 ChkRearSte: // check saved enemy state
     a = M(0xed);
-    a &= BOOST_BINARY(00100000); // if bowser not defeated, do not set flag
+    a &= 0b00100000; // if bowser not defeated, do not set flag
     if (z)
         goto DrawBowser;
     a = M(0x02); // subtract 16 pixels from
@@ -15188,7 +15188,7 @@ CheckForLakitu:
     if (!z)
         goto CheckUpsideDownShell; // branch if not loaded
     a = M(0xed);
-    a &= BOOST_BINARY(00100000); // check for d5 set in enemy state
+    a &= 0b00100000; // check for d5 set in enemy state
     if (!z)
         goto NoLAFr; // branch if set
     a = M(FrenzyEnemyTimer);
@@ -15236,7 +15236,7 @@ CheckForDefdGoomba:
         goto CheckForHammerBro; // failed buzzy beetle object test)
     x = 0x54; // load for regular goomba
     a = M(0xed); // note that this only gets performed if enemy state => $02
-    a &= BOOST_BINARY(00100000); // check saved enemy state for d5 set
+    a &= 0b00100000; // check saved enemy state for d5 set
     if (!z)
         goto CheckForHammerBro; // branch if set
     x = 0x8a; // load offset for defeated goomba
@@ -15251,7 +15251,7 @@ CheckForHammerBro:
     a = M(0xed);
     if (z)
         goto CheckToAnimateEnemy; // branch if not in normal enemy state
-    a &= BOOST_BINARY(00001000);
+    a &= 0b00001000;
     if (z)
         goto CheckDefeatedState; // if d3 not set, branch further away
     x = 0xb4; // otherwise load offset for different frame
@@ -15314,7 +15314,7 @@ CheckForSecondFrame:
 
 CheckAnimationStop:
     a = M(0xed); // check saved enemy state
-    a &= BOOST_BINARY(10100000); // for d7 or d5, or check for timers stopped
+    a &= 0b10100000; // for d7 or d5, or check for timers stopped
     a |= M(TimerControl);
     if (!z)
         goto CheckDefeatedState; // if either condition true, branch
@@ -15325,7 +15325,7 @@ CheckAnimationStop:
 
 CheckDefeatedState:
     a = M(0xed); // check saved enemy state
-    a &= BOOST_BINARY(00100000); // for d5 set
+    a &= 0b00100000; // for d5 set
     if (z)
         goto DrawEnemyObject; // branch if not set
     a = M(0xef);
@@ -15363,7 +15363,7 @@ CheckForVerticalFlip:
     if (z)
         goto CheckForESymmetry; // branch if not
     a = M(Sprite_Attributes + y); // get attributes of first sprite we dealt with
-    a |= BOOST_BINARY(10000000); // set bit for vertical flip
+    a |= 0b10000000; // set bit for vertical flip
     ++y;
     ++y; // increment two bytes so that we store the vertical flip
     pushReturnIndex(513);
@@ -15447,15 +15447,15 @@ MirrorEnemyGfx:
     if (!z)
         goto CheckToMirrorLakitu;
     a = M(Sprite_Attributes + y); // load attribute bits of first sprite
-    a &= BOOST_BINARY(10100011);
+    a &= 0b10100011;
     writeData(Sprite_Attributes + y, a); // save vertical flip, priority, and palette bits
     writeData(Sprite_Attributes + 8 + y, a); // in left sprite column of enemy object OAM data
     writeData(Sprite_Attributes + 16 + y, a);
-    a |= BOOST_BINARY(01000000); // set horizontal flip
+    a |= 0b01000000; // set horizontal flip
     compare(x, 0x05); // check for state used by spiny's egg
     if (!z)
         goto EggExc; // if alternate state not set to $05, branch
-    a |= BOOST_BINARY(10000000); // otherwise set vertical flip
+    a |= 0b10000000; // otherwise set vertical flip
 
 EggExc: // set bits of right sprite column
     writeData(Sprite_Attributes + 4 + y, a);
@@ -15465,10 +15465,10 @@ EggExc: // set bits of right sprite column
     if (!z)
         goto CheckToMirrorLakitu; // branch if not $04
     a = M(Sprite_Attributes + 8 + y); // get second row left sprite attributes
-    a |= BOOST_BINARY(10000000);
+    a |= 0b10000000;
     writeData(Sprite_Attributes + 8 + y, a); // store bits with vertical flip in
     writeData(Sprite_Attributes + 16 + y, a); // second and third row left sprites
-    a |= BOOST_BINARY(01000000);
+    a |= 0b01000000;
     writeData(Sprite_Attributes + 12 + y, a); // store with horizontal and vertical flip in
     writeData(Sprite_Attributes + 20 + y, a); // second and third row right sprites
 
@@ -15481,27 +15481,27 @@ CheckToMirrorLakitu:
     if (!z)
         goto NVFLak; // branch if vertical flip flag not set
     a = M(Sprite_Attributes + 16 + y); // save vertical flip and palette bits
-    a &= BOOST_BINARY(10000001); // in third row left sprite
+    a &= 0b10000001; // in third row left sprite
     writeData(Sprite_Attributes + 16 + y, a);
     a = M(Sprite_Attributes + 20 + y); // set horizontal flip and palette bits
-    a |= BOOST_BINARY(01000001); // in third row right sprite
+    a |= 0b01000001; // in third row right sprite
     writeData(Sprite_Attributes + 20 + y, a);
     x = M(FrenzyEnemyTimer); // check timer
     compare(x, 0x10);
     if (c)
         goto SprObjectOffscrChk; // branch if timer has not reached a certain range
     writeData(Sprite_Attributes + 12 + y, a); // otherwise set same for second row right sprite
-    a &= BOOST_BINARY(10000001);
+    a &= 0b10000001;
     writeData(Sprite_Attributes + 8 + y, a); // preserve vertical flip and palette bits for left sprite
     if (!c)
         goto SprObjectOffscrChk; // unconditional branch
 
 NVFLak: // get first row left sprite attributes
     a = M(Sprite_Attributes + y);
-    a &= BOOST_BINARY(10000001);
+    a &= 0b10000001;
     writeData(Sprite_Attributes + y, a); // save vertical flip and palette bits
     a = M(Sprite_Attributes + 4 + y); // get first row right sprite attributes
-    a |= BOOST_BINARY(01000001); // set horizontal flip and palette bits
+    a |= 0b01000001; // set horizontal flip and palette bits
     writeData(Sprite_Attributes + 4 + y, a); // note that vertical flip is left as-is
 
 CheckToMirrorJSpring:
@@ -15512,7 +15512,7 @@ CheckToMirrorJSpring:
     a = 0x82;
     writeData(Sprite_Attributes + 8 + y, a); // set vertical flip and palette bits of 
     writeData(Sprite_Attributes + 16 + y, a); // second and third row left sprites
-    a |= BOOST_BINARY(01000000);
+    a |= 0b01000000;
     writeData(Sprite_Attributes + 12 + y, a); // set, in addition to those, horizontal flip
     writeData(Sprite_Attributes + 20 + y, a); // for second and third row right sprites
 
@@ -15670,17 +15670,17 @@ Return_522: // do sub to dump into all four sprites
 SetBFlip: // put block object offset back in X
     x = M(ObjectOffset);
     writeData(Sprite_Attributes + y, a); // store attribute byte as-is in first sprite
-    a |= BOOST_BINARY(01000000);
+    a |= 0b01000000;
     writeData(Sprite_Attributes + 4 + y, a); // set horizontal flip bit for second sprite
-    a |= BOOST_BINARY(10000000);
+    a |= 0b10000000;
     writeData(Sprite_Attributes + 12 + y, a); // set both flip bits for fourth sprite
-    a &= BOOST_BINARY(10000011);
+    a &= 0b10000011;
     writeData(Sprite_Attributes + 8 + y, a); // set vertical flip bit for third sprite
 
 BlkOffscr: // get offscreen bits for block object
     a = M(Block_OffscreenBits);
     pha(); // save to stack
-    a &= BOOST_BINARY(00000100); // check to see if d2 in offscreen bits are set
+    a &= 0b00000100; // check to see if d2 in offscreen bits are set
     if (z)
         goto PullOfsB; // if not set, branch, otherwise move sprites offscreen
     a = 0xf8; // move offscreen two OAMs
@@ -15691,7 +15691,7 @@ PullOfsB: // pull offscreen bits from stack
     pla();
 
 ChkLeftCo: // check to see if d3 in offscreen bits are set
-    a &= BOOST_BINARY(00001000);
+    a &= 0b00001000;
     if (z)
         goto ExDBlk; // if not set, branch, otherwise move sprites offscreen
 
@@ -15813,7 +15813,7 @@ DrawFirebar:
     a = 0x02; // load value $02 to set palette in attrib byte
     if (!c)
         goto FireA; // if last bit shifted out was not set, skip this
-    a |= BOOST_BINARY(11000000); // otherwise flip both ways every eight frames
+    a |= 0b11000000; // otherwise flip both ways every eight frames
 
 FireA: // store attribute byte and leave
     writeData(Sprite_Attributes + y, a);
@@ -15826,7 +15826,7 @@ DrawExplosion_Fireball:
     a = M(Fireball_State + x); // load fireball state
     ++M(Fireball_State + x); // increment state for next frame
     a >>= 1; // divide by 2
-    a &= BOOST_BINARY(00000111); // mask out all but d3-d1
+    a &= 0b00000111; // mask out all but d3-d1
     compare(a, 0x03); // check to see if time to kill fireball
     if (c)
         goto KillFireBall; // branch if so, otherwise continue to draw explosion
@@ -15929,7 +15929,7 @@ BotSP: // dump vertical coordinate + 128 pixels
     writeData(Sprite_Y_Position + 20 + y, a);
     a = M(Enemy_OffscreenBits); // get offscreen bits
     pha(); // save to stack
-    a &= BOOST_BINARY(00001000); // check d3
+    a &= 0b00001000; // check d3
     if (z)
         goto SOfs;
     a = 0xf8; // if d3 was set, move first and
@@ -15939,7 +15939,7 @@ BotSP: // dump vertical coordinate + 128 pixels
 SOfs: // move out and back into stack
     pla();
     pha();
-    a &= BOOST_BINARY(00000100); // check d2
+    a &= 0b00000100; // check d2
     if (z)
         goto SOfs2;
     a = 0xf8; // if d2 was set, move second and
@@ -15948,7 +15948,7 @@ SOfs: // move out and back into stack
 
 SOfs2: // get from stack
     pla();
-    a &= BOOST_BINARY(00000010); // check d1
+    a &= 0b00000010; // check d1
     if (z)
         goto ExSPl;
     a = 0xf8; // if d1 was set, move third and
@@ -15967,7 +15967,7 @@ DrawBubble:
     if (!z)
         goto ExDBub;
     a = M(Bubble_OffscreenBits); // check air bubble's offscreen bits
-    a &= BOOST_BINARY(00001000);
+    a &= 0b00001000;
     if (!z)
         goto ExDBub; // if bit set, branch to leave
     y = M(Bubble_SprDataOffset + x); // get air bubble's OAM data offset
@@ -16013,7 +16013,7 @@ CntPl: // if executing specific game engine routine,
     goto FindPlayerAction;
 Return_532: // otherwise jump and return
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00000100); // check frame counter for d2 set (8 frames every
+    a &= 0b00000100; // check frame counter for d2 set (8 frames every
     if (!z)
         goto ExPGH; // eighth frame), and branch if set to leave
     x = a; // initialize X to zero
@@ -16146,7 +16146,7 @@ PIntLoop: // load data to display player as he always
     goto DrawPlayerLoop;
 Return_539: // draw player accordingly
     a = M(Sprite_Attributes + 36); // get empty sprite attributes
-    a |= BOOST_BINARY(01000000); // set horizontal flip bit for bottom-right sprite
+    a |= 0b01000000; // set horizontal flip bit for bottom-right sprite
     writeData(Sprite_Attributes + 32, a); // store and leave
     goto Return;
 
@@ -16326,7 +16326,7 @@ SzOfs: // go back
 HandleChangeSize:
     y = M(PlayerAnimCtrl); // get animation frame control
     a = M(FrameCounter);
-    a &= BOOST_BINARY(00000011); // get frame counter and execute this code every
+    a &= 0b00000011; // get frame counter and execute this code every
     if (!z)
         goto GorSLog; // fourth frame, otherwise branch ahead
     ++y; // increment frame control
@@ -16394,20 +16394,20 @@ ChkForPlayerAttrib:
 
 KilledAtt:
     a = M(Sprite_Attributes + 16 + y);
-    a &= BOOST_BINARY(00111111); // mask out horizontal and vertical flip bits
+    a &= 0b00111111; // mask out horizontal and vertical flip bits
     writeData(Sprite_Attributes + 16 + y, a); // for third row sprites and save
     a = M(Sprite_Attributes + 20 + y);
-    a &= BOOST_BINARY(00111111);
-    a |= BOOST_BINARY(01000000); // set horizontal flip bit for second
+    a &= 0b00111111;
+    a |= 0b01000000; // set horizontal flip bit for second
     writeData(Sprite_Attributes + 20 + y, a); // sprite in the third row
 
 C_S_IGAtt:
     a = M(Sprite_Attributes + 24 + y);
-    a &= BOOST_BINARY(00111111); // mask out horizontal and vertical flip bits
+    a &= 0b00111111; // mask out horizontal and vertical flip bits
     writeData(Sprite_Attributes + 24 + y, a); // for fourth row sprites and save
     a = M(Sprite_Attributes + 28 + y);
-    a &= BOOST_BINARY(00111111);
-    a |= BOOST_BINARY(01000000); // set horizontal flip bit for second
+    a &= 0b00111111;
+    a |= 0b01000000; // set horizontal flip bit for second
     writeData(Sprite_Attributes + 28 + y, a); // sprite in the fourth row
 
 ExPlyrAt: // leave
@@ -16840,7 +16840,7 @@ SkipSoundSubroutines:
     writeData(PauseSoundQueue, a);
     y = M(DAC_Counter); // load some sort of counter 
     a = M(AreaMusicBuffer);
-    a &= BOOST_BINARY(00000011); // check for specific music
+    a &= 0b00000011; // check for specific music
     if (z)
         goto NoIncDAC;
     ++M(DAC_Counter); // increment and check counter
@@ -16882,7 +16882,7 @@ Dump_Freq_Regs:
         goto NoTone; // if zero, then do not load
     writeData(SND_REGISTER + 2 + x, a); // first byte goes into LSB of frequency divider
     a = M(FreqRegLookupTbl + y); // second byte goes into 3 MSB plus extra bit for 
-    a |= BOOST_BINARY(00001000); // length counter
+    a |= 0b00001000; // length counter
     writeData(SND_REGISTER + 3 + x, a);
 
 NoTone:
@@ -17141,7 +17141,7 @@ ContinuePipeDownInj:
     a >>= 1;
     if (c)
         goto NoPDwnL;
-    a &= BOOST_BINARY(00000010);
+    a &= 0b00000010;
     if (z)
         goto NoPDwnL;
     y = 0x91; // and this is where it actually gets written in
@@ -17613,7 +17613,7 @@ NotTRO: // check for victory music (the only secondary that loops)
     if (!z)
         goto VictoryMLoopBack;
     a = M(AreaMusicBuffer); // check primary buffer for any music except pipe intro
-    a &= BOOST_BINARY(01011111);
+    a &= 0b01011111;
     if (!z)
         goto MusicLoopBack; // if any area music except pipe intro, music loops
     a = 0x00; // clear primary and secondary buffers and initialize
@@ -17670,7 +17670,7 @@ MiscSqu2MusicTasks:
     if (!z)
         goto HandleSquare1Music;
     a = M(EventMusicBuffer); // check for death music or d4 set on secondary buffer
-    a &= BOOST_BINARY(10010001); // note that regs for death music or d4 are loaded by default
+    a &= 0b10010001; // note that regs for death music or d4 are loaded by default
     if (!z)
         goto HandleSquare1Music;
     y = M(Squ2_EnvelopeDataCtrl); // check for contents saved from LoadControlRegs
@@ -17717,7 +17717,7 @@ Return_585:
     if (!z)
         goto HandleTriangleMusic;
     a = x;
-    a &= BOOST_BINARY(00111110); // change saved data to appropriate note format
+    a &= 0b00111110; // change saved data to appropriate note format
     pushReturnIndex(586);
     goto SetFreq_Squ1;
 Return_586: // play the note
@@ -17738,7 +17738,7 @@ MiscSqu1MusicTasks:
     if (!z)
         goto HandleTriangleMusic;
     a = M(EventMusicBuffer); // check for death music or d4 set on secondary buffer
-    a &= BOOST_BINARY(10010001);
+    a &= 0b10010001;
     if (!z)
         goto DeathMAltReg;
     y = M(Squ1_EnvelopeDataCtrl); // check saved envelope offset
@@ -17792,11 +17792,11 @@ Return_591:
     x = M(Tri_NoteLenBuffer); // save length in triangle note counter
     writeData(Tri_NoteLenCounter, x);
     a = M(EventMusicBuffer);
-    a &= BOOST_BINARY(01101110); // check for death music or d4 set on secondary buffer
+    a &= 0b01101110; // check for death music or d4 set on secondary buffer
     if (!z)
         goto NotDOrD4; // if playing any other secondary, skip primary buffer check
     a = M(AreaMusicBuffer); // check primary buffer for water or castle level music
-    a &= BOOST_BINARY(00001010);
+    a &= 0b00001010;
     if (z)
         goto HandleNoiseMusic; // if playing any other primary, or death or d4, go on to noise routine
 
@@ -17826,7 +17826,7 @@ LoadTriCtrlReg:
 
 HandleNoiseMusic:
     a = M(AreaMusicBuffer); // check if playing underground or castle music
-    a &= BOOST_BINARY(11110011);
+    a &= 0b11110011;
     if (z)
         goto ExitMusicHandler; // if so, skip the noise routine
     --M(Noise_BeatLenCounter); // decrement noise beat length
@@ -17850,7 +17850,7 @@ NoiseBeatHandler:
 Return_592:
     writeData(Noise_BeatLenCounter, a); // store length in noise beat counter
     a = x;
-    a &= BOOST_BINARY(00111110); // reload data and erase length bits
+    a &= 0b00111110; // reload data and erase length bits
     if (z)
         goto SilentBeat; // if no beat data, silence
     compare(a, 0x30); // check the beat data and play the appropriate
@@ -17859,7 +17859,7 @@ Return_592:
     compare(a, 0x20);
     if (z)
         goto StrongBeat;
-    a &= BOOST_BINARY(00010000);
+    a &= 0b00010000;
     if (z)
         goto SilentBeat;
     a = 0x1c; // short beat data
@@ -17904,7 +17904,7 @@ AlternateLengthHandler:
     a.rol();
 
 ProcessLengthData:
-    a &= BOOST_BINARY(00000111); // clear all but the three LSBs
+    a &= 0b00000111; // clear all but the three LSBs
     c = 0;
     a += M(0xf0); // add offset loaded from first header byte
     a += M(NoteLengthTblAdder); // add extra if time running out music
@@ -17925,7 +17925,7 @@ LoadControlRegs:
 
 NotECstlM:
     a = M(AreaMusicBuffer);
-    a &= BOOST_BINARY(01111101); // check primary buffer for water music
+    a &= 0b01111101; // check primary buffer for water music
     if (z)
         goto WaterMus;
     a = 0x08; // this is the default value for all other music
@@ -17954,7 +17954,7 @@ LoadEnvelopeData:
 
 LoadUsualEnvData:
     a = M(AreaMusicBuffer); // check primary buffer for water music
-    a &= BOOST_BINARY(01111101);
+    a &= 0b01111101;
     if (z)
         goto LoadWaterEventMusEnvData;
     a = M(AreaMusicEnvData + y); // load default data from offset for all other music
