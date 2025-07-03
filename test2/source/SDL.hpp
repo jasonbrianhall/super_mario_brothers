@@ -181,10 +181,6 @@ struct SDL_AudioSpec {
     void* userdata;
 };
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 // Function declarations
 int SDL_Init(uint32_t flags);
 void SDL_Quit();
@@ -251,9 +247,5 @@ int SDL_WasInit(uint32_t flags);
 int SDL_InitSubSystem(uint32_t flags);
 void SDL_QuitSubSystem(uint32_t flags);
 int SDL_SetHint(const char* name, const char* value);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // SDL_ALLEGRO_WRAPPER_H
