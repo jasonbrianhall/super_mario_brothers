@@ -13,7 +13,6 @@
 #include "Constants.hpp"
 #include "SMBRom.hpp"
 
-
 // DOS-specific includes (will be ignored on Linux)
 #ifdef __DJGPP__
 #include <conio.h>
@@ -34,7 +33,7 @@ void timer_callback() {
 END_OF_FUNCTION(timer_callback)
 
 AllegroMainWindow::AllegroMainWindow() 
-    : game_buffer(NULL), gameRunning(false), gamePaused(false), 
+    : game_buffer(NULL), back_buffer(NULL), gameRunning(false), gamePaused(false), 
       showingMenu(false), selectedMenuItem(0), inMenu(false),
       isCapturingInput(false), currentDialog(DIALOG_NONE),
       statusMessageTimer(0), currentFrameBuffer(NULL)
@@ -97,12 +96,24 @@ bool AllegroMainWindow::initializeAllegro()
     // Install joystick (optional, don't fail if not present)
     install_joystick(JOY_TYPE_AUTODETECT);
     
+    // Install sound if audio is enabled
+    if (Configuration::getAudioEnabled()) {
+        if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) != 0) {
+            printf("Failed to install sound: %s\n", allegro_error);
+            printf("Continuing without sound...\n");
+        } else {
+            printf("Audio initialized successfully at %d Hz\n", Configuration::getAudioFrequency());
+        }
+    } else {
+        printf("Audio disabled in configuration\n");
+    }
+    
     // Lock timer function for DOS
     LOCK_VARIABLE(timer_counter);
     LOCK_FUNCTION(timer_callback);
     
-    // Install timer at 60 FPS
-    install_int_ex(timer_callback, BPS_TO_TIMER(60));
+    // Install timer at configured frame rate
+    install_int_ex(timer_callback, BPS_TO_TIMER(Configuration::getFrameRate()));
     
     return true;
 }
@@ -265,10 +276,12 @@ void AllegroMainWindow::run()
     printf("Resolution: %dx%d\n", SCREEN_W, SCREEN_H);
     printf("Controls: ESC=Menu, P=Pause, Ctrl+R=Reset\n");
     printf("Player 1: Arrow keys, X=A, Z=B, Enter=Start, Space=Select\n");
+    printf("Player 2: WASD, G=A, F=B, T=Start, R=Select\n");
+    printf("Audio: %s\n", Configuration::getAudioEnabled() ? "Enabled" : "Disabled");
     
     // Main game loop
     while (gameRunning) {
-        // Wait for timer tick (60 FPS) or use rest for compatibility
+        // Wait for timer tick or use rest for compatibility
         #ifdef __DJGPP__
         // DOS: Use timer-based approach
         while (timer_counter == 0) {
@@ -277,13 +290,14 @@ void AllegroMainWindow::run()
         timer_counter--;
         #else
         // Linux: Simple timing for testing
-        rest(16); // ~60 FPS
+        int frameDelay = 1000 / Configuration::getFrameRate();
+        rest(frameDelay);
         #endif
         
         handleInput();
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
-            // Update game
+            // Update game with audio
             engine.update();
             engine.render(renderBuffer);
             currentFrameBuffer = renderBuffer;
@@ -380,7 +394,7 @@ void AllegroMainWindow::handleDialogInput()
 
 void AllegroMainWindow::handleGameInput()
 {
-    // Check for menu toggle - use keypressed for single key events
+    // Check for menu toggle
     static bool escPressed = false;
     if (key[KEY_ESC] && !escPressed) {
         showingMenu = true;
@@ -422,37 +436,6 @@ void AllegroMainWindow::handleGameInput()
     checkPlayerInput(PLAYER_2);
 }
 
-void AllegroMainWindow::testKeyboardBasic()
-{
-    static int testCounter = 0;
-    if (testCounter++ % 60 == 0) {  // Every second
-        poll_keyboard();
-        
-        // Test a bunch of common keys to see if ANY are detected
-        printf("Raw key test: ");
-        printf("ESC=%d ", key[KEY_ESC] ? 1 : 0);
-        printf("UP=%d ", key[KEY_UP] ? 1 : 0);
-        printf("DOWN=%d ", key[KEY_DOWN] ? 1 : 0);
-        printf("LEFT=%d ", key[KEY_LEFT] ? 1 : 0);
-        printf("RIGHT=%d ", key[KEY_RIGHT] ? 1 : 0);
-        printf("X=%d ", key[KEY_X] ? 1 : 0);
-        printf("Z=%d ", key[KEY_Z] ? 1 : 0);
-        printf("SPACE=%d ", key[KEY_SPACE] ? 1 : 0);
-        printf("ENTER=%d ", key[KEY_ENTER] ? 1 : 0);
-        printf("W=%d ", key[KEY_W] ? 1 : 0);
-        printf("A=%d ", key[KEY_A] ? 1 : 0);
-        printf("S=%d ", key[KEY_S] ? 1 : 0);
-        printf("D=%d ", key[KEY_D] ? 1 : 0);
-        printf("\n");
-        
-        // Also check if keyboard buffer has anything
-        if (keypressed()) {
-            int k = readkey();
-            printf("Keypressed detected: scancode=%d ascii=%d\n", k >> 8, k & 0xFF);
-        }
-    }
-}
-
 void AllegroMainWindow::checkPlayerInput(Player player)
 {
     if (!smbEngine) return;
@@ -460,7 +443,7 @@ void AllegroMainWindow::checkPlayerInput(Player player)
     poll_keyboard();
     
     if (player == PLAYER_1) {
-        Controller& controller = smbEngine->getController1();  // Player 1 controller
+        Controller& controller = smbEngine->getController1();
         
         bool up = (key[KEY_UP] != 0);
         bool down = (key[KEY_DOWN] != 0);
@@ -481,7 +464,7 @@ void AllegroMainWindow::checkPlayerInput(Player player)
         controller.setButtonState(BUTTON_SELECT, select);
     }
     else if (player == PLAYER_2) {
-        Controller& controller = smbEngine->getController2();  // Player 2 controller - FIXED!
+        Controller& controller = smbEngine->getController2();
         
         bool up = (key[KEY_W] != 0);
         bool down = (key[KEY_S] != 0);
@@ -526,11 +509,6 @@ void AllegroMainWindow::updateAndDraw()
     #ifdef __DJGPP__
     vsync();
     #endif
-}
-
-void AllegroMainWindow::clearScreen()
-{
-    clear_to_color(screen, makecol(0, 0, 0));
 }
 
 void AllegroMainWindow::drawGame(BITMAP* target)
@@ -645,7 +623,6 @@ void AllegroMainWindow::drawStatusBar(BITMAP* target)
     rectfill(target, 0, status_y, SCREEN_W, SCREEN_H, makecol(64, 64, 64));
     drawText(target, 10, status_y + 5, statusMessage, makecol(255, 255, 255));
 }
-
 
 void AllegroMainWindow::drawText(BITMAP* target, int x, int y, const char* text, int color)
 {
@@ -789,6 +766,14 @@ int main(int argc, char** argv)
 {
     printf("Super Mario Bros Virtualizer - DOS Version\n");
     printf("Initializing...\n");
+    
+    // Initialize Configuration first (CRITICAL for sound)
+    Configuration::initialize(CONFIG_FILE_NAME);
+    
+    printf("Configuration loaded:\n");
+    printf("Audio enabled: %s\n", Configuration::getAudioEnabled() ? "Yes" : "No");
+    printf("Audio frequency: %d Hz\n", Configuration::getAudioFrequency());
+    printf("Frame rate: %d FPS\n", Configuration::getFrameRate());
     
     AllegroMainWindow mainWindow;
     
