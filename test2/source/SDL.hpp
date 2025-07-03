@@ -85,9 +85,9 @@ static int prev_hat_state[4][4] = {0};     // 4 joysticks, 4 hats max
 
 // Simple type definitions
 typedef uint8_t Uint8;
-typedef uint32_t Uint32;
+typedef unsigned long Uint32;
 typedef int16_t Sint16;
-typedef uint32_t SDL_Scancode;
+typedef unsigned long SDL_Scancode;
 
 // SDL uses opaque pointers - just define them as void pointers
 typedef void SDL_Window;
@@ -129,18 +129,18 @@ typedef enum {
 // SDL structure for renderer info
 struct SDL_RendererInfo {
     const char* name;
-    uint32_t flags;
-    uint32_t num_texture_formats;
-    uint32_t texture_formats[16];
+    unsigned long flags;
+    unsigned long num_texture_formats;
+    unsigned long texture_formats[16];
     int max_texture_width;
     int max_texture_height;
 };
 
 // Structures for the functions you use
 struct SDL_Event {
-    uint32_t type;
+    unsigned long type;
     struct {
-        uint32_t event;
+        unsigned long event;
     } window;
     struct {
         int axis;
@@ -182,13 +182,13 @@ struct SDL_AudioSpec {
 };
 
 // Function declarations
-int SDL_Init(uint32_t flags);
+int SDL_Init(unsigned long flags);
 void SDL_Quit();
 
-SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, uint32_t flags);
+SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, unsigned long flags);
 void SDL_DestroyWindow(SDL_Window* window);
 
-SDL_Renderer* SDL_CreateRenderer(SDL_Window* window, int index, uint32_t flags);
+SDL_Renderer* SDL_CreateRenderer(SDL_Window* window, int index, unsigned long flags);
 void SDL_DestroyRenderer(SDL_Renderer* renderer);
 int SDL_RenderSetLogicalSize(SDL_Renderer* renderer, int w, int h);
 int SDL_RenderClear(SDL_Renderer* renderer);
@@ -196,7 +196,7 @@ int SDL_RenderCopy(SDL_Renderer* renderer, SDL_Texture* texture, const void* src
 void SDL_RenderPresent(SDL_Renderer* renderer);
 int SDL_GetRendererInfo(SDL_Renderer* renderer, SDL_RendererInfo* info);
 
-SDL_Texture* SDL_CreateTexture(SDL_Renderer* renderer, uint32_t format, int access, int w, int h);
+SDL_Texture* SDL_CreateTexture(SDL_Renderer* renderer, unsigned long format, int access, int w, int h);
 void SDL_DestroyTexture(SDL_Texture* texture);
 int SDL_UpdateTexture(SDL_Texture* texture, const void* rect, const void* pixels, int pitch);
 int SDL_SetTextureBlendMode(SDL_Texture* texture, int blendMode);
@@ -215,7 +215,7 @@ void SDL_CloseAudio();
 void SDL_LockAudio();
 void SDL_UnlockAudio();
 
-int SDL_SetWindowFullscreen(SDL_Window* window, uint32_t flags);
+int SDL_SetWindowFullscreen(SDL_Window* window, unsigned long flags);
 
 // Joystick/Controller functions
 int SDL_NumJoysticks();
@@ -243,9 +243,9 @@ void SDL_GameControllerEventState(int state);
 int SDL_GameControllerAddMappingsFromFile(const char* file);
 
 // SDL subsystem functions
-int SDL_WasInit(uint32_t flags);
-int SDL_InitSubSystem(uint32_t flags);
-void SDL_QuitSubSystem(uint32_t flags);
+int SDL_WasInit(unsigned long flags);
+int SDL_InitSubSystem(unsigned long flags);
+void SDL_QuitSubSystem(unsigned long flags);
 int SDL_SetHint(const char* name, const char* value);
 
 #endif // SDL_ALLEGRO_WRAPPER_H

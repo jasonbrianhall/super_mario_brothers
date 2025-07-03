@@ -39,7 +39,7 @@ static SDL_AudioSpec g_audio_spec;
 static bool g_audio_playing = false;
 static _SDL_Joystick* g_joysticks[4] = {nullptr};
 static _SDL_GameController* g_controllers[4] = {nullptr};
-static uint32_t g_initialized_subsystems = 0;
+static unsigned long g_initialized_subsystems = 0;
 static int g_next_instance_id = 1;
 
 // Global timing state using system time instead of clock()
@@ -78,7 +78,7 @@ void SDL_Delay(int ms) {
 }
 
 // SDL Function implementations
-int SDL_Init(uint32_t flags) {
+int SDL_Init(unsigned long flags) {
     if (allegro_init() != 0) return -1;
     
     if (flags & SDL_INIT_VIDEO) {
@@ -127,7 +127,7 @@ void SDL_Quit() {
     allegro_exit();
 }
 
-SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, uint32_t flags) {
+SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, unsigned long flags) {
     g_window = new _SDL_Window();
     g_window->width = w;
     g_window->height = h;
@@ -141,7 +141,7 @@ void SDL_DestroyWindow(SDL_Window* window) {
     }
 }
 
-SDL_Renderer* SDL_CreateRenderer(SDL_Window* window, int index, uint32_t flags) {
+SDL_Renderer* SDL_CreateRenderer(SDL_Window* window, int index, unsigned long flags) {
     _SDL_Window* win = (_SDL_Window*)window;
     if (!win) return nullptr;
     
@@ -208,7 +208,7 @@ void SDL_RenderPresent(SDL_Renderer* renderer) {
                  0, 0, SCREEN_W, SCREEN_H);
 }
 
-SDL_Texture* SDL_CreateTexture(SDL_Renderer* renderer, uint32_t format, int access, int w, int h) {
+SDL_Texture* SDL_CreateTexture(SDL_Renderer* renderer, unsigned long format, int access, int w, int h) {
     if (!renderer) return nullptr;
     
     _SDL_Texture* texture = new _SDL_Texture();
@@ -240,14 +240,14 @@ int SDL_UpdateTexture(SDL_Texture* texture, const void* rect, const void* pixels
     _SDL_Texture* tex = (_SDL_Texture*)texture;
     if (!tex->bitmap) return -1;
     
-    uint32_t* src = (uint32_t*)pixels;
+    unsigned long* src = (unsigned long*)pixels;
     int width = tex->width;
     int height = tex->height;
     
     // Convert ARGB to Allegro's RGB format
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
-            uint32_t pixel = src[y * width + x];
+            unsigned long pixel = src[y * width + x];
             int r = (pixel >> 16) & 0xFF;
             int g = (pixel >> 8) & 0xFF;
             int b = pixel & 0xFF;
@@ -405,7 +405,7 @@ void SDL_UnlockAudio() {
     // Complete no-op - audio is disabled  
 }
 
-int SDL_SetWindowFullscreen(SDL_Window* window, uint32_t flags) {
+int SDL_SetWindowFullscreen(SDL_Window* window, unsigned long flags) {
     if (!window) return -1;
     _SDL_Window* win = (_SDL_Window*)window;
     
@@ -742,14 +742,14 @@ int SDL_GameControllerAddMappingsFromFile(const char* file) {
 }
 
 // SDL subsystem functions
-int SDL_WasInit(uint32_t flags) {
+int SDL_WasInit(unsigned long flags) {
     return g_initialized_subsystems & flags;
 }
 
-int SDL_InitSubSystem(uint32_t flags) {
+int SDL_InitSubSystem(unsigned long flags) {
     return SDL_Init(flags);
 }
 
-void SDL_QuitSubSystem(uint32_t flags) {
+void SDL_QuitSubSystem(unsigned long flags) {
     g_initialized_subsystems &= ~flags;
 }
