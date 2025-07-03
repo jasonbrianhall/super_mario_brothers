@@ -3,13 +3,6 @@
 
 #include <cstdint>
 
-// DJGPP-specific type compatibility fix
-#ifdef __DJGPP__
-typedef unsigned long sdl_uint32_t;
-#else
-typedef uint32_t sdl_uint32_t;
-#endif
-
 static int prev_button_state[4][32] = {0}; // 4 joysticks, 32 buttons max
 static int prev_axis_state[4][8] = {0};    // 4 joysticks, 8 axes max
 static int prev_hat_state[4][4] = {0};     // 4 joysticks, 4 hats max
@@ -188,14 +181,14 @@ struct SDL_AudioSpec {
     void* userdata;
 };
 
-// Function declarations - use portable type
-int SDL_Init(sdl_uint32_t flags);
+// Function declarations
+int SDL_Init(uint32_t flags);
 void SDL_Quit();
 
-SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, sdl_uint32_t flags);
+SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, uint32_t flags);
 void SDL_DestroyWindow(SDL_Window* window);
 
-SDL_Renderer* SDL_CreateRenderer(SDL_Window* window, int index, sdl_uint32_t flags);
+SDL_Renderer* SDL_CreateRenderer(SDL_Window* window, int index, uint32_t flags);
 void SDL_DestroyRenderer(SDL_Renderer* renderer);
 int SDL_RenderSetLogicalSize(SDL_Renderer* renderer, int w, int h);
 int SDL_RenderClear(SDL_Renderer* renderer);
@@ -203,7 +196,7 @@ int SDL_RenderCopy(SDL_Renderer* renderer, SDL_Texture* texture, const void* src
 void SDL_RenderPresent(SDL_Renderer* renderer);
 int SDL_GetRendererInfo(SDL_Renderer* renderer, SDL_RendererInfo* info);
 
-SDL_Texture* SDL_CreateTexture(SDL_Renderer* renderer, sdl_uint32_t format, int access, int w, int h);
+SDL_Texture* SDL_CreateTexture(SDL_Renderer* renderer, uint32_t format, int access, int w, int h);
 void SDL_DestroyTexture(SDL_Texture* texture);
 int SDL_UpdateTexture(SDL_Texture* texture, const void* rect, const void* pixels, int pitch);
 int SDL_SetTextureBlendMode(SDL_Texture* texture, int blendMode);
@@ -222,7 +215,7 @@ void SDL_CloseAudio();
 void SDL_LockAudio();
 void SDL_UnlockAudio();
 
-int SDL_SetWindowFullscreen(SDL_Window* window, sdl_uint32_t flags);
+int SDL_SetWindowFullscreen(SDL_Window* window, uint32_t flags);
 
 // Joystick/Controller functions
 int SDL_NumJoysticks();
@@ -250,9 +243,9 @@ void SDL_GameControllerEventState(int state);
 int SDL_GameControllerAddMappingsFromFile(const char* file);
 
 // SDL subsystem functions
-int SDL_WasInit(sdl_uint32_t flags);
-int SDL_InitSubSystem(sdl_uint32_t flags);
-void SDL_QuitSubSystem(sdl_uint32_t flags);
+int SDL_WasInit(uint32_t flags);
+int SDL_InitSubSystem(uint32_t flags);
+void SDL_QuitSubSystem(uint32_t flags);
 int SDL_SetHint(const char* name, const char* value);
 
 #endif // SDL_ALLEGRO_WRAPPER_H
