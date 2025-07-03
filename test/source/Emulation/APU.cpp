@@ -2,7 +2,7 @@
 #include <cstring>
 #include <mutex>
 
-std::mutex audioMutex;
+//std::mutex audioMutex;
 // SDL not needed for DOS version
 
 #include "../Configuration.hpp"
@@ -557,7 +557,7 @@ void APU::stepFrame()
             samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
         }
 
-        std::lock_guard<std::mutex> lock(audioMutex);  // 🔐 Replaces SDL_LockAudio()
+        //std::lock_guard<std::mutex> lock(audioMutex);  // 🔐 Replaces SDL_LockAudio()
 
         int j = 0;
         for (int stepIndex = 0; stepIndex < 3729; stepIndex++)
