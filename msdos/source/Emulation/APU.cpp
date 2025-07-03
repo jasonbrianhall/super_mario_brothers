@@ -1,9 +1,5 @@
 #include <cmath>
 #include <cstring>
-#include <mutex>
-
-//std::mutex audioMutex;
-// SDL not needed for DOS version
 
 #include "../Configuration.hpp"
 
@@ -533,54 +529,82 @@ void APU::output(uint8_t* buffer, int len)
 
 void APU::stepFrame()
 {
-    for (int i = 0; i < 4; i++)
-    {
-        frameValue = (frameValue + 1) % 5;
-        switch (frameValue)
-        {
-        case 1:
-        case 3:
-            stepEnvelope();
-            break;
-        case 0:
-        case 2:
-            stepEnvelope();
-            stepSweep();
-            stepLength();
-            break;
-        }
+    // Safety check - if any audio objects are corrupted, skip processing
+    if (!pulse1 || !pulse2 || !triangle || !noise) {
+        std::cout << "APU objects are null, skipping audio processing" << std::endl;
+        return;
+    }
 
-        int frequency = Configuration::getAudioFrequency();
-        int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
-        if (i == 3)
+    try {
+        // Step the frame counter 4 times per frame, for 240Hz
+        for (int i = 0; i < 4; i++)
         {
-            samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
-        }
-
-        //std::lock_guard<std::mutex> lock(audioMutex);  // 🔐 Replaces SDL_LockAudio()
-
-        int j = 0;
-        for (int stepIndex = 0; stepIndex < 3729; stepIndex++)
-        {
-            if (j < samplesToWrite &&
-                (stepIndex / 3729.0) > (j / (double)samplesToWrite))
+            frameValue = (frameValue + 1) % 5;
+            switch (frameValue)
             {
-                uint8_t sample = getOutput();
-                audioBuffer[audioBufferLength + j] = sample;
-                j++;
+            case 1:
+            case 3:
+                stepEnvelope();
+                break;
+            case 0:
+            case 2:
+                stepEnvelope();
+                stepSweep();
+                stepLength();
+                break;
             }
 
-            pulse1->stepTimer();
-            pulse2->stepTimer();
-            noise->stepTimer();
-            triangle->stepTimer();
-            triangle->stepTimer();
+            // Calculate the number of samples needed per 1/4 frame
+            //
+            int frequency = Configuration::getAudioFrequency();
+
+            // Example: we need 735 samples per frame for 44.1KHz sound sampling
+            //
+            int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
+            if (i == 3)
+            {
+                // Handle the remainder on the final tick of the frame counter
+                //
+                samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
+            }
+            
+            //SDL_LockAudio();
+
+            // Step the timer ~3729 times per quarter frame for most channels
+            //
+            int j = 0;
+            for (int stepIndex = 0; stepIndex < 3729; stepIndex++)
+            {
+                if (j < samplesToWrite &&
+                    (stepIndex / 3729.0) > (j / (double)samplesToWrite))
+                {
+                    uint8_t sample = getOutput();
+                    if (audioBufferLength + j < AUDIO_BUFFER_LENGTH) {
+                        audioBuffer[audioBufferLength + j] = sample;
+                        j++;
+                    }
+                }
+
+                // Safety checks before calling stepTimer on each object
+                if (pulse1) pulse1->stepTimer();
+                if (pulse2) pulse2->stepTimer();
+                if (noise) noise->stepTimer();
+                if (triangle) {
+                    triangle->stepTimer();
+                    triangle->stepTimer();
+                }
+            }
+            audioBufferLength += samplesToWrite;
+            
+            //SDL_UnlockAudio();
         }
-        audioBufferLength += samplesToWrite;
-        // 🔓 No need for unlock—handled automatically by lock_guard
+    } catch (...) {
+        std::cout << "Exception in APU::stepFrame(), disabling audio processing" << std::endl;
+        // If any exception occurs, just return safely
+        //SDL_UnlockAudio(); // Make sure we unlock if we were locked
+        return;
     }
 }
-
 void APU::stepEnvelope()
 {
     pulse1->stepEnvelope();
