@@ -42,6 +42,10 @@ static _SDL_GameController* g_controllers[4] = {nullptr};
 static uint32_t g_initialized_subsystems = 0;
 static int g_next_instance_id = 1;
 
+// Global timing state using system time instead of clock()
+static bool g_timing_initialized = false;
+static struct timeval g_start_time;
+
 // Audio timer callback
 static void audio_timer_callback() {
     if (g_audio_playing && g_audio_spec.callback) {
@@ -51,39 +55,26 @@ static void audio_timer_callback() {
 }
 END_OF_FUNCTION(audio_timer_callback)
 
-// Keyboard update - much safer approach
-static void update_keyboard() {
-    // Clear the keyboard state first
-    memset(g_keyboard_state, 0, sizeof(g_keyboard_state));
-    
-    // Only update if keyboard is properly installed and key array exists
-    if (!keyboard_needs_poll() && key != nullptr) {
-        // Use a simple mapping approach that can't overflow
-        // Map only the keys we actually need
-        
-        // Movement keys
-        g_keyboard_state[SDL_SCANCODE_UP] = (key[KEY_UP] != 0) ? 1 : 0;
-        g_keyboard_state[SDL_SCANCODE_DOWN] = (key[KEY_DOWN] != 0) ? 1 : 0;
-        g_keyboard_state[SDL_SCANCODE_LEFT] = (key[KEY_LEFT] != 0) ? 1 : 0;
-        g_keyboard_state[SDL_SCANCODE_RIGHT] = (key[KEY_RIGHT] != 0) ? 1 : 0;
-        
-        // Action keys
-        g_keyboard_state[SDL_SCANCODE_X] = (key[KEY_X] != 0) ? 1 : 0;
-        g_keyboard_state[SDL_SCANCODE_Z] = (key[KEY_Z] != 0) ? 1 : 0;
-        g_keyboard_state[SDL_SCANCODE_RETURN] = (key[KEY_ENTER] != 0) ? 1 : 0;
-        g_keyboard_state[SDL_SCANCODE_BACKSPACE] = (key[KEY_BACKSPACE] != 0) ? 1 : 0;
-        
-        // Control keys
-        g_keyboard_state[SDL_SCANCODE_ESCAPE] = (key[KEY_ESC] != 0) ? 1 : 0;
-        g_keyboard_state[SDL_SCANCODE_R] = (key[KEY_R] != 0) ? 1 : 0;
-        g_keyboard_state[SDL_SCANCODE_F] = (key[KEY_F] != 0) ? 1 : 0;
-        g_keyboard_state[SDL_SCANCODE_D] = (key[KEY_D] != 0) ? 1 : 0;
-        
-        // Additional keys (only if they're valid indices)
-        if (SDL_SCANCODE_SPACE < 256) {
-            g_keyboard_state[SDL_SCANCODE_SPACE] = (key[KEY_SPACE] != 0) ? 1 : 0;
-        }
+int SDL_GetTicks() {
+    if (!g_timing_initialized) {
+        gettimeofday(&g_start_time, NULL);
+        g_timing_initialized = true;
+        return 0;
     }
+    
+    struct timeval current_time;
+    gettimeofday(&current_time, NULL);
+    
+    // Calculate elapsed time in milliseconds
+    long seconds = current_time.tv_sec - g_start_time.tv_sec;
+    long microseconds = current_time.tv_usec - g_start_time.tv_usec;
+    
+    return (int)(seconds * 1000 + microseconds / 1000);
+}
+
+void SDL_Delay(int ms) {
+    if (ms <= 0) return;
+    rest(ms);
 }
 
 // SDL Function implementations
@@ -101,18 +92,17 @@ int SDL_Init(uint32_t flags) {
     }
     
     if (flags & SDL_INIT_AUDIO) {
-        std::cout << "Audio init requested but DISABLED for debugging" << std::endl;
-        // Don't actually install sound
-        // if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) != 0) {
-        //     std::cout << "Warning: Could not initialize audio" << std::endl;
-        // }
+        std::cout << "Audio init - installing sound but disabling callbacks" << std::endl;
+        if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) != 0) {
+            std::cout << "Warning: Could not initialize audio" << std::endl;
+        }
         g_initialized_subsystems |= SDL_INIT_AUDIO;
     }
     
     if (flags & (SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER)) {
-        std::cout << "Joystick init requested but DISABLED for debugging" << std::endl;
-        // Don't actually install joystick - this might be corrupting memory
-        // install_joystick(JOY_TYPE_AUTODETECT);
+        std::cout << "Initializing joystick support..." << std::endl;
+        install_joystick(JOY_TYPE_AUTODETECT);
+        std::cout << "Allegro detected " << num_joysticks << " joysticks" << std::endl;
         g_initialized_subsystems |= (flags & (SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER));
     }
     
@@ -279,54 +269,46 @@ int SDL_PollEvent(SDL_Event* event) {
     // Make sure joystick is polled
     poll_joystick();
     
-    // Don't check for ESC key to avoid crashes - let the game handle quit differently
-    
     return 0;
 }
 
 const Uint8* SDL_GetKeyboardState(int* numkeys) {
-    // Add safety check before calling update_keyboard
-    static bool debug_printed = false;
-    if (!debug_printed) {
-        std::cout << "SDL_GetKeyboardState called, SDL_SCANCODE_RIGHT = " << SDL_SCANCODE_RIGHT << std::endl;
-        debug_printed = true;
-    }
-    
-    // Don't call update_keyboard if it might be unsafe
-    if (key != nullptr && !keyboard_needs_poll()) {
-        update_keyboard();
-    }
-    
     if (numkeys) *numkeys = 256;
+    
+    // Poll keyboard first to ensure we have current state
+    if (keyboard_needs_poll()) {
+        poll_keyboard();
+    }
+    
+    // Clear the keyboard state array
+    memset(g_keyboard_state, 0, sizeof(g_keyboard_state));
+    
+    // Map Allegro key states to SDL scancodes
+    // Your header defines these mappings, so use them:
+    if (key[KEY_X]) g_keyboard_state[SDL_SCANCODE_X] = 1;
+    if (key[KEY_Z]) g_keyboard_state[SDL_SCANCODE_Z] = 1;
+    if (key[KEY_BACKSPACE]) g_keyboard_state[SDL_SCANCODE_BACKSPACE] = 1;
+    if (key[KEY_ENTER]) g_keyboard_state[SDL_SCANCODE_RETURN] = 1;
+    if (key[KEY_UP]) g_keyboard_state[SDL_SCANCODE_UP] = 1;
+    if (key[KEY_DOWN]) g_keyboard_state[SDL_SCANCODE_DOWN] = 1;
+    if (key[KEY_LEFT]) g_keyboard_state[SDL_SCANCODE_LEFT] = 1;
+    if (key[KEY_RIGHT]) g_keyboard_state[SDL_SCANCODE_RIGHT] = 1;
+    if (key[KEY_R]) g_keyboard_state[SDL_SCANCODE_R] = 1;
+    if (key[KEY_ESC]) g_keyboard_state[SDL_SCANCODE_ESCAPE] = 1;
+    if (key[KEY_F]) g_keyboard_state[SDL_SCANCODE_F] = 1;
+    if (key[KEY_D]) g_keyboard_state[SDL_SCANCODE_D] = 1;
+    if (key[KEY_RSHIFT]) g_keyboard_state[SDL_SCANCODE_RSHIFT] = 1;
+    if (key[KEY_I]) g_keyboard_state[SDL_SCANCODE_I] = 1;
+    if (key[KEY_K]) g_keyboard_state[SDL_SCANCODE_K] = 1;
+    if (key[KEY_J]) g_keyboard_state[SDL_SCANCODE_J] = 1;
+    if (key[KEY_L]) g_keyboard_state[SDL_SCANCODE_L] = 1;
+    if (key[KEY_N]) g_keyboard_state[SDL_SCANCODE_N] = 1;
+    if (key[KEY_M]) g_keyboard_state[SDL_SCANCODE_M] = 1;
+    if (key[KEY_RCONTROL]) g_keyboard_state[SDL_SCANCODE_RCTRL] = 1;
+    if (key[KEY_SPACE]) g_keyboard_state[SDL_SCANCODE_SPACE] = 1;
+    
     return g_keyboard_state;
 }
-
-// Global timing state using system time instead of clock()
-static bool g_timing_initialized = false;
-static struct timeval g_start_time;
-
-int SDL_GetTicks() {
-    if (!g_timing_initialized) {
-        gettimeofday(&g_start_time, NULL);
-        g_timing_initialized = true;
-        return 0;
-    }
-    
-    struct timeval current_time;
-    gettimeofday(&current_time, NULL);
-    
-    // Calculate elapsed time in milliseconds
-    long seconds = current_time.tv_sec - g_start_time.tv_sec;
-    long microseconds = current_time.tv_usec - g_start_time.tv_usec;
-    
-    return (int)(seconds * 1000 + microseconds / 1000);
-}
-
-void SDL_Delay(int ms) {
-    if (ms <= 0) return;
-    rest(ms);
-}
-
 const char* SDL_GetError() {
     return "SDL wrapper error";
 }
@@ -341,10 +323,6 @@ int SDL_OpenAudio(SDL_AudioSpec* desired, SDL_AudioSpec* obtained) {
     if (obtained) *obtained = *desired;
     
     // DON'T install any audio timer - this might be causing memory corruption
-    // LOCK_VARIABLE(g_audio_playing);
-    // LOCK_VARIABLE(g_audio_spec);  
-    // LOCK_FUNCTION(audio_timer_callback);
-    // install_int(audio_timer_callback, timer_speed_ms);
     
     return 0;
 }
@@ -360,13 +338,11 @@ void SDL_CloseAudio() {
 }
 
 void SDL_LockAudio() {
-    std::cout << "SDL_LockAudio called - safe no-op" << std::endl;
-    // Safe no-op - don't remove any timers since we didn't install any
+    // Complete no-op - audio is disabled
 }
 
 void SDL_UnlockAudio() {
-    std::cout << "SDL_UnlockAudio called - safe no-op" << std::endl;
-    // Safe no-op - don't install any timers
+    // Complete no-op - audio is disabled  
 }
 
 int SDL_SetWindowFullscreen(SDL_Window* window, uint32_t flags) {
@@ -382,21 +358,55 @@ int SDL_SetWindowFullscreen(SDL_Window* window, uint32_t flags) {
     return 0;
 }
 
-// Joystick/Controller functions - all disabled for debugging
+int SDL_SetTextureBlendMode(SDL_Texture* texture, int blendMode) {
+    if (!texture) return -1;
+    
+    _SDL_Texture* tex = (_SDL_Texture*)texture;
+    tex->blend_mode = blendMode;
+    
+    return 0;
+}
+
+int SDL_GetRendererInfo(SDL_Renderer* renderer, SDL_RendererInfo* info) {
+    if (!renderer || !info) return -1;
+    
+    // Fill in some basic renderer info
+    info->name = "Allegro Wrapper";
+    info->flags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE;
+    info->num_texture_formats = 1;
+    info->texture_formats[0] = SDL_PIXELFORMAT_ARGB8888;
+    info->max_texture_width = 4096;
+    info->max_texture_height = 4096;
+    
+    return 0;
+}
+
+int SDL_SetHint(const char* name, const char* value) {
+    // For now, just return success without actually setting any hints
+    return 1; // SDL_TRUE
+}
+
+// Joystick/Controller functions with debug output
 int SDL_NumJoysticks() {
-    return 0;  // Report no joysticks
+    std::cout << "SDL_NumJoysticks() called, returning: " << num_joysticks << std::endl;
+    return num_joysticks;
 }
 
 SDL_Joystick* SDL_JoystickOpen(int device_index) {
+    std::cout << "SDL_JoystickOpen(" << device_index << ") called" << std::endl;
+    
     if (device_index >= 0 && device_index < num_joysticks && device_index < 4) {
         if (!g_joysticks[device_index]) {
             g_joysticks[device_index] = new _SDL_Joystick();
             g_joysticks[device_index]->index = device_index;
             g_joysticks[device_index]->connected = true;
             g_joysticks[device_index]->instance_id = g_next_instance_id++;
+            std::cout << "Created joystick object for device " << device_index << std::endl;
         }
         return (SDL_Joystick*)g_joysticks[device_index];
     }
+    
+    std::cout << "SDL_JoystickOpen failed - invalid device index" << std::endl;
     return nullptr;
 }
 
@@ -443,7 +453,6 @@ int SDL_JoystickNumButtons(SDL_Joystick* joystick) {
 }
 
 int SDL_JoystickNumHats(SDL_Joystick* joystick) {
-    // Allegro doesn't really have hats, return 1 if we have sticks (simulate with stick)
     if (joystick) {
         _SDL_Joystick* joy_ptr = (_SDL_Joystick*)joystick;
         return joy[joy_ptr->index].num_sticks > 0 ? 1 : 0;
@@ -473,6 +482,8 @@ Sint16 SDL_JoystickGetAxis(SDL_Joystick* joystick, int axis) {
 }
 
 uint8_t SDL_JoystickGetButton(SDL_Joystick* joystick, int button) {
+    std::cout << "SDL_JoystickGetButton called - joystick=" << joystick << " button=" << button << std::endl;
+    
     if (!joystick || button < 0) return 0;
     
     _SDL_Joystick* jstick = (_SDL_Joystick*)joystick;
@@ -480,7 +491,11 @@ uint8_t SDL_JoystickGetButton(SDL_Joystick* joystick, int button) {
     
     if (button >= 0 && button < joy[jstick->index].num_buttons) {
         poll_joystick();
-        return joy[jstick->index].button[button].b ? 1 : 0;
+        uint8_t result = joy[jstick->index].button[button].b ? 1 : 0;
+        if (result) {
+            std::cout << "Button " << button << " is pressed!" << std::endl;
+        }
+        return result;
     }
     
     return 0;
@@ -491,7 +506,6 @@ uint8_t SDL_JoystickGetHat(SDL_Joystick* joystick, int hat) {
         _SDL_Joystick* jstick = (_SDL_Joystick*)joystick;
         poll_joystick();
         
-        // Simulate hat with first stick
         if (joy[jstick->index].num_sticks > 0) {
             uint8_t hatval = SDL_HAT_CENTERED;
             int x = joy[jstick->index].stick[0].axis[0].pos;
@@ -517,19 +531,30 @@ int SDL_JoystickInstanceID(SDL_Joystick* joystick) {
 }
 
 void SDL_JoystickEventState(int state) {
-    // In a real implementation, this would enable/disable joystick events
-    // For our wrapper, we'll just ignore it since we poll manually
+    // No-op
+}
+
+int SDL_IsGameController(int joystick_index) {
+    std::cout << "SDL_IsGameController(" << joystick_index << ") called" << std::endl;
+    bool result = (joystick_index >= 0 && joystick_index < num_joysticks);
+    std::cout << "SDL_IsGameController returning: " << result << std::endl;
+    return result ? 1 : 0;
 }
 
 SDL_GameController* SDL_GameControllerOpen(int joystick_index) {
+    std::cout << "SDL_GameControllerOpen(" << joystick_index << ") called" << std::endl;
+    
     if (joystick_index >= 0 && joystick_index < num_joysticks && joystick_index < 4) {
         if (!g_controllers[joystick_index]) {
             g_controllers[joystick_index] = new _SDL_GameController();
             g_controllers[joystick_index]->index = joystick_index;
             g_controllers[joystick_index]->connected = true;
+            std::cout << "Created game controller object for device " << joystick_index << std::endl;
         }
         return (SDL_GameController*)g_controllers[joystick_index];
     }
+    
+    std::cout << "SDL_GameControllerOpen failed - invalid joystick index" << std::endl;
     return nullptr;
 }
 
@@ -585,7 +610,6 @@ uint8_t SDL_GameControllerGetButton(SDL_GameController* gamecontroller, SDL_Game
         poll_joystick();
         int joy_index = ctrl->index;
         
-        // Map controller buttons to joystick buttons (basic mapping)
         switch (button) {
             case SDL_CONTROLLER_BUTTON_A:
                 return (0 < joy[joy_index].num_buttons) ? joy[joy_index].button[0].b : 0;
@@ -604,11 +628,6 @@ uint8_t SDL_GameControllerGetButton(SDL_GameController* gamecontroller, SDL_Game
     return 0;
 }
 
-int SDL_IsGameController(int joystick_index) {
-    // For simplicity, assume all joysticks can be game controllers
-    return (joystick_index >= 0 && joystick_index < num_joysticks) ? 1 : 0;
-}
-
 SDL_Joystick* SDL_GameControllerGetJoystick(SDL_GameController* gamecontroller) {
     if (gamecontroller) {
         _SDL_GameController* ctrl = (_SDL_GameController*)gamecontroller;
@@ -618,11 +637,10 @@ SDL_Joystick* SDL_GameControllerGetJoystick(SDL_GameController* gamecontroller) 
 }
 
 void SDL_GameControllerEventState(int state) {
-    // Similar to joystick event state, we'll ignore this
+    // No-op
 }
 
 int SDL_GameControllerAddMappingsFromFile(const char* file) {
-    // For now, just return 0 (no mappings added)
     return 0;
 }
 
@@ -637,35 +655,4 @@ int SDL_InitSubSystem(uint32_t flags) {
 
 void SDL_QuitSubSystem(uint32_t flags) {
     g_initialized_subsystems &= ~flags;
-}
-
-int SDL_SetTextureBlendMode(SDL_Texture* texture, int blendMode) {
-    if (!texture) return -1;
-    
-    _SDL_Texture* tex = (_SDL_Texture*)texture;
-    tex->blend_mode = blendMode;
-    
-    // In a full implementation, this would affect how the texture is rendered
-    // For now, just store the blend mode
-    return 0;
-}
-
-int SDL_GetRendererInfo(SDL_Renderer* renderer, SDL_RendererInfo* info) {
-    if (!renderer || !info) return -1;
-    
-    // Fill in some basic renderer info
-    info->name = "Allegro Wrapper";
-    info->flags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE;
-    info->num_texture_formats = 1;
-    info->texture_formats[0] = SDL_PIXELFORMAT_ARGB8888;
-    info->max_texture_width = 4096;
-    info->max_texture_height = 4096;
-    
-    return 0;
-}
-
-int SDL_SetHint(const char* name, const char* value) {
-    // For now, just return success without actually setting any hints
-    // In a real implementation, this would store hint values
-    return 1; // SDL_TRUE
 }
