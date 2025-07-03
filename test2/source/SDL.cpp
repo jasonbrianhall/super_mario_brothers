@@ -77,8 +77,12 @@ void SDL_Delay(int ms) {
     rest(ms);
 }
 
-// SDL Function implementations
+// SDL Function implementations with conditional compilation
+#ifdef __DJGPP__
+int SDL_Init(unsigned long flags) {
+#else
 int SDL_Init(uint32_t flags) {
+#endif
     if (allegro_init() != 0) return -1;
     
     if (flags & SDL_INIT_VIDEO) {
@@ -127,7 +131,11 @@ void SDL_Quit() {
     allegro_exit();
 }
 
+#ifdef __DJGPP__
+SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, unsigned long flags) {
+#else
 SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, uint32_t flags) {
+#endif
     g_window = new _SDL_Window();
     g_window->width = w;
     g_window->height = h;
@@ -141,7 +149,11 @@ void SDL_DestroyWindow(SDL_Window* window) {
     }
 }
 
+#ifdef __DJGPP__
+SDL_Renderer* SDL_CreateRenderer(SDL_Window* window, int index, unsigned long flags) {
+#else
 SDL_Renderer* SDL_CreateRenderer(SDL_Window* window, int index, uint32_t flags) {
+#endif
     _SDL_Window* win = (_SDL_Window*)window;
     if (!win) return nullptr;
     
@@ -208,7 +220,11 @@ void SDL_RenderPresent(SDL_Renderer* renderer) {
                  0, 0, SCREEN_W, SCREEN_H);
 }
 
+#ifdef __DJGPP__
+SDL_Texture* SDL_CreateTexture(SDL_Renderer* renderer, unsigned long format, int access, int w, int h) {
+#else
 SDL_Texture* SDL_CreateTexture(SDL_Renderer* renderer, uint32_t format, int access, int w, int h) {
+#endif
     if (!renderer) return nullptr;
     
     _SDL_Texture* texture = new _SDL_Texture();
@@ -331,7 +347,6 @@ int SDL_PollEvent(SDL_Event* event) {
     return 0;
 }
 
-
 const Uint8* SDL_GetKeyboardState(int* numkeys) {
     if (numkeys) *numkeys = 256;
     
@@ -344,7 +359,6 @@ const Uint8* SDL_GetKeyboardState(int* numkeys) {
     memset(g_keyboard_state, 0, sizeof(g_keyboard_state));
     
     // Map Allegro key states to SDL scancodes
-    // Your header defines these mappings, so use them:
     if (key[KEY_X]) g_keyboard_state[SDL_SCANCODE_X] = 1;
     if (key[KEY_Z]) g_keyboard_state[SDL_SCANCODE_Z] = 1;
     if (key[KEY_BACKSPACE]) g_keyboard_state[SDL_SCANCODE_BACKSPACE] = 1;
@@ -369,6 +383,7 @@ const Uint8* SDL_GetKeyboardState(int* numkeys) {
     
     return g_keyboard_state;
 }
+
 const char* SDL_GetError() {
     return "SDL wrapper error";
 }
@@ -405,7 +420,11 @@ void SDL_UnlockAudio() {
     // Complete no-op - audio is disabled  
 }
 
+#ifdef __DJGPP__
+int SDL_SetWindowFullscreen(SDL_Window* window, unsigned long flags) {
+#else
 int SDL_SetWindowFullscreen(SDL_Window* window, uint32_t flags) {
+#endif
     if (!window) return -1;
     _SDL_Window* win = (_SDL_Window*)window;
     
@@ -741,15 +760,27 @@ int SDL_GameControllerAddMappingsFromFile(const char* file) {
     return 0;
 }
 
-// SDL subsystem functions
+// SDL subsystem functions with conditional compilation
+#ifdef __DJGPP__
+int SDL_WasInit(unsigned long flags) {
+#else
 int SDL_WasInit(uint32_t flags) {
+#endif
     return g_initialized_subsystems & flags;
 }
 
+#ifdef __DJGPP__
+int SDL_InitSubSystem(unsigned long flags) {
+#else
 int SDL_InitSubSystem(uint32_t flags) {
+#endif
     return SDL_Init(flags);
 }
 
+#ifdef __DJGPP__
+void SDL_QuitSubSystem(unsigned long flags) {
+#else
 void SDL_QuitSubSystem(uint32_t flags) {
+#endif
     g_initialized_subsystems &= ~flags;
 }

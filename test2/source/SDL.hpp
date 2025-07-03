@@ -182,13 +182,25 @@ struct SDL_AudioSpec {
 };
 
 // Function declarations
+#ifdef __DJGPP__
+int SDL_Init(unsigned long flags);
+#else
 int SDL_Init(uint32_t flags);
+#endif
 void SDL_Quit();
 
+#ifdef __DJGPP__
+SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, unsigned long flags);
+#else
 SDL_Window* SDL_CreateWindow(const char* title, int x, int y, int w, int h, uint32_t flags);
+#endif
 void SDL_DestroyWindow(SDL_Window* window);
 
+#ifdef __DJGPP__
+SDL_Renderer* SDL_CreateRenderer(SDL_Window* window, int index, unsigned long flags);
+#else
 SDL_Renderer* SDL_CreateRenderer(SDL_Window* window, int index, uint32_t flags);
+#endif
 void SDL_DestroyRenderer(SDL_Renderer* renderer);
 int SDL_RenderSetLogicalSize(SDL_Renderer* renderer, int w, int h);
 int SDL_RenderClear(SDL_Renderer* renderer);
@@ -196,7 +208,11 @@ int SDL_RenderCopy(SDL_Renderer* renderer, SDL_Texture* texture, const void* src
 void SDL_RenderPresent(SDL_Renderer* renderer);
 int SDL_GetRendererInfo(SDL_Renderer* renderer, SDL_RendererInfo* info);
 
+#ifdef __DJGPP__
+SDL_Texture* SDL_CreateTexture(SDL_Renderer* renderer, unsigned long format, int access, int w, int h);
+#else
 SDL_Texture* SDL_CreateTexture(SDL_Renderer* renderer, uint32_t format, int access, int w, int h);
+#endif
 void SDL_DestroyTexture(SDL_Texture* texture);
 int SDL_UpdateTexture(SDL_Texture* texture, const void* rect, const void* pixels, int pitch);
 int SDL_SetTextureBlendMode(SDL_Texture* texture, int blendMode);
@@ -215,7 +231,11 @@ void SDL_CloseAudio();
 void SDL_LockAudio();
 void SDL_UnlockAudio();
 
+#ifdef __DJGPP__
+int SDL_SetWindowFullscreen(SDL_Window* window, unsigned long flags);
+#else
 int SDL_SetWindowFullscreen(SDL_Window* window, uint32_t flags);
+#endif
 
 // Joystick/Controller functions
 int SDL_NumJoysticks();
@@ -243,9 +263,15 @@ void SDL_GameControllerEventState(int state);
 int SDL_GameControllerAddMappingsFromFile(const char* file);
 
 // SDL subsystem functions
+#ifdef __DJGPP__
+int SDL_WasInit(unsigned long flags);
+int SDL_InitSubSystem(unsigned long flags);
+void SDL_QuitSubSystem(unsigned long flags);
+#else
 int SDL_WasInit(uint32_t flags);
 int SDL_InitSubSystem(uint32_t flags);
 void SDL_QuitSubSystem(uint32_t flags);
+#endif
 int SDL_SetHint(const char* name, const char* value);
 
 #endif // SDL_ALLEGRO_WRAPPER_H
