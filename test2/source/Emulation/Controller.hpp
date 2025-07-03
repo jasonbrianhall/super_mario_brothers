@@ -2,7 +2,7 @@
 #define CONTROLLER_HPP
 
 #include <cstdint>
-#include "../SDL.h"
+#include "../SDL.hpp"
 #include <array>
 #include <iostream>
 
