@@ -276,9 +276,17 @@ const Uint8* SDL_GetKeyboardState(int* numkeys) {
 }
 
 int SDL_GetTicks() {
-    static int start_time = -1;
-    if (start_time == -1) start_time = clock();
-    return (clock() - start_time) * 1000 / CLOCKS_PER_SEC;
+    static bool initialized = false;
+    static int start_time = 0;
+    
+    if (!initialized) {
+        start_time = clock();
+        initialized = true;
+    }
+    
+    // Convert clock ticks to milliseconds
+    // clock() returns CLOCKS_PER_SEC ticks per second
+    return ((clock() - start_time) * 1000) / CLOCKS_PER_SEC;
 }
 
 void SDL_Delay(int ms) {
@@ -300,8 +308,10 @@ int SDL_OpenAudio(SDL_AudioSpec* desired, SDL_AudioSpec* obtained) {
     LOCK_FUNCTION(audio_timer_callback);
     
     // Calculate timer frequency for audio callback
-    int timer_freq = 1000000 / (desired->freq / desired->samples);
-    install_int(audio_timer_callback, timer_freq);
+    // Allegro timer expects speed in microseconds
+    // For 44100 Hz with 2048 samples = ~46ms between callbacks
+    int timer_speed_us = (desired->samples * 1000000) / desired->freq;
+    install_int_ex(audio_timer_callback, timer_speed_us);
     
     return 0;
 }
@@ -324,8 +334,8 @@ void SDL_LockAudio() {
 void SDL_UnlockAudio() {
     // Re-enable the audio timer
     if (g_audio_spec.callback) {
-        int timer_freq = 1000000 / (g_audio_spec.freq / g_audio_spec.samples);
-        install_int(audio_timer_callback, timer_freq);
+        int timer_speed_us = (g_audio_spec.samples * 1000000) / g_audio_spec.freq;
+        install_int_ex(audio_timer_callback, timer_speed_us);
     }
 }
 
