@@ -380,29 +380,41 @@ void AllegroMainWindow::handleDialogInput()
 
 void AllegroMainWindow::handleGameInput()
 {
-    // Check for menu toggle
-    if (key[KEY_ESC]) {
+    // Check for menu toggle - use keypressed for single key events
+    static bool escPressed = false;
+    if (key[KEY_ESC] && !escPressed) {
         showingMenu = true;
-        while (key[KEY_ESC]) { rest(1); } // Wait for key release
+        escPressed = true;
         return;
+    }
+    if (!key[KEY_ESC]) {
+        escPressed = false;
     }
     
     // Check for pause
-    if (key[KEY_P]) {
+    static bool pPressed = false;
+    if (key[KEY_P] && !pPressed) {
         gamePaused = !gamePaused;
         setStatusMessage(gamePaused ? "Game Paused" : "Game Resumed");
-        while (key[KEY_P]) { rest(1); } // Wait for key release
+        pPressed = true;
         return;
+    }
+    if (!key[KEY_P]) {
+        pPressed = false;
     }
     
     // Check for reset
-    if (key[KEY_R] && key[KEY_LCONTROL]) {
+    static bool rPressed = false;
+    if (key[KEY_R] && key[KEY_LCONTROL] && !rPressed) {
         if (smbEngine) {
             smbEngine->reset();
             setStatusMessage("Game Reset");
         }
-        while (key[KEY_R]) { rest(1); } // Wait for key release
+        rPressed = true;
         return;
+    }
+    if (!key[KEY_R]) {
+        rPressed = false;
     }
     
     // Process player input
@@ -410,52 +422,80 @@ void AllegroMainWindow::handleGameInput()
     checkPlayerInput(PLAYER_2);
 }
 
+void AllegroMainWindow::testKeyboardBasic()
+{
+    static int testCounter = 0;
+    if (testCounter++ % 60 == 0) {  // Every second
+        poll_keyboard();
+        
+        // Test a bunch of common keys to see if ANY are detected
+        printf("Raw key test: ");
+        printf("ESC=%d ", key[KEY_ESC] ? 1 : 0);
+        printf("UP=%d ", key[KEY_UP] ? 1 : 0);
+        printf("DOWN=%d ", key[KEY_DOWN] ? 1 : 0);
+        printf("LEFT=%d ", key[KEY_LEFT] ? 1 : 0);
+        printf("RIGHT=%d ", key[KEY_RIGHT] ? 1 : 0);
+        printf("X=%d ", key[KEY_X] ? 1 : 0);
+        printf("Z=%d ", key[KEY_Z] ? 1 : 0);
+        printf("SPACE=%d ", key[KEY_SPACE] ? 1 : 0);
+        printf("ENTER=%d ", key[KEY_ENTER] ? 1 : 0);
+        printf("W=%d ", key[KEY_W] ? 1 : 0);
+        printf("A=%d ", key[KEY_A] ? 1 : 0);
+        printf("S=%d ", key[KEY_S] ? 1 : 0);
+        printf("D=%d ", key[KEY_D] ? 1 : 0);
+        printf("\n");
+        
+        // Also check if keyboard buffer has anything
+        if (keypressed()) {
+            int k = readkey();
+            printf("Keypressed detected: scancode=%d ascii=%d\n", k >> 8, k & 0xFF);
+        }
+    }
+}
+
 void AllegroMainWindow::checkPlayerInput(Player player)
 {
     if (!smbEngine) return;
     
-    Controller& controller = smbEngine->getController1();
-    PlayerKeys* keys = (player == PLAYER_1) ? &player1Keys : &player2Keys;
-    PlayerJoy* joyConfig = (player == PLAYER_1) ? &player1Joy : &player2Joy;
+    // First, test if keyboard works at all
+    //testKeyboardBasic();
     
-    // Keyboard input - convert volatile char to bool and handle 2-argument API
+    // Force keyboard polling
+    poll_keyboard();
+    
     if (player == PLAYER_1) {
-        controller.setButtonState(BUTTON_UP, key[keys->up] != 0);
-        controller.setButtonState(BUTTON_DOWN, key[keys->down] != 0);
-        controller.setButtonState(BUTTON_LEFT, key[keys->left] != 0);
-        controller.setButtonState(BUTTON_RIGHT, key[keys->right] != 0);
-        controller.setButtonState(BUTTON_A, key[keys->button_a] != 0);
-        controller.setButtonState(BUTTON_B, key[keys->button_b] != 0);
-        controller.setButtonState(BUTTON_START, key[keys->start] != 0);
-        controller.setButtonState(BUTTON_SELECT, key[keys->select] != 0);
-    }
-    // Note: Controller API seems to only support Player 1, 
-    // Player 2 support would need to be added to the Controller class
-    
-    // Joystick input (only for player 1 if joystick available)
-    if (player == PLAYER_1 && num_joysticks > 0) {
-        // Digital/analog stick using Allegro's global joy variables
-        if (joyConfig->use_stick) {
-            controller.setButtonState(BUTTON_LEFT, joy_left != 0);
-            controller.setButtonState(BUTTON_RIGHT, joy_right != 0);
-            controller.setButtonState(BUTTON_UP, joy_up != 0);
-            controller.setButtonState(BUTTON_DOWN, joy_down != 0);
-        }
+        Controller& controller = smbEngine->getController1();
         
-        // Buttons - use Allegro's joy array and check bounds
-        if (joyConfig->button_a >= 0 && joyConfig->button_a < joy[0].num_buttons) {
-            controller.setButtonState(BUTTON_A, joy[0].button[joyConfig->button_a].b != 0);
-        }
-        if (joyConfig->button_b >= 0 && joyConfig->button_b < joy[0].num_buttons) {
-            controller.setButtonState(BUTTON_B, joy[0].button[joyConfig->button_b].b != 0);
-        }
-        if (joyConfig->start >= 0 && joyConfig->start < joy[0].num_buttons) {
-            controller.setButtonState(BUTTON_START, joy[0].button[joyConfig->start].b != 0);
-        }
-        if (joyConfig->select >= 0 && joyConfig->select < joy[0].num_buttons) {
-            controller.setButtonState(BUTTON_SELECT, joy[0].button[joyConfig->select].b != 0);
+        // Try the most basic approach - hardcoded keys
+        bool up = (key[KEY_UP] != 0);
+        bool down = (key[KEY_DOWN] != 0);
+        bool left = (key[KEY_LEFT] != 0);
+        bool right = (key[KEY_RIGHT] != 0);
+        bool a = (key[KEY_X] != 0);
+        bool b = (key[KEY_Z] != 0);
+        bool start = (key[KEY_ENTER] != 0);
+        bool select = (key[KEY_SPACE] != 0);
+        
+        // Set the controller states
+        controller.setButtonState(BUTTON_UP, up);
+        controller.setButtonState(BUTTON_DOWN, down);
+        controller.setButtonState(BUTTON_LEFT, left);
+        controller.setButtonState(BUTTON_RIGHT, right);
+        controller.setButtonState(BUTTON_A, a);
+        controller.setButtonState(BUTTON_B, b);
+        controller.setButtonState(BUTTON_START, start);
+        controller.setButtonState(BUTTON_SELECT, select);
+        
+        // Debug what we're actually sending to the controller
+        static int debugCounter = 0;
+        if (debugCounter++ % 60 == 0) {
+            printf("Controller states being set: UP=%d DOWN=%d LEFT=%d RIGHT=%d A=%d B=%d START=%d SELECT=%d\n",
+                   up ? 1 : 0, down ? 1 : 0, left ? 1 : 0, right ? 1 : 0,
+                   a ? 1 : 0, b ? 1 : 0, start ? 1 : 0, select ? 1 : 0);
         }
     }
+    
+    // Skip Player 2 for now to isolate the problem
 }
 
 void AllegroMainWindow::updateAndDraw()

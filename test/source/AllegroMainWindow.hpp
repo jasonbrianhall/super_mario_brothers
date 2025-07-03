@@ -41,7 +41,7 @@ private:
     bool gameRunning;
     bool gamePaused;
     bool showingMenu;
-    
+    void testKeyboardBasic();
     // Simple menu system
     MenuItem mainMenu[8];
     int menuCount;
