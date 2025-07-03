@@ -13,6 +13,19 @@
 // Include the generated ROM header
 #include "SMBRom.hpp" // This contains smbRomData array
 
+// DOS-specific optimizations
+#ifdef __DJGPP__
+#define DOS_WIDTH 320
+#define DOS_HEIGHT 200
+#define DOS_SCALE 1
+#define DISABLE_EFFECTS true
+#else
+#define DOS_WIDTH RENDER_WIDTH
+#define DOS_HEIGHT RENDER_HEIGHT
+#define DOS_SCALE Configuration::getRenderScale()
+#define DISABLE_EFFECTS false
+#endif
+
 static SDL_Window* window;
 static SDL_Renderer* renderer;
 static SDL_Texture* texture;
@@ -49,12 +62,16 @@ static bool initialize()
         return false;
     }
 
-    // Create the window
+#ifdef __DJGPP__
+    std::cout << "DOS mode detected - using 320x200 resolution" << std::endl;
+#endif
+
+    // Create the window - use DOS-friendly resolution for DJGPP
     window = SDL_CreateWindow(APP_TITLE,
                               SDL_WINDOWPOS_UNDEFINED,
                               SDL_WINDOWPOS_UNDEFINED,
-                              RENDER_WIDTH * Configuration::getRenderScale(),
-                              RENDER_HEIGHT * Configuration::getRenderScale(),
+                              DOS_WIDTH * DOS_SCALE,
+                              DOS_HEIGHT * DOS_SCALE,
                               0);
     if (window == nullptr)
     {
@@ -63,13 +80,14 @@ static bool initialize()
     }
 
     // Setup the renderer and texture buffer
-    renderer = SDL_CreateRenderer(window, -1, (Configuration::getVsyncEnabled() ? SDL_RENDERER_PRESENTVSYNC : 0) | SDL_RENDERER_ACCELERATED);
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (renderer == nullptr)
     {
         std::cout << "SDL_CreateRenderer() failed during initialize(): " << SDL_GetError() << std::endl;
         return false;
     }
 
+    // Set logical size to game resolution
     if (SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH, RENDER_HEIGHT) < 0)
     {
         std::cout << "SDL_RenderSetLogicalSize() failed during initialize(): " << SDL_GetError() << std::endl;
@@ -83,13 +101,13 @@ static bool initialize()
         return false;
     }
 
-    if (Configuration::getScanlinesEnabled())
+    if (Configuration::getScanlinesEnabled() && !DISABLE_EFFECTS)
     {
         scanlineTexture = generateScanlineTexture(renderer);
     }
 
-    // Set up custom palette, if configured
-    if (!Configuration::getPaletteFileName().empty())
+    // Set up custom palette, if configured and not in DOS mode
+    if (!DISABLE_EFFECTS && !Configuration::getPaletteFileName().empty())
     {
         const uint32_t* palette = loadPalette(Configuration::getPaletteFileName());
         if (palette)
@@ -98,6 +116,8 @@ static bool initialize()
         }
     }
 
+    // Skip all post-processing effects in DOS mode
+#ifndef __DJGPP__
     // Initialize HQDN3D filter if enabled
     if (Configuration::getHqdn3dEnabled())
     {
@@ -111,15 +131,20 @@ static bool initialize()
     {
         msaaEnabled = initMSAA(renderer);
     }
+#endif
 
+    // Audio setup - simplified for DOS
     if (Configuration::getAudioEnabled())
     {
-        // Initialize audio
         SDL_AudioSpec desiredSpec;
         desiredSpec.freq = Configuration::getAudioFrequency();
         desiredSpec.format = AUDIO_S8;
         desiredSpec.channels = 1;
+#ifdef __DJGPP__
+        desiredSpec.samples = 1024; // Smaller buffer for DOS
+#else
         desiredSpec.samples = 2048;
+#endif
         desiredSpec.callback = audioCallback;
         desiredSpec.userdata = NULL;
 
@@ -138,11 +163,13 @@ static bool initialize()
  */
 static void shutdown()
 {
+#ifndef __DJGPP__
     // Cleanup HQDN3D filter if it was initialized
     if (Configuration::getHqdn3dEnabled())
     {
         cleanupHQDN3D();
     }
+#endif
 
     SDL_CloseAudio();
 
@@ -157,7 +184,6 @@ static void shutdown()
 static void mainLoop()
 {
     // Use the embedded ROM data directly
-    //SMBEngine engine(smbRomData);
     SMBEngine engine(const_cast<uint8_t*>(smbRomData));
     smbEngine = &engine;
     engine.reset();
@@ -223,13 +249,7 @@ static void mainLoop()
         controller1.setButtonState(BUTTON_LEFT, keys[SDL_SCANCODE_LEFT]);
         controller1.setButtonState(BUTTON_RIGHT, keys[SDL_SCANCODE_RIGHT]);
         
-        // Debug key to print controller state (press D key)
-        if (keys[SDL_SCANCODE_D])
-        {
-            controller1.printButtonStates();
-        }
-
-        // Update joystick state (optional, if you want to poll the joystick state directly)
+        // Update joystick state
         if (joystickInitialized)
         {
             controller1.updateJoystickState();
@@ -254,7 +274,11 @@ static void mainLoop()
         engine.update();
         engine.render(renderBuffer);
 
-        // Apply post-processing filters if enabled
+#ifdef __DJGPP__
+        // DOS mode - no post-processing, direct render
+        SDL_UpdateTexture(texture, NULL, renderBuffer, sizeof(uint32_t) * RENDER_WIDTH);
+#else
+        // Non-DOS mode - apply post-processing filters if enabled
         uint32_t* sourceBuffer = renderBuffer;
         uint32_t* targetBuffer = filteredBuffer;
 
@@ -269,7 +293,7 @@ static void mainLoop()
             // Store the current frame for next time
             memcpy(prevFrameBuffer, sourceBuffer, RENDER_WIDTH * RENDER_HEIGHT * sizeof(uint32_t));
             
-            // Swap buffers for potential next filter
+            // Swap buffers
             uint32_t* temp = sourceBuffer;
             sourceBuffer = targetBuffer;
             targetBuffer = temp;
@@ -280,40 +304,35 @@ static void mainLoop()
         {
             applyFXAA(targetBuffer, sourceBuffer, RENDER_WIDTH, RENDER_HEIGHT);
             
-            // Swap buffers for potential next filter
+            // Swap buffers
             uint32_t* temp = sourceBuffer;
             sourceBuffer = targetBuffer;
             targetBuffer = temp;
         }
 
-        // Update the texture with the filtered buffer
         SDL_UpdateTexture(texture, NULL, sourceBuffer, sizeof(uint32_t) * RENDER_WIDTH);
+#endif
 
+        // Simple render - no scanlines or effects in DOS mode
         SDL_RenderClear(renderer);
-
-        // Render the screen
-        SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH, RENDER_HEIGHT);
         SDL_RenderCopy(renderer, texture, NULL, NULL);
-
-        // Render scanlines
-        if (Configuration::getScanlinesEnabled())
+        
+        // Apply scanlines if enabled and not in DOS mode
+        if (Configuration::getScanlinesEnabled() && !DISABLE_EFFECTS && scanlineTexture)
         {
-            SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH * 3, RENDER_HEIGHT * 3);
             SDL_RenderCopy(renderer, scanlineTexture, NULL, NULL);
         }
-
+        
         SDL_RenderPresent(renderer);
 
-        /**
-         * Ensure that the framerate stays as close to the desired FPS as possible. If the frame was rendered faster, then delay. 
-         * If the frame was slower, reset time so that the game doesn't try to "catch up", going super-speed.
-         */
+        // Frame rate limiting
         int now = SDL_GetTicks();
         int delay = progStartTime + int(double(frame) * double(MS_PER_SEC) / double(Configuration::getFrameRate())) - now;
-if (delay > 0) {
-    static int debug_count = 0;
-    SDL_Delay(delay);
-}        else 
+        if (delay > 0) 
+        {
+            SDL_Delay(delay);
+        }        
+        else 
         {
             frame = 0;
             progStartTime = now;
