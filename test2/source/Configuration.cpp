@@ -1,6 +1,290 @@
 #include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <cctype>
 
 #include "Configuration.hpp"
+
+// SimpleINI Implementation
+bool SimpleINI::loadFromFile(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        return false;
+    }
+    
+    std::string line;
+    std::string currentSection = "";
+    
+    while (std::getline(file, line)) {
+        line = trim(line);
+        
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == ';' || line[0] == '#') {
+            continue;
+        }
+        
+        // Check for section header
+        if (line[0] == '[' && line.back() == ']') {
+            currentSection = line.substr(1, line.length() - 2);
+            currentSection = trim(currentSection);
+            continue;
+        }
+        
+        // Parse key=value pairs
+        size_t equalPos = line.find('=');
+        if (equalPos != std::string::npos) {
+            std::string key = trim(line.substr(0, equalPos));
+            std::string value = trim(line.substr(equalPos + 1));
+            
+            // Remove quotes from value if present
+            if (value.length() >= 2 && value[0] == '"' && value.back() == '"') {
+                value = value.substr(1, value.length() - 2);
+            }
+            
+            data[currentSection][key] = value;
+        }
+    }
+    
+    return true;
+}
+
+bool SimpleINI::saveToFile(const std::string& filename) {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        return false;
+    }
+    
+    for (const auto& section : data) {
+        if (!section.first.empty()) {
+            file << "[" << section.first << "]" << std::endl;
+        }
+        
+        for (const auto& keyValue : section.second) {
+            file << keyValue.first << " = " << keyValue.second << std::endl;
+        }
+        
+        file << std::endl;
+    }
+    
+    return true;
+}
+
+std::string SimpleINI::getString(const std::string& section, const std::string& key, const std::string& defaultValue) {
+    auto sectionIt = data.find(section);
+    if (sectionIt != data.end()) {
+        auto keyIt = sectionIt->second.find(key);
+        if (keyIt != sectionIt->second.end()) {
+            return keyIt->second;
+        }
+    }
+    return defaultValue;
+}
+
+int SimpleINI::getInt(const std::string& section, const std::string& key, int defaultValue) {
+    std::string value = getString(section, key, "");
+    if (!value.empty()) {
+        try {
+            return std::stoi(value);
+        } catch (const std::exception&) {
+            // Fall through to return default
+        }
+    }
+    return defaultValue;
+}
+
+float SimpleINI::getFloat(const std::string& section, const std::string& key, float defaultValue) {
+    std::string value = getString(section, key, "");
+    if (!value.empty()) {
+        try {
+            return std::stof(value);
+        } catch (const std::exception&) {
+            // Fall through to return default
+        }
+    }
+    return defaultValue;
+}
+
+bool SimpleINI::getBool(const std::string& section, const std::string& key, bool defaultValue) {
+    std::string value = getString(section, key, "");
+    if (!value.empty()) {
+        std::transform(value.begin(), value.end(), value.begin(), ::tolower);
+        if (value == "true" || value == "1" || value == "yes" || value == "on") {
+            return true;
+        } else if (value == "false" || value == "0" || value == "no" || value == "off") {
+            return false;
+        }
+    }
+    return defaultValue;
+}
+
+void SimpleINI::setString(const std::string& section, const std::string& key, const std::string& value) {
+    data[section][key] = value;
+}
+
+void SimpleINI::setInt(const std::string& section, const std::string& key, int value) {
+    data[section][key] = std::to_string(value);
+}
+
+void SimpleINI::setFloat(const std::string& section, const std::string& key, float value) {
+    data[section][key] = std::to_string(value);
+}
+
+void SimpleINI::setBool(const std::string& section, const std::string& key, bool value) {
+    data[section][key] = value ? "true" : "false";
+}
+
+std::string SimpleINI::trim(const std::string& str) {
+    size_t first = str.find_first_not_of(' ');
+    if (std::string::npos == first) {
+        return str;
+    }
+    size_t last = str.find_last_not_of(' ');
+    return str.substr(first, (last - first + 1));
+}
+
+void SimpleINI::parsePath(const std::string& path, std::string& section, std::string& key) {
+    size_t dotPos = path.find('.');
+    if (dotPos != std::string::npos) {
+        section = path.substr(0, dotPos);
+        key = path.substr(dotPos + 1);
+    } else {
+        section = "";
+        key = path;
+    }
+}
+
+// Template specializations for BasicConfigurationOption
+template<>
+void BasicConfigurationOption<bool>::initializeValue(const SimpleINI &ini) {
+    std::string section, key;
+    std::string path = getPath();
+    size_t dotPos = path.find('.');
+    if (dotPos != std::string::npos) {
+        section = path.substr(0, dotPos);
+        key = path.substr(dotPos + 1);
+    } else {
+        section = "";
+        key = path;
+    }
+    
+    value = ini.getBool(section, key, defaultValue);
+    std::cout << "Configuration option \"" << getPath() << "\" set to \"" << (value ? "true" : "false") << "\"" << std::endl;
+}
+
+template<>
+void BasicConfigurationOption<int>::initializeValue(const SimpleINI &ini) {
+    std::string section, key;
+    std::string path = getPath();
+    size_t dotPos = path.find('.');
+    if (dotPos != std::string::npos) {
+        section = path.substr(0, dotPos);
+        key = path.substr(dotPos + 1);
+    } else {
+        section = "";
+        key = path;
+    }
+    
+    value = ini.getInt(section, key, defaultValue);
+    std::cout << "Configuration option \"" << getPath() << "\" set to \"" << value << "\"" << std::endl;
+}
+
+template<>
+void BasicConfigurationOption<float>::initializeValue(const SimpleINI &ini) {
+    std::string section, key;
+    std::string path = getPath();
+    size_t dotPos = path.find('.');
+    if (dotPos != std::string::npos) {
+        section = path.substr(0, dotPos);
+        key = path.substr(dotPos + 1);
+    } else {
+        section = "";
+        key = path;
+    }
+    
+    value = ini.getFloat(section, key, defaultValue);
+    std::cout << "Configuration option \"" << getPath() << "\" set to \"" << value << "\"" << std::endl;
+}
+
+template<>
+void BasicConfigurationOption<std::string>::initializeValue(const SimpleINI &ini) {
+    std::string section, key;
+    std::string path = getPath();
+    size_t dotPos = path.find('.');
+    if (dotPos != std::string::npos) {
+        section = path.substr(0, dotPos);
+        key = path.substr(dotPos + 1);
+    } else {
+        section = "";
+        key = path;
+    }
+    
+    value = ini.getString(section, key, defaultValue);
+    std::cout << "Configuration option \"" << getPath() << "\" set to \"" << value << "\"" << std::endl;
+}
+
+template<>
+void BasicConfigurationOption<bool>::saveValue(SimpleINI &ini) {
+    std::string section, key;
+    std::string path = getPath();
+    size_t dotPos = path.find('.');
+    if (dotPos != std::string::npos) {
+        section = path.substr(0, dotPos);
+        key = path.substr(dotPos + 1);
+    } else {
+        section = "";
+        key = path;
+    }
+    
+    ini.setBool(section, key, value);
+}
+
+template<>
+void BasicConfigurationOption<int>::saveValue(SimpleINI &ini) {
+    std::string section, key;
+    std::string path = getPath();
+    size_t dotPos = path.find('.');
+    if (dotPos != std::string::npos) {
+        section = path.substr(0, dotPos);
+        key = path.substr(dotPos + 1);
+    } else {
+        section = "";
+        key = path;
+    }
+    
+    ini.setInt(section, key, value);
+}
+
+template<>
+void BasicConfigurationOption<float>::saveValue(SimpleINI &ini) {
+    std::string section, key;
+    std::string path = getPath();
+    size_t dotPos = path.find('.');
+    if (dotPos != std::string::npos) {
+        section = path.substr(0, dotPos);
+        key = path.substr(dotPos + 1);
+    } else {
+        section = "";
+        key = path;
+    }
+    
+    ini.setFloat(section, key, value);
+}
+
+template<>
+void BasicConfigurationOption<std::string>::saveValue(SimpleINI &ini) {
+    std::string section, key;
+    std::string path = getPath();
+    size_t dotPos = path.find('.');
+    if (dotPos != std::string::npos) {
+        section = path.substr(0, dotPos);
+        key = path.substr(dotPos + 1);
+    } else {
+        section = "";
+        key = path;
+    }
+    
+    ini.setString(section, key, value);
+}
 
 // Static member to store config file name
 std::string Configuration::configFileName;
@@ -149,73 +433,74 @@ BasicConfigurationOption<int> Configuration::antiAliasingMethod(
 );
 
 /**
- * Player 1 keyboard mappings (using numeric scancode values)
+ * Player 1 keyboard mappings (using Allegro key constants)
+ * Note: These default values should be updated to use Allegro KEY_* constants
  */
 BasicConfigurationOption<int> Configuration::player1KeyUp(
-    "input.player1.key.up", 82  // SDL_SCANCODE_UP
+    "input.player1.key.up", 84  // KEY_UP in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player1KeyDown(
-    "input.player1.key.down", 81  // SDL_SCANCODE_DOWN
+    "input.player1.key.down", 85  // KEY_DOWN in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player1KeyLeft(
-    "input.player1.key.left", 80  // SDL_SCANCODE_LEFT
+    "input.player1.key.left", 82  // KEY_LEFT in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player1KeyRight(
-    "input.player1.key.right", 79  // SDL_SCANCODE_RIGHT
+    "input.player1.key.right", 83  // KEY_RIGHT in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player1KeyA(
-    "input.player1.key.a", 27  // SDL_SCANCODE_X
+    "input.player1.key.a", 120  // KEY_X in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player1KeyB(
-    "input.player1.key.b", 29  // SDL_SCANCODE_Z
+    "input.player1.key.b", 122  // KEY_Z in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player1KeySelect(
-    "input.player1.key.select", 229  // SDL_SCANCODE_RSHIFT
+    "input.player1.key.select", 54  // KEY_RSHIFT in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player1KeyStart(
-    "input.player1.key.start", 40  // SDL_SCANCODE_RETURN
+    "input.player1.key.start", 28  // KEY_ENTER in Allegro
 );
 
 /**
  * Player 2 keyboard mappings
  */
 BasicConfigurationOption<int> Configuration::player2KeyUp(
-    "input.player2.key.up", 12  // SDL_SCANCODE_I
+    "input.player2.key.up", 105  // KEY_I in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player2KeyDown(
-    "input.player2.key.down", 14  // SDL_SCANCODE_K
+    "input.player2.key.down", 107  // KEY_K in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player2KeyLeft(
-    "input.player2.key.left", 13  // SDL_SCANCODE_J
+    "input.player2.key.left", 106  // KEY_J in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player2KeyRight(
-    "input.player2.key.right", 15  // SDL_SCANCODE_L
+    "input.player2.key.right", 108  // KEY_L in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player2KeyA(
-    "input.player2.key.a", 17  // SDL_SCANCODE_N
+    "input.player2.key.a", 110  // KEY_N in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player2KeyB(
-    "input.player2.key.b", 16  // SDL_SCANCODE_M
+    "input.player2.key.b", 109  // KEY_M in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player2KeySelect(
-    "input.player2.key.select", 228  // SDL_SCANCODE_RCTRL
+    "input.player2.key.select", 97  // KEY_RCONTROL in Allegro
 );
 
 BasicConfigurationOption<int> Configuration::player2KeyStart(
-    "input.player2.key.start", 44  // SDL_SCANCODE_SPACE
+    "input.player2.key.start", 57  // KEY_SPACE in Allegro
 );
 
 /**
@@ -226,7 +511,7 @@ BasicConfigurationOption<bool> Configuration::joystickPollingEnabled(
 );
 
 BasicConfigurationOption<int> Configuration::joystickDeadzone(
-    "input.joystick.deadzone", 8000
+    "input.joystick.deadzone", 64  // Allegro uses different scale (0-255)
 );
 
 /**
@@ -282,24 +567,21 @@ void Configuration::initialize(const std::string& fileName)
 {
     configFileName = fileName;  // Store filename for saving
     
-    // Check that the configuration file exists.
-    // If it does not exist, we will fall back to default values.
-    //
-    std::ifstream configFile(fileName.c_str());
+    // Create a SimpleINI instance to parse the file
+    SimpleINI ini;
+    
+    // Try to load the configuration file
+    // If it doesn't exist, we'll use default values
+    if (ini.loadFromFile(fileName)) {
+        std::cout << "Configuration file loaded: " << fileName << std::endl;
+    } else {
+        std::cout << "Configuration file not found or could not be loaded: " << fileName << std::endl;
+        std::cout << "Using default values." << std::endl;
+    }
 
-    if (configFile.good())
-    {
-        // Load the configuration file into a property tree to parse it
-        //
-        boost::property_tree::ptree propertyTree;
-        boost::property_tree::ini_parser::read_ini(configFile, propertyTree);
-
-        // Try to load the value for all known config options
-        //
-        for (auto option : configurationOptions)
-        {
-            option->initializeValue(propertyTree);
-        }
+    // Initialize all configuration options
+    for (auto option : configurationOptions) {
+        option->initializeValue(ini);
     }
 }
 
@@ -310,114 +592,18 @@ void Configuration::save()
         return;
     }
     
-    boost::property_tree::ptree propertyTree;
+    SimpleINI ini;
     
-    // Build property tree from all configuration options
+    // Save all configuration options to the INI
     for (auto option : configurationOptions) {
-        // This is a bit tricky since we need to know the actual type
-        // We'll need to cast each option to its concrete type
-        
-        // For now, let's handle the common types manually
-        std::string path = option->getPath();
-        
-        if (path == "audio.enabled") {
-            propertyTree.put(path, audioEnabled.getValue());
-        } else if (path == "audio.frequency") {
-            propertyTree.put(path, audioFrequency.getValue());
-        } else if (path == "game.frame_rate") {
-            propertyTree.put(path, frameRate.getValue());
-        } else if (path == "video.palette_file") {
-            propertyTree.put(path, paletteFileName.getValue());
-        } else if (path == "video.scale") {
-            propertyTree.put(path, renderScale.getValue());
-        } else if (path == "game.rom_file") {
-            propertyTree.put(path, romFileName.getValue());
-        } else if (path == "video.scanlines") {
-            propertyTree.put(path, scanlinesEnabled.getValue());
-        } else if (path == "video.vsync") {
-            propertyTree.put(path, vsyncEnabled.getValue());
-        } else if (path == "video.hqdn3d") {
-            propertyTree.put(path, hqdn3dEnabled.getValue());
-        } else if (path == "video.hqdn3d_spatial") {
-            propertyTree.put(path, hqdn3dSpatialStrength.getValue());
-        } else if (path == "video.hqdn3d_temporal") {
-            propertyTree.put(path, hqdn3dTemporalStrength.getValue());
-        } else if (path == "video.antialiasing") {
-            propertyTree.put(path, antiAliasingEnabled.getValue());
-        } else if (path == "video.antialiasing_method") {
-            propertyTree.put(path, antiAliasingMethod.getValue());
-        }
-        // Input settings
-        else if (path == "input.player1.key.up") {
-            propertyTree.put(path, player1KeyUp.getValue());
-        } else if (path == "input.player1.key.down") {
-            propertyTree.put(path, player1KeyDown.getValue());
-        } else if (path == "input.player1.key.left") {
-            propertyTree.put(path, player1KeyLeft.getValue());
-        } else if (path == "input.player1.key.right") {
-            propertyTree.put(path, player1KeyRight.getValue());
-        } else if (path == "input.player1.key.a") {
-            propertyTree.put(path, player1KeyA.getValue());
-        } else if (path == "input.player1.key.b") {
-            propertyTree.put(path, player1KeyB.getValue());
-        } else if (path == "input.player1.key.select") {
-            propertyTree.put(path, player1KeySelect.getValue());
-        } else if (path == "input.player1.key.start") {
-            propertyTree.put(path, player1KeyStart.getValue());
-        }
-        // Player 2 keyboard
-        else if (path == "input.player2.key.up") {
-            propertyTree.put(path, player2KeyUp.getValue());
-        } else if (path == "input.player2.key.down") {
-            propertyTree.put(path, player2KeyDown.getValue());
-        } else if (path == "input.player2.key.left") {
-            propertyTree.put(path, player2KeyLeft.getValue());
-        } else if (path == "input.player2.key.right") {
-            propertyTree.put(path, player2KeyRight.getValue());
-        } else if (path == "input.player2.key.a") {
-            propertyTree.put(path, player2KeyA.getValue());
-        } else if (path == "input.player2.key.b") {
-            propertyTree.put(path, player2KeyB.getValue());
-        } else if (path == "input.player2.key.select") {
-            propertyTree.put(path, player2KeySelect.getValue());
-        } else if (path == "input.player2.key.start") {
-            propertyTree.put(path, player2KeyStart.getValue());
-        }
-        // Joystick settings
-        else if (path == "input.joystick.polling_enabled") {
-            propertyTree.put(path, joystickPollingEnabled.getValue());
-        } else if (path == "input.joystick.deadzone") {
-            propertyTree.put(path, joystickDeadzone.getValue());
-        }
-        // Player 1 joystick buttons
-        else if (path == "input.player1.joystick.button_a") {
-            propertyTree.put(path, player1JoystickButtonA.getValue());
-        } else if (path == "input.player1.joystick.button_b") {
-            propertyTree.put(path, player1JoystickButtonB.getValue());
-        } else if (path == "input.player1.joystick.button_start") {
-            propertyTree.put(path, player1JoystickButtonStart.getValue());
-        } else if (path == "input.player1.joystick.button_select") {
-            propertyTree.put(path, player1JoystickButtonSelect.getValue());
-        }
-        // Player 2 joystick buttons
-        else if (path == "input.player2.joystick.button_a") {
-            propertyTree.put(path, player2JoystickButtonA.getValue());
-        } else if (path == "input.player2.joystick.button_b") {
-            propertyTree.put(path, player2JoystickButtonB.getValue());
-        } else if (path == "input.player2.joystick.button_start") {
-            propertyTree.put(path, player2JoystickButtonStart.getValue());
-        } else if (path == "input.player2.joystick.button_select") {
-            propertyTree.put(path, player2JoystickButtonSelect.getValue());
-        }
+        option->saveValue(ini);
     }
     
     // Write to file
-    try {
-        std::ofstream configFile(configFileName);
-        boost::property_tree::ini_parser::write_ini(configFile, propertyTree);
+    if (ini.saveToFile(configFileName)) {
         std::cout << "Configuration saved to " << configFileName << std::endl;
-    } catch (const std::exception& e) {
-        std::cerr << "Error saving configuration: " << e.what() << std::endl;
+    } else {
+        std::cerr << "Error saving configuration to " << configFileName << std::endl;
     }
 }
 
