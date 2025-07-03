@@ -86,10 +86,11 @@ case "${1:-dos}" in
         /bin/sh -c "
             cd /src &&
             echo 'Checking Allegro headers and libraries...' &&
-            ls -l $BUILD_DIR/source-install/include/include/allegro.h || echo 'Header not found' &&
+            ls -l $BUILD_DIR/source-install/include/allegro.h || echo 'Header not found' &&
             ls -l $BUILD_DIR/source-install/lib/liballeg.a || echo 'Library not found' &&
             echo 'Compiling DOS executable with Allegro 4...' &&
-            g++ -s source/Main.cpp \
+            g++ -s source/SDL.cpp \
+                source/Main.cpp \
                 source/Configuration.cpp \
                 source/Emulation/APU.cpp \
                 source/Emulation/Controller.cpp \
@@ -101,7 +102,6 @@ case "${1:-dos}" in
                 source/Util/Video.cpp \
                 source/Util/VideoFilters.cpp \
                 source/SMBRom.cpp \
-                source/SDL.cpp \
                 -I$BUILD_DIR/source-install/include \
                 -I/src/third_party/boost \
                 -L$BUILD_DIR/source-install/lib \
