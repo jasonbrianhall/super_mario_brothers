@@ -1,11 +1,18 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <cstdint>
+#include <cmath>
+#include <algorithm>
+#include <iostream>
+#include <cstring>
+#include <cstdlib>
 #include "AllegroMainWindow.hpp"
 #include "SMB/SMBEngine.hpp"
 #include "Emulation/Controller.hpp"
 #include "Configuration.hpp"
 #include "Constants.hpp"
 #include "SMBRom.hpp"
-#include <stdio.h>
-#include <stdlib.h>
+
 
 // DOS-specific includes (will be ignored on Linux)
 #ifdef __DJGPP__
