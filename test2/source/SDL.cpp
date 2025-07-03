@@ -1,4 +1,4 @@
-#include "SDL.h"
+#include "SDL.hpp"
 #include <allegro.h>
 #include <cstring>
 #include <iostream>

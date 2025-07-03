@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <iostream>
 #include <cstring>
-#include "SDL.h"
+#include "SDL.hpp"
 
 #include "Emulation/Controller.hpp"
 #include "SMB/SMBEngine.hpp"

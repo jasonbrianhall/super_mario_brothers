@@ -1,4 +1,4 @@
-#include "../SDL.h"
+#include "../SDL.hpp"
 #include <cmath>
 #include <algorithm>
 #include <iostream>
