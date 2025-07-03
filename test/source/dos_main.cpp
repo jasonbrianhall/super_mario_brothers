@@ -478,12 +478,23 @@ void AllegroMainWindow::drawGame()
         for (int y = 0; y < RENDER_HEIGHT; y++) {
             for (int x = 0; x < RENDER_WIDTH; x++) {
                 uint32_t pixel = currentFrameBuffer[y * RENDER_WIDTH + x];
-                int r = (pixel >> 16) & 0xFF;
-                int g = (pixel >> 8) & 0xFF;
-                int b = pixel & 0xFF;
                 
-                // Convert to 16-bit color
-                int color16 = makecol(r >> 3, g >> 2, b >> 3);
+                // Extract RGB components - try different formats
+                int r, g, b;
+                
+                // First try standard RGBA format
+                r = (pixel >> 16) & 0xFF;
+                g = (pixel >> 8) & 0xFF;
+                b = pixel & 0xFF;
+                
+                // If colors look wrong, try BGRA format instead:
+                // b = (pixel >> 16) & 0xFF;
+                // g = (pixel >> 8) & 0xFF;
+                // r = pixel & 0xFF;
+                
+                // Convert to 16-bit color - let Allegro handle the bit packing
+                int color16 = makecol(r, g, b);
+                
                 putpixel(game_buffer, x, y, color16);
             }
         }
