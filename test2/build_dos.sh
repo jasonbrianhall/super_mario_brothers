@@ -106,9 +106,9 @@ case "${1:-dos}" in
         $DJGPP_IMAGE \
         /bin/sh -c "
             g++ $OBJ_LIST \
+                -lalleg -lm \
                 -L/src/$BUILD_DIR/source-install/lib \
-                -o /src/$BUILD_DIR/smb.exe \
-                -lalleg -lm
+                -o /src/$BUILD_DIR/smb.exe
         "
 
     echo "Converting to COFF and adding DPMI stub..."
