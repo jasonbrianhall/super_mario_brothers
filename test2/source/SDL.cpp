@@ -2,6 +2,7 @@
 #include <allegro.h>
 #include <cstring>
 #include <iostream>
+#include <sys/time.h>
 
 // Internal structures (actual implementations)
 struct _SDL_Window {
@@ -50,30 +51,39 @@ static void audio_timer_callback() {
 }
 END_OF_FUNCTION(audio_timer_callback)
 
-// Keyboard update
+// Keyboard update - much safer approach
 static void update_keyboard() {
-    // Map Allegro key array to SDL scancode format
-    g_keyboard_state[SDL_SCANCODE_X] = key[KEY_X] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_Z] = key[KEY_Z] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_BACKSPACE] = key[KEY_BACKSPACE] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_RETURN] = key[KEY_ENTER] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_UP] = key[KEY_UP] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_DOWN] = key[KEY_DOWN] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_LEFT] = key[KEY_LEFT] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_RIGHT] = key[KEY_RIGHT] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_R] = key[KEY_R] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_ESCAPE] = key[KEY_ESC] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_F] = key[KEY_F] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_D] = key[KEY_D] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_RSHIFT] = key[KEY_RSHIFT] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_I] = key[KEY_I] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_K] = key[KEY_K] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_J] = key[KEY_J] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_L] = key[KEY_L] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_N] = key[KEY_N] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_M] = key[KEY_M] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_RCTRL] = key[KEY_RCONTROL] ? 1 : 0;
-    g_keyboard_state[SDL_SCANCODE_SPACE] = key[KEY_SPACE] ? 1 : 0;
+    // Clear the keyboard state first
+    memset(g_keyboard_state, 0, sizeof(g_keyboard_state));
+    
+    // Only update if keyboard is properly installed and key array exists
+    if (!keyboard_needs_poll() && key != nullptr) {
+        // Use a simple mapping approach that can't overflow
+        // Map only the keys we actually need
+        
+        // Movement keys
+        g_keyboard_state[SDL_SCANCODE_UP] = (key[KEY_UP] != 0) ? 1 : 0;
+        g_keyboard_state[SDL_SCANCODE_DOWN] = (key[KEY_DOWN] != 0) ? 1 : 0;
+        g_keyboard_state[SDL_SCANCODE_LEFT] = (key[KEY_LEFT] != 0) ? 1 : 0;
+        g_keyboard_state[SDL_SCANCODE_RIGHT] = (key[KEY_RIGHT] != 0) ? 1 : 0;
+        
+        // Action keys
+        g_keyboard_state[SDL_SCANCODE_X] = (key[KEY_X] != 0) ? 1 : 0;
+        g_keyboard_state[SDL_SCANCODE_Z] = (key[KEY_Z] != 0) ? 1 : 0;
+        g_keyboard_state[SDL_SCANCODE_RETURN] = (key[KEY_ENTER] != 0) ? 1 : 0;
+        g_keyboard_state[SDL_SCANCODE_BACKSPACE] = (key[KEY_BACKSPACE] != 0) ? 1 : 0;
+        
+        // Control keys
+        g_keyboard_state[SDL_SCANCODE_ESCAPE] = (key[KEY_ESC] != 0) ? 1 : 0;
+        g_keyboard_state[SDL_SCANCODE_R] = (key[KEY_R] != 0) ? 1 : 0;
+        g_keyboard_state[SDL_SCANCODE_F] = (key[KEY_F] != 0) ? 1 : 0;
+        g_keyboard_state[SDL_SCANCODE_D] = (key[KEY_D] != 0) ? 1 : 0;
+        
+        // Additional keys (only if they're valid indices)
+        if (SDL_SCANCODE_SPACE < 256) {
+            g_keyboard_state[SDL_SCANCODE_SPACE] = (key[KEY_SPACE] != 0) ? 1 : 0;
+        }
+    }
 }
 
 // SDL Function implementations
@@ -257,8 +267,13 @@ int SDL_UpdateTexture(SDL_Texture* texture, const void* rect, const void* pixels
 int SDL_PollEvent(SDL_Event* event) {
     if (!event) return 0;
     
-    // Simple quit detection
-    if (key[KEY_ESC]) {
+    // Make sure keyboard is properly polled first
+    if (keyboard_needs_poll()) {
+        poll_keyboard();
+    }
+    
+    // Simple quit detection - check safely
+    if (key && key[KEY_ESC]) {
         event->type = SDL_QUIT;
         return 1;
     }
@@ -270,26 +285,45 @@ int SDL_PollEvent(SDL_Event* event) {
 }
 
 const Uint8* SDL_GetKeyboardState(int* numkeys) {
-    update_keyboard();
+    // Add safety check before calling update_keyboard
+    static bool debug_printed = false;
+    if (!debug_printed) {
+        std::cout << "SDL_GetKeyboardState called, SDL_SCANCODE_RIGHT = " << SDL_SCANCODE_RIGHT << std::endl;
+        debug_printed = true;
+    }
+    
+    // Don't call update_keyboard if it might be unsafe
+    if (key != nullptr && !keyboard_needs_poll()) {
+        update_keyboard();
+    }
+    
     if (numkeys) *numkeys = 256;
     return g_keyboard_state;
 }
 
+// Global timing state using system time instead of clock()
+static bool g_timing_initialized = false;
+static struct timeval g_start_time;
+
 int SDL_GetTicks() {
-    static bool initialized = false;
-    static int start_time = 0;
-    
-    if (!initialized) {
-        start_time = clock();
-        initialized = true;
+    if (!g_timing_initialized) {
+        gettimeofday(&g_start_time, NULL);
+        g_timing_initialized = true;
+        return 0;
     }
     
-    // Convert clock ticks to milliseconds
-    // clock() returns CLOCKS_PER_SEC ticks per second
-    return ((clock() - start_time) * 1000) / CLOCKS_PER_SEC;
+    struct timeval current_time;
+    gettimeofday(&current_time, NULL);
+    
+    // Calculate elapsed time in milliseconds
+    long seconds = current_time.tv_sec - g_start_time.tv_sec;
+    long microseconds = current_time.tv_usec - g_start_time.tv_usec;
+    
+    return (int)(seconds * 1000 + microseconds / 1000);
 }
 
 void SDL_Delay(int ms) {
+    if (ms <= 0) return;
     rest(ms);
 }
 
@@ -308,10 +342,14 @@ int SDL_OpenAudio(SDL_AudioSpec* desired, SDL_AudioSpec* obtained) {
     LOCK_FUNCTION(audio_timer_callback);
     
     // Calculate timer frequency for audio callback
-    // Allegro timer expects speed in microseconds
-    // For 44100 Hz with 2048 samples = ~46ms between callbacks
-    int timer_speed_us = (desired->samples * 1000000) / desired->freq;
-    install_int_ex(audio_timer_callback, timer_speed_us);
+    // More conservative timing calculation
+    int samples_per_second = desired->freq;
+    int buffer_size = desired->samples;
+    int callbacks_per_second = samples_per_second / buffer_size;
+    int timer_speed_ms = 1000 / callbacks_per_second;
+    
+    // Use regular install_int with milliseconds instead of microseconds
+    install_int(audio_timer_callback, timer_speed_ms);
     
     return 0;
 }
@@ -334,8 +372,12 @@ void SDL_LockAudio() {
 void SDL_UnlockAudio() {
     // Re-enable the audio timer
     if (g_audio_spec.callback) {
-        int timer_speed_us = (g_audio_spec.samples * 1000000) / g_audio_spec.freq;
-        install_int_ex(audio_timer_callback, timer_speed_us);
+        int samples_per_second = g_audio_spec.freq;
+        int buffer_size = g_audio_spec.samples;
+        int callbacks_per_second = samples_per_second / buffer_size;
+        int timer_speed_ms = 1000 / callbacks_per_second;
+        
+        install_int(audio_timer_callback, timer_speed_ms);
     }
 }
 

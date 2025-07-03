@@ -309,11 +309,10 @@ static void mainLoop()
          */
         int now = SDL_GetTicks();
         int delay = progStartTime + int(double(frame) * double(MS_PER_SEC) / double(Configuration::getFrameRate())) - now;
-        if(delay > 0) 
-        {
-            SDL_Delay(delay);
-        }
-        else 
+if (delay > 0) {
+    static int debug_count = 0;
+    SDL_Delay(delay);
+}        else 
         {
             frame = 0;
             progStartTime = now;
