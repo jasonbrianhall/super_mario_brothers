@@ -1,11 +1,14 @@
-#include <allegro.h>
+#include <cstdint>
 #include <cmath>
 #include <algorithm>
 #include <iostream>
 #include <cstring>
+#include <cstdlib>
 
+#include <allegro.h>
 #include "VideoFilters.hpp"
 #include "../Constants.hpp"
+
 
 // Buffers for HQDN3D filter
 static uint32_t* prevFrameBuffer = nullptr;
