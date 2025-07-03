@@ -975,7 +975,7 @@ class Translator:
             if const_val.startswith('$'):
                 return f"0x{const_val[1:]}"
             elif const_val.startswith('%'):
-                return f"BOOST_BINARY({const_val[1:]})"
+                return f"0b{const_val[1:]}"
             else:
                 return const_val
         elif expr.type == AstType.AST_IMMEDIATE:
