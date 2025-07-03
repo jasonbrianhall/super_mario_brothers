@@ -101,14 +101,18 @@ int SDL_Init(uint32_t flags) {
     }
     
     if (flags & SDL_INIT_AUDIO) {
-        if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) != 0) {
-            std::cout << "Warning: Could not initialize audio" << std::endl;
-        }
+        std::cout << "Audio init requested but DISABLED for debugging" << std::endl;
+        // Don't actually install sound
+        // if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) != 0) {
+        //     std::cout << "Warning: Could not initialize audio" << std::endl;
+        // }
         g_initialized_subsystems |= SDL_INIT_AUDIO;
     }
     
     if (flags & (SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER)) {
-        install_joystick(JOY_TYPE_AUTODETECT);
+        std::cout << "Joystick init requested but DISABLED for debugging" << std::endl;
+        // Don't actually install joystick - this might be corrupting memory
+        // install_joystick(JOY_TYPE_AUTODETECT);
         g_initialized_subsystems |= (flags & (SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER));
     }
     
@@ -272,14 +276,10 @@ int SDL_PollEvent(SDL_Event* event) {
         poll_keyboard();
     }
     
-    // Simple quit detection - check safely
-    if (key && key[KEY_ESC]) {
-        event->type = SDL_QUIT;
-        return 1;
-    }
-    
-    // Basic joystick polling
+    // Make sure joystick is polled
     poll_joystick();
+    
+    // Don't check for ESC key to avoid crashes - let the game handle quit differently
     
     return 0;
 }
@@ -334,51 +334,39 @@ const char* SDL_GetError() {
 int SDL_OpenAudio(SDL_AudioSpec* desired, SDL_AudioSpec* obtained) {
     if (!desired) return -1;
     
+    std::cout << "SDL_OpenAudio called - DISABLED for debugging" << std::endl;
+    
+    // Store the spec but don't actually set up audio timer
     g_audio_spec = *desired;
     if (obtained) *obtained = *desired;
     
-    LOCK_VARIABLE(g_audio_playing);
-    LOCK_VARIABLE(g_audio_spec);
-    LOCK_FUNCTION(audio_timer_callback);
-    
-    // Calculate timer frequency for audio callback
-    // More conservative timing calculation
-    int samples_per_second = desired->freq;
-    int buffer_size = desired->samples;
-    int callbacks_per_second = samples_per_second / buffer_size;
-    int timer_speed_ms = 1000 / callbacks_per_second;
-    
-    // Use regular install_int with milliseconds instead of microseconds
-    install_int(audio_timer_callback, timer_speed_ms);
+    // DON'T install any audio timer - this might be causing memory corruption
+    // LOCK_VARIABLE(g_audio_playing);
+    // LOCK_VARIABLE(g_audio_spec);  
+    // LOCK_FUNCTION(audio_timer_callback);
+    // install_int(audio_timer_callback, timer_speed_ms);
     
     return 0;
 }
 
 void SDL_PauseAudio(int pause_on) {
-    g_audio_playing = !pause_on;
+    std::cout << "SDL_PauseAudio called: " << pause_on << std::endl;
+    // Don't change audio state
 }
 
 void SDL_CloseAudio() {
-    g_audio_playing = false;
-    remove_int(audio_timer_callback);
+    std::cout << "SDL_CloseAudio called" << std::endl;
+    // Don't remove any timers since we didn't install any
 }
 
 void SDL_LockAudio() {
-    // In a real implementation, this would lock audio thread access
-    // For Allegro, we can disable the timer temporarily
-    remove_int(audio_timer_callback);
+    std::cout << "SDL_LockAudio called - safe no-op" << std::endl;
+    // Safe no-op - don't remove any timers since we didn't install any
 }
 
 void SDL_UnlockAudio() {
-    // Re-enable the audio timer
-    if (g_audio_spec.callback) {
-        int samples_per_second = g_audio_spec.freq;
-        int buffer_size = g_audio_spec.samples;
-        int callbacks_per_second = samples_per_second / buffer_size;
-        int timer_speed_ms = 1000 / callbacks_per_second;
-        
-        install_int(audio_timer_callback, timer_speed_ms);
-    }
+    std::cout << "SDL_UnlockAudio called - safe no-op" << std::endl;
+    // Safe no-op - don't install any timers
 }
 
 int SDL_SetWindowFullscreen(SDL_Window* window, uint32_t flags) {
@@ -394,9 +382,9 @@ int SDL_SetWindowFullscreen(SDL_Window* window, uint32_t flags) {
     return 0;
 }
 
-// Joystick/Controller functions
+// Joystick/Controller functions - all disabled for debugging
 int SDL_NumJoysticks() {
-    return num_joysticks;
+    return 0;  // Report no joysticks
 }
 
 SDL_Joystick* SDL_JoystickOpen(int device_index) {
@@ -464,31 +452,37 @@ int SDL_JoystickNumHats(SDL_Joystick* joystick) {
 }
 
 Sint16 SDL_JoystickGetAxis(SDL_Joystick* joystick, int axis) {
-    if (joystick && axis >= 0) {
-        _SDL_Joystick* jstick = (_SDL_Joystick*)joystick;
-        poll_joystick();
-        int stick = axis / 2;
-        int axis_type = axis % 2;
-        
-        if (stick < joy[jstick->index].num_sticks) {
-            if (axis_type == 0) {
-                return joy[jstick->index].stick[stick].axis[0].pos * 128;
-            } else {
-                return joy[jstick->index].stick[stick].axis[1].pos * 128;
-            }
+    if (!joystick || axis < 0) return 0;
+    
+    _SDL_Joystick* jstick = (_SDL_Joystick*)joystick;
+    if (jstick->index < 0 || jstick->index >= num_joysticks) return 0;
+    
+    poll_joystick();
+    int stick = axis / 2;
+    int axis_type = axis % 2;
+    
+    if (stick >= 0 && stick < joy[jstick->index].num_sticks) {
+        if (axis_type == 0) {
+            return joy[jstick->index].stick[stick].axis[0].pos * 128;
+        } else {
+            return joy[jstick->index].stick[stick].axis[1].pos * 128;
         }
     }
+    
     return 0;
 }
 
 uint8_t SDL_JoystickGetButton(SDL_Joystick* joystick, int button) {
-    if (joystick && button >= 0) {
-        _SDL_Joystick* jstick = (_SDL_Joystick*)joystick;
-        if (button < joy[jstick->index].num_buttons) {
-            poll_joystick();
-            return joy[jstick->index].button[button].b ? 1 : 0;
-        }
+    if (!joystick || button < 0) return 0;
+    
+    _SDL_Joystick* jstick = (_SDL_Joystick*)joystick;
+    if (jstick->index < 0 || jstick->index >= num_joysticks) return 0;
+    
+    if (button >= 0 && button < joy[jstick->index].num_buttons) {
+        poll_joystick();
+        return joy[jstick->index].button[button].b ? 1 : 0;
     }
+    
     return 0;
 }
 

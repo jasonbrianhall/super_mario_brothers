@@ -157,7 +157,8 @@ static void shutdown()
 static void mainLoop()
 {
     // Use the embedded ROM data directly
-    SMBEngine engine(smbRomData);
+    //SMBEngine engine(smbRomData);
+    SMBEngine engine(const_cast<uint8_t*>(smbRomData));
     smbEngine = &engine;
     engine.reset();
 
