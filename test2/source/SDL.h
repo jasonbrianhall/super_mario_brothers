@@ -3,6 +3,10 @@
 
 #include <cstdint>
 
+static int prev_button_state[4][32] = {0}; // 4 joysticks, 32 buttons max
+static int prev_axis_state[4][8] = {0};    // 4 joysticks, 8 axes max
+static int prev_hat_state[4][4] = {0};     // 4 joysticks, 4 hats max
+
 // SDL constants used in your code
 #define SDL_INIT_VIDEO          0x00000020
 #define SDL_INIT_AUDIO          0x00000010

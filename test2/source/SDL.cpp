@@ -261,16 +261,76 @@ int SDL_UpdateTexture(SDL_Texture* texture, const void* rect, const void* pixels
 int SDL_PollEvent(SDL_Event* event) {
     if (!event) return 0;
     
-    // Make sure keyboard is properly polled first
+    // Poll input devices
     if (keyboard_needs_poll()) {
         poll_keyboard();
     }
-    
-    // Make sure joystick is polled
     poll_joystick();
     
+    // Check for joystick events by comparing current state with previous state
+    for (int joy_index = 0; joy_index < num_joysticks && joy_index < 4; joy_index++) {
+        // Check button state changes
+        for (int button = 0; button < joy[joy_index].num_buttons && button < 32; button++) {
+            int current_state = joy[joy_index].button[button].b ? 1 : 0;
+            int previous_state = prev_button_state[joy_index][button];
+            
+            if (current_state != previous_state) {
+                event->type = current_state ? SDL_JOYBUTTONDOWN : SDL_JOYBUTTONUP;
+                event->jbutton.which = joy_index;
+                event->jbutton.button = button;
+                prev_button_state[joy_index][button] = current_state;
+                return 1; // Event generated
+            }
+        }
+        
+        // Check axis state changes (with deadzone)
+        const int AXIS_DEADZONE = 8000; // Adjust as needed
+        for (int stick = 0; stick < joy[joy_index].num_sticks && stick < 4; stick++) {
+            for (int axis_type = 0; axis_type < 2; axis_type++) {
+                int axis_index = stick * 2 + axis_type;
+                if (axis_index >= 8) break;
+                
+                int current_value = joy[joy_index].stick[stick].axis[axis_type].pos * 128;
+                int previous_value = prev_axis_state[joy_index][axis_index];
+                
+                // Only generate event if change is significant
+                if (abs(current_value - previous_value) > AXIS_DEADZONE) {
+                    event->type = SDL_JOYAXISMOTION;
+                    event->jaxis.which = joy_index;
+                    event->jaxis.axis = axis_index;
+                    event->jaxis.value = current_value;
+                    prev_axis_state[joy_index][axis_index] = current_value;
+                    return 1; // Event generated
+                }
+            }
+        }
+        
+        // Check hat state changes
+        if (joy[joy_index].num_sticks > 0) {
+            uint8_t current_hat = SDL_HAT_CENTERED;
+            int x = joy[joy_index].stick[0].axis[0].pos;
+            int y = joy[joy_index].stick[0].axis[1].pos;
+            
+            if (y < -64) current_hat |= SDL_HAT_UP;
+            if (y > 64) current_hat |= SDL_HAT_DOWN;
+            if (x < -64) current_hat |= SDL_HAT_LEFT;
+            if (x > 64) current_hat |= SDL_HAT_RIGHT;
+            
+            if (current_hat != prev_hat_state[joy_index][0]) {
+                event->type = SDL_JOYHATMOTION;
+                event->jhat.which = joy_index;
+                event->jhat.hat = 0;
+                event->jhat.value = current_hat;
+                prev_hat_state[joy_index][0] = current_hat;
+                return 1; // Event generated
+            }
+        }
+    }
+    
+    // No events generated
     return 0;
 }
+
 
 const Uint8* SDL_GetKeyboardState(int* numkeys) {
     if (numkeys) *numkeys = 256;
@@ -482,23 +542,34 @@ Sint16 SDL_JoystickGetAxis(SDL_Joystick* joystick, int axis) {
 }
 
 uint8_t SDL_JoystickGetButton(SDL_Joystick* joystick, int button) {
-    std::cout << "SDL_JoystickGetButton called - joystick=" << joystick << " button=" << button << std::endl;
-    
-    if (!joystick || button < 0) return 0;
-    
-    _SDL_Joystick* jstick = (_SDL_Joystick*)joystick;
-    if (jstick->index < 0 || jstick->index >= num_joysticks) return 0;
-    
-    if (button >= 0 && button < joy[jstick->index].num_buttons) {
-        poll_joystick();
-        uint8_t result = joy[jstick->index].button[button].b ? 1 : 0;
-        if (result) {
-            std::cout << "Button " << button << " is pressed!" << std::endl;
-        }
-        return result;
+    if (!joystick || button < 0) {
+        std::cout << "SDL_JoystickGetButton: Invalid joystick or button" << std::endl;
+        return 0;
     }
     
-    return 0;
+    _SDL_Joystick* jstick = (_SDL_Joystick*)joystick;
+    if (jstick->index < 0 || jstick->index >= num_joysticks) {
+        std::cout << "SDL_JoystickGetButton: Invalid joystick index " << jstick->index << std::endl;
+        return 0;
+    }
+    
+    if (button >= joy[jstick->index].num_buttons) {
+        std::cout << "SDL_JoystickGetButton: Button " << button << " >= num_buttons " << joy[jstick->index].num_buttons << std::endl;
+        return 0;
+    }
+    
+    // Poll joystick to ensure fresh data
+    poll_joystick();
+    
+    uint8_t result = joy[jstick->index].button[button].b ? 1 : 0;
+    
+    // Debug output (can be removed later)
+    static int debug_counter = 0;
+    if (result && (debug_counter++ % 30 == 0)) { // Print every 30th button press to avoid spam
+        std::cout << "Button " << button << " pressed on joystick " << jstick->index << std::endl;
+    }
+    
+    return result;
 }
 
 uint8_t SDL_JoystickGetHat(SDL_Joystick* joystick, int hat) {
@@ -605,27 +676,53 @@ Sint16 SDL_GameControllerGetAxis(SDL_GameController* gamecontroller, SDL_GameCon
 }
 
 uint8_t SDL_GameControllerGetButton(SDL_GameController* gamecontroller, SDL_GameControllerButton button) {
-    if (gamecontroller) {
-        _SDL_GameController* ctrl = (_SDL_GameController*)gamecontroller;
-        poll_joystick();
-        int joy_index = ctrl->index;
-        
-        switch (button) {
-            case SDL_CONTROLLER_BUTTON_A:
-                return (0 < joy[joy_index].num_buttons) ? joy[joy_index].button[0].b : 0;
-            case SDL_CONTROLLER_BUTTON_B:
-                return (1 < joy[joy_index].num_buttons) ? joy[joy_index].button[1].b : 0;
-            case SDL_CONTROLLER_BUTTON_X:
-                return (2 < joy[joy_index].num_buttons) ? joy[joy_index].button[2].b : 0;
-            case SDL_CONTROLLER_BUTTON_Y:
-                return (3 < joy[joy_index].num_buttons) ? joy[joy_index].button[3].b : 0;
-            default:
-                if (button < joy[joy_index].num_buttons)
-                    return joy[joy_index].button[button].b;
-                break;
-        }
+    if (!gamecontroller) {
+        std::cout << "SDL_GameControllerGetButton: Invalid controller" << std::endl;
+        return 0;
     }
+    
+    _SDL_GameController* ctrl = (_SDL_GameController*)gamecontroller;
+    if (ctrl->index < 0 || ctrl->index >= num_joysticks) {
+        std::cout << "SDL_GameControllerGetButton: Invalid controller index " << ctrl->index << std::endl;
+        return 0;
+    }
+    
+    poll_joystick();
+    int joy_index = ctrl->index;
+    
+    // Map SDL controller buttons to Allegro joystick buttons
+    switch (button) {
+        case SDL_CONTROLLER_BUTTON_A:
+            return (0 < joy[joy_index].num_buttons) ? joy[joy_index].button[0].b : 0;
+        case SDL_CONTROLLER_BUTTON_B:
+            return (1 < joy[joy_index].num_buttons) ? joy[joy_index].button[1].b : 0;
+        case SDL_CONTROLLER_BUTTON_X:
+            return (2 < joy[joy_index].num_buttons) ? joy[joy_index].button[2].b : 0;
+        case SDL_CONTROLLER_BUTTON_Y:
+            return (3 < joy[joy_index].num_buttons) ? joy[joy_index].button[3].b : 0;
+        case SDL_CONTROLLER_BUTTON_BACK:
+            return (4 < joy[joy_index].num_buttons) ? joy[joy_index].button[4].b : 0;
+        case SDL_CONTROLLER_BUTTON_START:
+            return (5 < joy[joy_index].num_buttons) ? joy[joy_index].button[5].b : 0;
+        case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+            return (6 < joy[joy_index].num_buttons) ? joy[joy_index].button[6].b : 0;
+        case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
+            return (7 < joy[joy_index].num_buttons) ? joy[joy_index].button[7].b : 0;
+        default:
+            if (button < joy[joy_index].num_buttons) {
+                return joy[joy_index].button[button].b;
+            }
+            break;
+    }
+    
     return 0;
+}
+
+// Add initialization function to clear previous states
+void initializeJoystickStates() {
+    memset(prev_button_state, 0, sizeof(prev_button_state));
+    memset(prev_axis_state, 0, sizeof(prev_axis_state));
+    memset(prev_hat_state, 0, sizeof(prev_hat_state));
 }
 
 SDL_Joystick* SDL_GameControllerGetJoystick(SDL_GameController* gamecontroller) {
