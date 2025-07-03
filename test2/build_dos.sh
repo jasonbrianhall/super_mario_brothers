@@ -89,7 +89,7 @@ case "${1:-dos}" in
             ls -l $BUILD_DIR/source-install/include/allegro.h || echo 'Header not found' &&
             ls -l $BUILD_DIR/source-install/lib/liballeg.a || echo 'Library not found' &&
             echo 'Compiling DOS executable with Allegro 4...' &&
-            g++ -s source/SDL.cpp \
+            g++ source/SDL.cpp \
                 source/Main.cpp \
                 source/Configuration.cpp \
                 source/Emulation/APU.cpp \
