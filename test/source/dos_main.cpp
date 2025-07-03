@@ -457,16 +457,11 @@ void AllegroMainWindow::checkPlayerInput(Player player)
 {
     if (!smbEngine) return;
     
-    // First, test if keyboard works at all
-    //testKeyboardBasic();
-    
-    // Force keyboard polling
     poll_keyboard();
     
     if (player == PLAYER_1) {
-        Controller& controller = smbEngine->getController1();
+        Controller& controller = smbEngine->getController1();  // Player 1 controller
         
-        // Try the most basic approach - hardcoded keys
         bool up = (key[KEY_UP] != 0);
         bool down = (key[KEY_DOWN] != 0);
         bool left = (key[KEY_LEFT] != 0);
@@ -476,7 +471,6 @@ void AllegroMainWindow::checkPlayerInput(Player player)
         bool start = (key[KEY_ENTER] != 0);
         bool select = (key[KEY_SPACE] != 0);
         
-        // Set the controller states
         controller.setButtonState(BUTTON_UP, up);
         controller.setButtonState(BUTTON_DOWN, down);
         controller.setButtonState(BUTTON_LEFT, left);
@@ -485,17 +479,28 @@ void AllegroMainWindow::checkPlayerInput(Player player)
         controller.setButtonState(BUTTON_B, b);
         controller.setButtonState(BUTTON_START, start);
         controller.setButtonState(BUTTON_SELECT, select);
-        
-        // Debug what we're actually sending to the controller
-        static int debugCounter = 0;
-        if (debugCounter++ % 60 == 0) {
-            printf("Controller states being set: UP=%d DOWN=%d LEFT=%d RIGHT=%d A=%d B=%d START=%d SELECT=%d\n",
-                   up ? 1 : 0, down ? 1 : 0, left ? 1 : 0, right ? 1 : 0,
-                   a ? 1 : 0, b ? 1 : 0, start ? 1 : 0, select ? 1 : 0);
-        }
     }
-    
-    // Skip Player 2 for now to isolate the problem
+    else if (player == PLAYER_2) {
+        Controller& controller = smbEngine->getController2();  // Player 2 controller - FIXED!
+        
+        bool up = (key[KEY_W] != 0);
+        bool down = (key[KEY_S] != 0);
+        bool left = (key[KEY_A] != 0);
+        bool right = (key[KEY_D] != 0);
+        bool a = (key[KEY_G] != 0);
+        bool b = (key[KEY_F] != 0);
+        bool start = (key[KEY_T] != 0);
+        bool select = (key[KEY_R] != 0);
+        
+        controller.setButtonState(BUTTON_UP, up);
+        controller.setButtonState(BUTTON_DOWN, down);
+        controller.setButtonState(BUTTON_LEFT, left);
+        controller.setButtonState(BUTTON_RIGHT, right);
+        controller.setButtonState(BUTTON_A, a);
+        controller.setButtonState(BUTTON_B, b);
+        controller.setButtonState(BUTTON_START, start);
+        controller.setButtonState(BUTTON_SELECT, select);
+    }
 }
 
 void AllegroMainWindow::updateAndDraw()
