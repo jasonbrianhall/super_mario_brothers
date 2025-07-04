@@ -132,8 +132,9 @@ case "${1:-dos}" in
     fi
     
     echo ""
-    echo "🎮 SMB DOS Emulator built with Allegro 4!"
+    echo "🎮 SMB DOS Virtualizer built with Allegro 4!"
     echo "📁 Files:"
+    rm $BUILD_DIR/smb
     ls -la $BUILD_DIR/*.exe $BUILD_DIR/*.EXE 2>/dev/null || true
     ;;
 
@@ -177,10 +178,10 @@ case "${1:-dos}" in
             cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/smb.exe &&
             echo 'Quick compile complete!'
         "
-    rm build/dos/smb -f
+    rm $BUILD_DIR/smb -f
     echo "🎮 SMB DOS Virtualizer compiled!"
     echo "📁 Files:"
-    ls -la $BUILD_DIR/*.exe $BUILD_DIR/*.EXE 2>/dev/null || true
+    ls -la $BUILD_DIR/* 2>/dev/null || true
     ;;
 
 "run")
