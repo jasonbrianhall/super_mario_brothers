@@ -155,6 +155,12 @@ void drawGameUltraFast(BITMAP* target);       // Ultra-fast direct to screen
 // 16-bit conversion utilities
 void convertBuffer16ToBitmap(uint16_t* buffer16, BITMAP* bitmap, int width, int height);
 void convertNESBuffer16ToBitmap(uint16_t* nesBuffer, BITMAP* bitmap);
+void convertBuffer16ToBitmap16(uint16_t* buffer16, BITMAP* bitmap, 
+                              int dest_x, int dest_y, int dest_w, int dest_h, int scale);
+void convertBuffer16ToBitmapGeneric(uint16_t* buffer16, BITMAP* bitmap, 
+                                   int dest_x, int dest_y, int dest_w, int dest_h, int scale);
+// Add this to the private section:
+void convertBuffer16ToBitmapScaled(uint16_t* buffer16, BITMAP* bitmap, int width, int height);                                   
 };
 
 // Global callback for Allegro timer
