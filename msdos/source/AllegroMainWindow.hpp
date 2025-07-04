@@ -37,6 +37,8 @@ private:
     // Allegro components
     BITMAP* game_buffer;
     BITMAP* back_buffer;
+    uint16_t* screenBuffer16;    // 16-bit screen buffer for direct rendering
+    bool useDirectRendering;     // Flag to enable optimized rendering
     // Game state
     bool gameRunning;
     bool gamePaused;
@@ -146,6 +148,13 @@ void drawTextCentered(BITMAP* target, int y, const char* text, int color);
     // File I/O for config (simple DOS file operations)
     void writeConfigFile();
     void readConfigFile();
+void drawGameDirect(BITMAP* target);          // Direct 16-bit rendering
+void drawGameBuffered(BITMAP* target);        // Fallback buffered rendering
+void drawGameUltraFast(BITMAP* target);       // Ultra-fast direct to screen
+
+// 16-bit conversion utilities
+void convertBuffer16ToBitmap(uint16_t* buffer16, BITMAP* bitmap, int width, int height);
+void convertNESBuffer16ToBitmap(uint16_t* nesBuffer, BITMAP* bitmap);
 };
 
 // Global callback for Allegro timer

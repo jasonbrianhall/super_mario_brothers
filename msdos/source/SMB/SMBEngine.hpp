@@ -46,11 +46,38 @@ public:
     Controller& getController2();
 
     /**
-     * Render the screen to a buffer.
+     * Render the screen to a 32-bit color buffer (legacy method).
      *
      * @param buffer a 256x240 32-bit color buffer for storing the rendering.
      */
     void render(uint32_t* buffer);
+
+    /**
+     * Render the screen to a 16-bit color buffer (optimized).
+     *
+     * @param buffer a 256x240 16-bit color buffer for storing the rendering.
+     */
+    void render16(uint16_t* buffer);
+
+    /**
+     * Render directly to any sized screen buffer with scaling and centering.
+     *
+     * @param buffer target screen buffer (16-bit color)
+     * @param screenWidth width of the target screen buffer
+     * @param screenHeight height of the target screen buffer  
+     * @param scale desired scaling factor (0 = auto-fit to screen)
+     */
+    void renderDirect(uint16_t* buffer, int screenWidth, int screenHeight, int scale = 0);
+
+    /**
+     * Fast render directly to screen buffer (no scaling, centered).
+     * Optimized for cases where screen is at least 256x240.
+     *
+     * @param buffer target screen buffer (16-bit color)
+     * @param screenWidth width of the target screen buffer (must be >= 256)
+     * @param screenHeight height of the target screen buffer (must be >= 240)
+     */
+    void renderDirectFast(uint16_t* buffer, int screenWidth, int screenHeight);
 
     /**
      * Reset the game engine to power-on state.

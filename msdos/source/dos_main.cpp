@@ -36,7 +36,8 @@ AllegroMainWindow::AllegroMainWindow()
     : game_buffer(NULL), back_buffer(NULL), gameRunning(false), gamePaused(false), 
       showingMenu(false), selectedMenuItem(0), inMenu(false),
       isCapturingInput(false), currentDialog(DIALOG_NONE),
-      statusMessageTimer(0), currentFrameBuffer(NULL)
+      statusMessageTimer(0), currentFrameBuffer(NULL),
+      screenBuffer16(NULL), useDirectRendering(true)
 {
     strcpy(statusMessage, "Ready");
     strcpy(currentCaptureKey, "");
@@ -49,6 +50,10 @@ AllegroMainWindow::AllegroMainWindow()
 
 AllegroMainWindow::~AllegroMainWindow() 
 {
+    if (screenBuffer16) {
+        delete[] screenBuffer16;
+        screenBuffer16 = NULL;
+    }
     shutdown();
 }
 
@@ -167,6 +172,15 @@ bool AllegroMainWindow::initializeGraphics()
         return false;
     }
     
+    // Allocate 16-bit screen buffer for direct rendering
+    screenBuffer16 = new uint16_t[SCREEN_W * SCREEN_H];
+    if (!screenBuffer16) {
+        printf("Failed to allocate 16-bit screen buffer\n");
+        useDirectRendering = false;
+    } else {
+        printf("16-bit screen buffer allocated: %dx%d\n", SCREEN_W, SCREEN_H);
+    }
+    
     clear_to_color(screen, makecol(0, 0, 0));
     
     return true;
@@ -278,6 +292,7 @@ void AllegroMainWindow::run()
     printf("Player 1: Arrow keys, X=A, Z=B, Enter=Start, Space=Select\n");
     printf("Player 2: WASD, G=A, F=B, T=Start, R=Select\n");
     printf("Audio: %s\n", Configuration::getAudioEnabled() ? "Enabled" : "Disabled");
+    printf("Direct rendering: %s\n", useDirectRendering ? "Enabled" : "Disabled");
     
     // Main game loop
     while (gameRunning) {
@@ -488,7 +503,7 @@ void AllegroMainWindow::checkPlayerInput(Player player)
 
 void AllegroMainWindow::updateAndDraw()
 {
-    // Clear the back buffer instead of screen
+    // Clear the back buffer
     clear_to_color(back_buffer, makecol(0, 0, 0));
     
     // Draw everything to the back buffer
@@ -497,7 +512,12 @@ void AllegroMainWindow::updateAndDraw()
     } else if (showingMenu) {
         drawMenu(back_buffer);
     } else {
-        drawGame(back_buffer);
+        // Use the fastest available method
+        if (bitmap_color_depth(back_buffer) == 16 && useDirectRendering) {
+            drawGameUltraFast(back_buffer);
+        } else {
+            drawGame(back_buffer);
+        }
     }
     
     drawStatusBar(back_buffer);
@@ -513,38 +533,141 @@ void AllegroMainWindow::updateAndDraw()
 
 void AllegroMainWindow::drawGame(BITMAP* target)
 {
-    if (currentFrameBuffer) {
-        // Convert 32-bit RGBA to 16-bit RGB for Allegro
-        for (int y = 0; y < RENDER_HEIGHT; y++) {
-            for (int x = 0; x < RENDER_WIDTH; x++) {
-                uint32_t pixel = currentFrameBuffer[y * RENDER_WIDTH + x];
+    if (!smbEngine) return;
+    
+    if (useDirectRendering && screenBuffer16) {
+        // Method 1: Ultra-fast direct rendering
+        drawGameDirect(target);
+    } else {
+        // Method 2: Fallback with intermediate buffer
+        drawGameBuffered(target);
+    }
+}
+
+void AllegroMainWindow::drawGameDirect(BITMAP* target)
+{
+    // Clear the 16-bit buffer
+    memset(screenBuffer16, 0, SCREEN_W * SCREEN_H * sizeof(uint16_t));
+    
+    // Render directly to screen-sized buffer with automatic scaling/centering
+    smbEngine->renderDirect(screenBuffer16, SCREEN_W, SCREEN_H);
+    
+    // Convert 16-bit buffer to Allegro bitmap format
+    convertBuffer16ToBitmap(screenBuffer16, target, SCREEN_W, SCREEN_H);
+}
+
+void AllegroMainWindow::drawGameBuffered(BITMAP* target)
+{
+    // Fallback method using intermediate buffer
+    static uint16_t nesBuffer[256 * 240];
+    
+    // Get NES frame in 16-bit format
+    smbEngine->render16(nesBuffer);
+    
+    // Convert to game_buffer
+    convertNESBuffer16ToBitmap(nesBuffer, game_buffer);
+    
+    // Scale and blit to target
+    int scale_x = SCREEN_W / 256;
+    int scale_y = SCREEN_H / 240;
+    int scale = (scale_x < scale_y) ? scale_x : scale_y;
+    
+    if (scale < 1) scale = 1;
+    
+    int dest_w = 256 * scale;
+    int dest_h = 240 * scale;
+    int dest_x = (SCREEN_W - dest_w) / 2;
+    int dest_y = (SCREEN_H - dest_h) / 2;
+    
+    stretch_blit(game_buffer, target, 0, 0, 256, 240,
+                dest_x, dest_y, dest_w, dest_h);
+}
+
+// Fast conversion from 16-bit buffer to Allegro bitmap
+void AllegroMainWindow::convertBuffer16ToBitmap(uint16_t* buffer16, BITMAP* bitmap, int width, int height)
+{
+    // Check if we can access Allegro bitmap memory directly
+    if (bitmap_color_depth(bitmap) == 16) {
+        // Direct memory copy for 16-bit bitmaps
+        for (int y = 0; y < height; y++) {
+            uint16_t* src_row = &buffer16[y * width];
+            uint16_t* dest_row = (uint16_t*)bitmap->line[y];
+            memcpy(dest_row, src_row, width * sizeof(uint16_t));
+        }
+    } else {
+        // Convert for other color depths
+        for (int y = 0; y < height; y++) {
+            uint16_t* src_row = &buffer16[y * width];
+            
+            for (int x = 0; x < width; x++) {
+                uint16_t pixel16 = src_row[x];
                 
-                // Extract RGB components
-                int r = (pixel >> 16) & 0xFF;
-                int g = (pixel >> 8) & 0xFF;
-                int b = pixel & 0xFF;
+                // Convert RGB565 to 8-bit RGB components
+                int r = (pixel16 >> 11) & 0x1F;
+                int g = (pixel16 >> 5) & 0x3F;
+                int b = pixel16 & 0x1F;
                 
-                // Convert to 16-bit color
-                int color16 = makecol(r, g, b);
+                // Scale to 8-bit
+                r = (r << 3) | (r >> 2);
+                g = (g << 2) | (g >> 4);
+                b = (b << 3) | (b >> 2);
                 
-                putpixel(game_buffer, x, y, color16);
+                putpixel(bitmap, x, y, makecol(r, g, b));
             }
         }
+    }
+}
+
+// Fast conversion from NES 16-bit buffer to game bitmap
+void AllegroMainWindow::convertNESBuffer16ToBitmap(uint16_t* nesBuffer, BITMAP* bitmap)
+{
+    const int nesWidth = 256;
+    const int nesHeight = 240;
+    
+    if (bitmap_color_depth(bitmap) == 16) {
+        // Direct copy for 16-bit bitmaps
+        for (int y = 0; y < nesHeight; y++) {
+            uint16_t* src_row = &nesBuffer[y * nesWidth];
+            uint16_t* dest_row = (uint16_t*)bitmap->line[y];
+            memcpy(dest_row, src_row, nesWidth * sizeof(uint16_t));
+        }
+    } else {
+        // Convert for other color depths
+        for (int y = 0; y < nesHeight; y++) {
+            uint16_t* src_row = &nesBuffer[y * nesWidth];
+            
+            for (int x = 0; x < nesWidth; x++) {
+                uint16_t pixel16 = src_row[x];
+                
+                // Convert RGB565 to RGB components
+                int r = (pixel16 >> 11) & 0x1F;
+                int g = (pixel16 >> 5) & 0x3F;
+                int b = pixel16 & 0x1F;
+                
+                // Scale to 8-bit
+                r = (r << 3) | (r >> 2);
+                g = (g << 2) | (g >> 4);
+                b = (b << 3) | (b >> 2);
+                
+                putpixel(bitmap, x, y, makecol(r, g, b));
+            }
+        }
+    }
+}
+
+// Alternative ultra-fast version for systems that support it
+void AllegroMainWindow::drawGameUltraFast(BITMAP* target)
+{
+    // This version requires the screen bitmap to be 16-bit and accessible
+    if (bitmap_color_depth(target) == 16) {
+        // Get pointer to screen memory
+        uint16_t* screenMem = (uint16_t*)target->line[0];
         
-        // Scale and blit to target buffer
-        int scale_x = SCREEN_W / RENDER_WIDTH;
-        int scale_y = SCREEN_H / RENDER_HEIGHT;
-        int scale = (scale_x < scale_y) ? scale_x : scale_y;
-        
-        if (scale < 1) scale = 1;
-        
-        int dest_w = RENDER_WIDTH * scale;
-        int dest_h = RENDER_HEIGHT * scale;
-        int dest_x = (SCREEN_W - dest_w) / 2;
-        int dest_y = (SCREEN_H - dest_h) / 2;
-        
-        stretch_blit(game_buffer, target, 0, 0, RENDER_WIDTH, RENDER_HEIGHT,
-                    dest_x, dest_y, dest_w, dest_h);
+        // Render directly to screen memory with centering
+        smbEngine->renderDirectFast(screenMem, SCREEN_W, SCREEN_H);
+    } else {
+        // Fall back to buffered method
+        drawGameDirect(target);
     }
 }
 

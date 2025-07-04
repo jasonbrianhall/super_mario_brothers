@@ -1,11 +1,12 @@
 #include <iostream>
+#include <cstring>
 
 #include "../Constants.hpp"
 
 #include "Video.hpp"
 #include "../SMBRom.hpp"
 
-void drawBox(uint32_t* buffer, int xOffset, int yOffset, int width, int height, uint32_t palette)
+void drawBox(uint16_t* buffer, int xOffset, int yOffset, int width, int height, uint32_t palette)
 {
     for (int y = 0; y < height; y++)
     {
@@ -62,47 +63,87 @@ void drawBox(uint32_t* buffer, int xOffset, int yOffset, int width, int height, 
     }
 }
 
-void drawCHRTile(uint32_t* buffer, int xOffset, int yOffset, int tile, uint32_t palette)
+// Fast 16-bit color conversion function
+inline uint16_t rgb32_to_rgb16(uint32_t rgb32)
 {
-    // Read the pixels of the tile
-    for( int row = 0; row < 8; row++ )
-    {
-        // Replace romImage with smbRomData
-        uint8_t plane1 = smbRomData[16 + 2 * 16384 + tile * 16 + row];
-        uint8_t plane2 = smbRomData[16 + 2 * 16384 + tile * 16 + row + 8];
+    // Extract RGB components from 32-bit color
+    uint8_t r = (rgb32 >> 16) & 0xFF;
+    uint8_t g = (rgb32 >> 8) & 0xFF;
+    uint8_t b = rgb32 & 0xFF;
+    
+    // Convert to 16-bit RGB565 format (5 bits red, 6 bits green, 5 bits blue)
+    return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+}
 
-        for( int column = 0; column < 8; column++ )
+void drawCHRTile(uint16_t* buffer, int xOffset, int yOffset, int tile, uint32_t palette)
+{
+    // Bounds check for the entire tile
+    if (xOffset >= 256 || yOffset >= 240 || xOffset + 8 <= 0 || yOffset + 8 <= 0)
+    {
+        return;
+    }
+    
+    // Pre-calculate ROM addresses for better performance
+    const uint8_t* plane1_base = &smbRomData[16 + 2 * 16384 + tile * 16];
+    const uint8_t* plane2_base = plane1_base + 8;
+    
+    // Read the pixels of the tile
+    for (int row = 0; row < 8; row++)
+    {
+        int y = yOffset + row;
+        if (y < 0 || y >= 240) continue;  // Skip rows outside screen bounds
+        
+        uint8_t plane1 = plane1_base[row];
+        uint8_t plane2 = plane2_base[row];
+        
+        // Calculate the base address for this row
+        uint16_t* row_buffer = &buffer[y * 256];
+        
+        // Process 8 pixels in this row
+        for (int column = 0; column < 8; column++)
         {
-            uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + ((plane2 & (1 << column)) ? 2 : 0));
-            if( paletteIndex == 0 )
+            int x = xOffset + (7 - column);
+            if (x < 0 || x >= 256) continue;  // Skip pixels outside screen bounds
+            
+            uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + 
+                                   ((plane2 & (1 << column)) ? 2 : 0));
+            
+            if (paletteIndex == 0)
             {
-                // skip transparent pixels
+                // Skip transparent pixels
                 continue;
             }
-            uint32_t pixel;
+            
+            uint16_t pixel;
             if (palette == 0)
             {
-                // Grayscale
-                pixel = 0xff000000 | (paletteIndex * 0x555555);
+                // Grayscale - convert to 16-bit directly
+                uint8_t gray = paletteIndex * 85;  // 0, 85, 170, 255
+                pixel = rgb32_to_rgb16((gray << 16) | (gray << 8) | gray);
             }
             else
             {
                 uint32_t colorIndex = (palette >> (8 * (3 - paletteIndex))) & 0xff;
-                pixel = 0xff000000 | paletteRGB[colorIndex];
+                uint32_t rgb32 = paletteRGB[colorIndex];
+                pixel = rgb32_to_rgb16(rgb32);
             }
-
-            int x = (xOffset + (7 - column));
-            int y = (yOffset + row);
-            if (x < 0 || x >= 256 || y < 0 || y >= 240)
-            {
-                continue;
-            }
-            buffer[y * 256 + x] = pixel;
+            
+            // Direct memory write - much faster than putpixel
+            row_buffer[x] = pixel;
         }
     }
 }
 
-void drawText(uint32_t* buffer, int xOffset, int yOffset, const std::string& text, uint32_t palette)
+// Optimized version that can draw multiple tiles at once
+void drawCHRTileStrip(uint16_t* buffer, int xOffset, int yOffset, const int* tiles, int tileCount, uint32_t palette)
+{
+    for (int tileIndex = 0; tileIndex < tileCount; tileIndex++)
+    {
+        drawCHRTile(buffer, xOffset + tileIndex * 8, yOffset, tiles[tileIndex], palette);
+    }
+}
+
+void drawText(uint16_t* buffer, int xOffset, int yOffset, const std::string& text, uint32_t palette)
 {
     for (size_t i = 0; i < text.length(); i++)
     {
@@ -137,6 +178,77 @@ void drawText(uint32_t* buffer, int xOffset, int yOffset, const std::string& tex
             tile = 256 + 46;
         }
         drawCHRTile(buffer, xOffset + i * 8, yOffset, tile, palette);
+    }
+}
+
+// Fast screen clear function
+void clearScreen(uint16_t* buffer, uint16_t color)
+{
+    // Use memset for single byte values, or a loop for 16-bit
+    if (color == 0)
+    {
+        memset(buffer, 0, 256 * 240 * sizeof(uint16_t));
+    }
+    else
+    {
+        // For non-zero colors, we need to set each 16-bit value
+        uint16_t* end = buffer + (256 * 240);
+        while (buffer < end)
+        {
+            *buffer++ = color;
+        }
+    }
+}
+
+// Fast horizontal line drawing
+void drawHLine(uint16_t* buffer, int x, int y, int width, uint16_t color)
+{
+    if (y < 0 || y >= 240) return;
+    
+    int startX = (x < 0) ? 0 : x;
+    int endX = (x + width > 256) ? 256 : x + width;
+    
+    if (startX >= endX) return;
+    
+    uint16_t* row_buffer = &buffer[y * 256 + startX];
+    int pixels = endX - startX;
+    
+    // Use memset for black lines, loop for others
+    if (color == 0)
+    {
+        memset(row_buffer, 0, pixels * sizeof(uint16_t));
+    }
+    else
+    {
+        for (int i = 0; i < pixels; i++)
+        {
+            row_buffer[i] = color;
+        }
+    }
+}
+
+// Fast vertical line drawing
+void drawVLine(uint16_t* buffer, int x, int y, int height, uint16_t color)
+{
+    if (x < 0 || x >= 256) return;
+    
+    int startY = (y < 0) ? 0 : y;
+    int endY = (y + height > 240) ? 240 : y + height;
+    
+    if (startY >= endY) return;
+    
+    for (int row = startY; row < endY; row++)
+    {
+        buffer[row * 256 + x] = color;
+    }
+}
+
+// Fast rectangle fill
+void fillRect(uint16_t* buffer, int x, int y, int width, int height, uint16_t color)
+{
+    for (int row = 0; row < height; row++)
+    {
+        drawHLine(buffer, x, y + row, width, color);
     }
 }
 
@@ -207,9 +319,6 @@ BITMAP* createScanlineBitmap(int width, int height, int scale)
             putpixel(scanlineBitmap, x, y, color);
         }
     }
-    
-    // Set the bitmap to use additive blending mode if possible
-    // Note: Allegro 4 has limited blending modes compared to modern libraries
     
     return scanlineBitmap;
 }

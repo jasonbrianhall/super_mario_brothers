@@ -27,19 +27,49 @@ enum Tile
 };
 
 /**
- * Draw a box.
+ * Fast 16-bit color conversion from 32-bit RGB
  */
-void drawBox(uint32_t* buffer, int xOffset, int yOffset, int width, int height, uint32_t palette = 0);
+inline uint16_t rgb32_to_rgb16(uint32_t rgb32);
 
 /**
- * Draw a tile from CHR memory.
+ * Draw a box using 16-bit color buffer.
  */
-void drawCHRTile(uint32_t* buffer, int xOffset, int yOffset, int tile, uint32_t palette = 0);
+void drawBox(uint16_t* buffer, int xOffset, int yOffset, int width, int height, uint32_t palette = 0);
 
 /**
- * Draw a string using characters from CHR.
+ * Draw a tile from CHR memory using 16-bit color buffer.
  */
-void drawText(uint32_t* buffer, int xOffset, int yOffset, const std::string& text, uint32_t palette = 0);
+void drawCHRTile(uint16_t* buffer, int xOffset, int yOffset, int tile, uint32_t palette = 0);
+
+/**
+ * Draw multiple tiles in a horizontal strip (optimized for backgrounds).
+ */
+void drawCHRTileStrip(uint16_t* buffer, int xOffset, int yOffset, const int* tiles, int tileCount, uint32_t palette = 0);
+
+/**
+ * Draw a string using characters from CHR using 16-bit color buffer.
+ */
+void drawText(uint16_t* buffer, int xOffset, int yOffset, const std::string& text, uint32_t palette = 0);
+
+/**
+ * Fast screen clear function.
+ */
+void clearScreen(uint16_t* buffer, uint16_t color = 0);
+
+/**
+ * Fast horizontal line drawing.
+ */
+void drawHLine(uint16_t* buffer, int x, int y, int width, uint16_t color);
+
+/**
+ * Fast vertical line drawing.
+ */
+void drawVLine(uint16_t* buffer, int x, int y, int height, uint16_t color);
+
+/**
+ * Fast rectangle fill.
+ */
+void fillRect(uint16_t* buffer, int x, int y, int width, int height, uint16_t color);
 
 /**
  * Generate scanline pattern for CRT effect (Allegro 4 version)
