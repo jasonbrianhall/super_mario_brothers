@@ -1,5 +1,5 @@
 #!/bin/bash
-# Clean build script for SMB DOS with Allegro 4
+# Combined build script for SMB DOS with Allegro 4
 
 DJGPP_IMAGE="djfdyuruiry/djgpp"
 BUILD_DIR="build/dos"
@@ -84,7 +84,7 @@ case "${1:-dos}" in
         exit 1
     fi
     
-    # Build with Allegro 4
+    # Build with Allegro 4 using the working one-line compilation approach
     echo "Compiling with DJGPP and Allegro 4..."
     docker run --rm \
         -v $(pwd):/src:z \
@@ -94,27 +94,27 @@ case "${1:-dos}" in
             cd /src && 
             echo 'Checking available libraries...' &&
             find $BUILD_DIR/source-install -name '*.a' 2>/dev/null || echo 'No .a files found' &&
-            echo 'Compiling DOS executable with Allegro 4...' &&
-            g++ -s source/dos_main.cpp \
-                source/Configuration.cpp \
-                source/Emulation/APU.cpp \
-                source/Emulation/Controller.cpp \
-                source/Emulation/MemoryAccess.cpp \
-                source/Emulation/PPU.cpp \
-                source/SMB/SMB.cpp \
-                source/SMB/SMBData.cpp \
-                source/SMB/SMBEngine.cpp \
-                source/Util/Video.cpp \
-                source/Util/VideoFilters.cpp \
-                source/SMBRom.cpp \
-                -I$BUILD_DIR/source-install/include \
-                -L$BUILD_DIR/source-install/lib \
-                -o $BUILD_DIR/smb.exe \
-                -O2 -lalleg -lm -fpermissive -w &&
+            echo 'Creating object directory...' &&
+            mkdir -p /src/$BUILD_DIR/obj &&
+            echo 'Compiling individual source files...' &&
+            g++ -c /src/source/Configuration.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Configuration.o -O2 -fpermissive -w &&
+            g++ -c /src/source/Emulation/APU.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/APU.o -O2 -fpermissive -w &&
+            g++ -c /src/source/Emulation/Controller.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Controller.o -O2 -fpermissive -w &&
+            g++ -c /src/source/Emulation/MemoryAccess.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/MemoryAccess.o -O2 -fpermissive -w &&
+            g++ -c /src/source/Emulation/PPU.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/PPU.o -O2 -fpermissive -w &&
+            g++ -c /src/source/SMB/SMB.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMB.o -O2 -fpermissive -w &&
+            g++ -c /src/source/SMB/SMBData.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBData.o -O2 -fpermissive -w &&
+            g++ -c /src/source/SMB/SMBEngine.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBEngine.o -O2 -fpermissive -w &&
+            g++ -c /src/source/Util/Video.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Video.o -O2 -fpermissive -w &&
+            g++ -c /src/source/Util/VideoFilters.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/VideoFilters.o -O2 -fpermissive -w &&
+            g++ -c /src/source/SMBRom.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBRom.o -O2 -fpermissive -w &&
+            g++ -c /src/source/dos_main.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Main.o -O2 -fpermissive -w &&
+            echo 'Linking executable...' &&
+            g++ /src/$BUILD_DIR/obj/*.o -lalleg -lm -L/src/$BUILD_DIR/source-install/lib -o /src/$BUILD_DIR/smb.exe &&
             echo 'Converting to COFF format...' &&
-            exe2coff $BUILD_DIR/smb.exe &&
+            exe2coff /src/$BUILD_DIR/smb.exe &&
             echo 'Creating final DOS executable with DPMI stub...' &&
-            cat $BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE $BUILD_DIR/smb > $BUILD_DIR/smb.exe &&
+            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/smb.exe &&
             echo 'DOS build complete!'
         "
     
@@ -137,6 +137,52 @@ case "${1:-dos}" in
     ls -la $BUILD_DIR/*.exe $BUILD_DIR/*.EXE 2>/dev/null || true
     ;;
 
+"compile")
+    echo "Quick compile (assumes Allegro is already built)..."
+    
+    # Check if Allegro is built
+    if [ ! -d "$BUILD_DIR/source-install" ]; then
+        echo "Allegro not found. Building first..."
+        ./build_dos.sh allegro
+    fi
+    
+    # Check source files
+    if [ ! -f "source/dos_main.cpp" ]; then
+        echo "ERROR: source/dos_main.cpp not found!"
+        exit 1
+    fi
+    
+    # Quick compile using the working one-line approach
+    echo "Quick compiling with DJGPP and Allegro 4..."
+    docker run --rm \
+        -v $(pwd):/src:z \
+        -u $USER_ID:$GROUP_ID \
+        $DJGPP_IMAGE \
+        /bin/sh -c "
+            mkdir -p /src/$BUILD_DIR/obj && 
+            g++ -c /src/source/Configuration.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Configuration.o -O2 -fpermissive -w && 
+            g++ -c /src/source/Emulation/APU.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/APU.o -O2 -fpermissive -w && 
+            g++ -c /src/source/Emulation/Controller.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Controller.o -O2 -fpermissive -w && 
+            g++ -c /src/source/Emulation/MemoryAccess.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/MemoryAccess.o -O2 -fpermissive -w && 
+            g++ -c /src/source/Emulation/PPU.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/PPU.o -O2 -fpermissive -w && 
+            g++ -c /src/source/SMB/SMB.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMB.o -O2 -fpermissive -w && 
+            g++ -c /src/source/SMB/SMBData.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBData.o -O2 -fpermissive -w && 
+            g++ -c /src/source/SMB/SMBEngine.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBEngine.o -O2 -fpermissive -w && 
+            g++ -c /src/source/Util/Video.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Video.o -O2 -fpermissive -w && 
+            g++ -c /src/source/Util/VideoFilters.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/VideoFilters.o -O2 -fpermissive -w && 
+            g++ -c /src/source/SMBRom.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBRom.o -O2 -fpermissive -w && 
+            g++ -c /src/source/dos_main.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Main.o -O2 -fpermissive -w && 
+            g++ /src/$BUILD_DIR/obj/*.o -lalleg -lm -L/src/$BUILD_DIR/source-install/lib -o /src/$BUILD_DIR/smb.exe && 
+            exe2coff /src/$BUILD_DIR/smb.exe && 
+            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/smb.exe &&
+            echo 'Quick compile complete!'
+        "
+    
+    echo "🎮 SMB DOS Emulator compiled!"
+    echo "📁 Files:"
+    ls -la $BUILD_DIR/*.exe $BUILD_DIR/*.EXE 2>/dev/null || true
+    ;;
+
 "run")
     if [ ! -f "$BUILD_DIR/smb.exe" ]; then
         echo "SMB virtualizer not built yet. Building..."
@@ -153,8 +199,23 @@ case "${1:-dos}" in
     echo "Clean complete"
     ;;
 
+"clean-objects")
+    echo "Cleaning object files only..."
+    rm -rf $BUILD_DIR/obj
+    echo "Object files cleaned"
+    ;;
+
 *)
-    echo "Usage: $0 [setup|allegro|dos|run|clean]"
+    echo "Usage: $0 [setup|allegro|dos|compile|run|clean|clean-objects]"
+    echo ""
+    echo "Commands:"
+    echo "  setup       - Download and setup DJGPP environment and CSDPMI"
+    echo "  allegro     - Build Allegro 4 library for DJGPP"
+    echo "  dos         - Full build (setup + allegro + compile)"
+    echo "  compile     - Quick compile (assumes Allegro is built)"
+    echo "  run         - Run the built executable in DOSBox"
+    echo "  clean       - Remove all build files"
+    echo "  clean-objects - Remove only object files"
     ;;
 
 esac
