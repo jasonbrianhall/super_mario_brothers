@@ -129,12 +129,17 @@ bool AllegroMainWindow::initializeGraphics()
     set_color_depth(16); // 16-bit color for better DOS compatibility
     
     #ifdef __DJGPP__
-    // DOS: Try lower resolutions, can go fullscreen
-    if (set_gfx_mode(GFX_AUTODETECT, 640, 480, 0, 0) != 0) {
-        if (set_gfx_mode(GFX_AUTODETECT, 320, 240, 0, 0) != 0) {
-            if (set_gfx_mode(GFX_AUTODETECT, 256, 224, 0, 0) != 0) {
-                printf("Failed to set graphics mode: %s\n", allegro_error);
-                return false;
+    // DOS: Use optimal resolutions for perfect NES scaling
+    // NES is 256x240, so these give us perfect integer scaling:
+    // 512x480 (2x), 768x720 (3x), 320x240 (1.25x), 320x200 (VGA Mode 13h compatible)
+    
+    if (set_gfx_mode(GFX_AUTODETECT, 512, 480, 0, 0) != 0) {        // 2x scaling
+        if (set_gfx_mode(GFX_AUTODETECT, 320, 240, 0, 0) != 0) {    // 1.25x scaling  
+            if (set_gfx_mode(GFX_AUTODETECT, 320, 200, 0, 0) != 0) { // VGA Mode 13h style
+                if (set_gfx_mode(GFX_AUTODETECT, 640, 480, 0, 0) != 0) { // Fallback
+                    printf("Failed to set graphics mode: %s\n", allegro_error);
+                    return false;
+                }
             }
         }
     }
@@ -157,6 +162,15 @@ bool AllegroMainWindow::initializeGraphics()
            "(windowed)"
            #endif
     );
+    
+    // Calculate optimal scaling info
+    int scale_x = SCREEN_W / 256;
+    int scale_y = SCREEN_H / 240;
+    int optimal_scale = (scale_x < scale_y) ? scale_x : scale_y;
+    if (optimal_scale < 1) optimal_scale = 1;
+    
+    printf("NES scaling: %dx (NES 256x240 -> %dx%d)\n", 
+           optimal_scale, 256 * optimal_scale, 240 * optimal_scale);
     
     // Create game buffer matching NES resolution
     game_buffer = create_bitmap(RENDER_WIDTH, RENDER_HEIGHT);
@@ -553,31 +567,48 @@ void AllegroMainWindow::drawGameBuffered(BITMAP* target)
     static uint16_t nesBuffer[256 * 240];
     smbEngine->render16(nesBuffer);
     
-    // Calculate proper scaling - force at least 2x if possible
+    // Calculate proper scaling
     int scale_x = SCREEN_W / 256;
     int scale_y = SCREEN_H / 240;
     int scale = (scale_x < scale_y) ? scale_x : scale_y;
     
     if (scale < 1) scale = 1;
     
-    printf("Screen: %dx%d, Scale: %d\n", SCREEN_W, SCREEN_H, scale);  // Debug info
-    
     int dest_w = 256 * scale;
     int dest_h = 240 * scale;
     int dest_x = (SCREEN_W - dest_w) / 2;
     int dest_y = (SCREEN_H - dest_h) / 2;
     
-    printf("Dest: %dx%d at %d,%d\n", dest_w, dest_h, dest_x, dest_y);  // Debug info
-    
     // Clear target first
     clear_to_color(target, makecol(0, 0, 0));
     
-    // Direct scaling to target (skip intermediate game_buffer)
+    #ifdef __DJGPP__
+    // DOS: Optimized paths for common resolutions
+    if (SCREEN_W == 512 && SCREEN_H == 480) {
+        // Perfect 2x scaling - fill the screen
+        convertBuffer16ToBitmap16(nesBuffer, target, 0, 0, 512, 480, 2);
+    } else if (SCREEN_W == 320 && SCREEN_H == 240) {
+        // Perfect 1.25x scaling - center it
+        convertBuffer16ToBitmap16(nesBuffer, target, 32, 0, 256, 240, 1);
+    } else if (SCREEN_W == 320 && SCREEN_H == 200) {
+        // VGA Mode 13h style - center and fit
+        convertBuffer16ToBitmap16(nesBuffer, target, 32, -20, 256, 240, 1);
+    } else {
+        // Generic scaling
+        if (bitmap_color_depth(target) == 16) {
+            convertBuffer16ToBitmap16(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
+        } else {
+            convertBuffer16ToBitmapGeneric(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
+        }
+    }
+    #else
+    // Linux: Use generic scaling
     if (bitmap_color_depth(target) == 16) {
         convertBuffer16ToBitmap16(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
     } else {
         convertBuffer16ToBitmapGeneric(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
     }
+    #endif
 }
 
 // Fast conversion from 16-bit buffer to Allegro bitmap with efficient scaling
