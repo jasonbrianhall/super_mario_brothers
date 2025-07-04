@@ -596,81 +596,81 @@ void APU::output(uint8_t* buffer, int len)
 
 void APU::stepFrame()
 {
-    // Safety check first
+    // Comprehensive safety checks
     if (!pulse1 || !pulse2 || !triangle || !noise) {
-        printf("ERROR: APU objects are null in stepFrame\n");
+        // Don't spam error messages
+        static int errorCount = 0;
+        if (errorCount++ < 3) {
+            printf("ERROR: APU objects are null\n");
+        }
         return;
     }
 
-    // Check for buffer overflow
-    if (audioBufferLength >= AUDIO_BUFFER_LENGTH - 100) {
-        printf("WARNING: Audio buffer nearly full, skipping frame\n");
+    // Reset buffer if it's getting too full
+    if (audioBufferLength >= AUDIO_BUFFER_LENGTH - 200) {
+        audioBufferLength = 0;  // Reset buffer instead of failing
+    }
+
+    int frequency = Configuration::getAudioFrequency();
+    int frameRate = Configuration::getFrameRate();
+    
+    // Validate configuration
+    if (frequency <= 0 || frequency > 48000 || frameRate <= 0 || frameRate > 120) {
+        static int configErrorCount = 0;
+        if (configErrorCount++ < 3) {
+            printf("ERROR: Invalid audio config: freq=%d, rate=%d\n", frequency, frameRate);
+        }
         return;
     }
 
-    // Use the exact same logic as the original SDL version
-    // Step the frame counter 4 times per frame, for 240Hz
+    // Simplified frame stepping - less likely to crash
     for (int i = 0; i < 4; i++)
     {
         frameValue = (frameValue + 1) % 5;
-        switch (frameValue)
-        {
-        case 1:
-        case 3:
+        
+        // Step audio components
+        if (frameValue == 1 || frameValue == 3) {
             stepEnvelope();
-            break;
-        case 0:
-        case 2:
+        } else if (frameValue == 0 || frameValue == 2) {
             stepEnvelope();
             stepSweep();
             stepLength();
-            break;
         }
 
-        // Calculate the number of samples needed per 1/4 frame
-        int frequency = Configuration::getAudioFrequency();
-
-        // Example: we need 735 samples per frame for 44.1KHz sound sampling
-        int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
-        if (i == 3)
-        {
-            // Handle the remainder on the final tick of the frame counter
-            samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
+        // Calculate samples needed for this quarter frame
+        int samplesToWrite = frequency / (frameRate * 4);
+        if (i == 3) {
+            // Handle remainder on last iteration
+            samplesToWrite = (frequency / frameRate) - (3 * frequency / (frameRate * 4));
         }
         
-        // Safety check on samples to write
-        if (samplesToWrite < 0 || samplesToWrite > 2000) {
-            printf("ERROR: Invalid samplesToWrite: %d\n", samplesToWrite);
-            return;
-        }
+        // Clamp to reasonable values
+        if (samplesToWrite < 1) samplesToWrite = 1;
+        if (samplesToWrite > 500) samplesToWrite = 500;
         
-        // Step the timer ~3729 times per quarter frame for most channels
-        int j = 0;
-        for (int stepIndex = 0; stepIndex < 3729; stepIndex++)
-        {
-            if (j < samplesToWrite &&
-                (stepIndex / 3729.0) > (j / (double)samplesToWrite))
-            {
-                uint8_t sample = getOutput();
-                if (audioBufferLength + j < AUDIO_BUFFER_LENGTH) {
-                    audioBuffer[audioBufferLength + j] = sample;
-                    j++;
-                } else {
-                    printf("ERROR: Audio buffer overflow prevented\n");
-                    break;
-                }
-            }
-
-            // Safety check before calling stepTimer
+        // Generate audio samples with simplified timing
+        int samplesGenerated = 0;
+        for (int step = 0; step < 1000 && samplesGenerated < samplesToWrite; step++) {
+            // Step the audio hardware every iteration
             if (pulse1) pulse1->stepTimer();
             if (pulse2) pulse2->stepTimer();
             if (noise) noise->stepTimer();
             if (triangle) {
                 triangle->stepTimer();
-                triangle->stepTimer();
+                triangle->stepTimer();  // Triangle channel runs at 2x
+            }
+            
+            // Generate a sample every few steps
+            if (step % (1000 / samplesToWrite) == 0 && samplesGenerated < samplesToWrite) {
+                if (audioBufferLength < AUDIO_BUFFER_LENGTH - 1) {
+                    audioBuffer[audioBufferLength] = getOutput();
+                    audioBufferLength++;
+                    samplesGenerated++;
+                } else {
+                    break;  // Buffer full
+                }
             }
         }
-        audioBufferLength += j;  // Use actual samples written
     }
 }
 

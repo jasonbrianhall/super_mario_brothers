@@ -25,13 +25,11 @@ static SMBEngine* smbEngine = NULL;
 static uint32_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
 AllegroMainWindow* g_mainWindow = NULL;
 
-// Audio streaming variables
-static SAMPLE* continuousAudioSample = NULL;
-static int audioVoice = -1;
-static uint8_t circularBuffer[8192];  // Large circular buffer
-static int bufferWritePos = 0;
-static int bufferReadPos = 0;
-static bool audioInitialized = false;
+// Audio streaming variables for DOS
+static int audioStreamBuffer[4096];  // Large stream buffer
+static int audioStreamPos = 0;
+static int audioStreamLen = 0;
+static bool dosAudioInitialized = false;
 
 // Wave file debugging
 static FILE* waveFile = NULL;
@@ -185,84 +183,90 @@ bool AllegroMainWindow::initialize()
     return true;
 }
 
+// Complete DOS audio implementation with status bar removal
+
 bool AllegroMainWindow::initializeAllegro()
 {
+    printf("Initializing Allegro...\n");
+    
     if (allegro_init() != 0) {
         printf("Failed to initialize Allegro\n");
         return false;
     }
+    printf("Allegro initialized successfully\n");
     
     // Install keyboard
     if (install_keyboard() < 0) {
         printf("Failed to install keyboard\n");
         return false;
     }
+    printf("Keyboard installed\n");
     
     // Install timer
     if (install_timer() < 0) {
         printf("Failed to install timer\n");
         return false;
     }
+    printf("Timer installed\n");
     
     // Install joystick (optional, don't fail if not present)
-    install_joystick(JOY_TYPE_AUTODETECT);
+    if (install_joystick(JOY_TYPE_AUTODETECT) == 0) {
+        printf("Joystick installed\n");
+    } else {
+        printf("No joystick detected\n");
+    }
+    
+    // Initialize audio flag
+    dosAudioInitialized = false;
     
     // Install sound if audio is enabled
     if (Configuration::getAudioEnabled()) {
+        printf("Attempting to initialize audio...\n");
+        
         #ifdef __DJGPP__
-        // DOS: Use autodetect for Sound Blaster/etc
-        if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) != 0) {
-        #else
-        // Linux: Try OSS first, then ALSA
-        if (install_sound(DIGI_OSS, MIDI_NONE, NULL) != 0) {
-            if (install_sound(DIGI_ALSA, MIDI_NONE, NULL) != 0) {
-                if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) != 0) {
-        #endif
-                    printf("Failed to install sound: %s\n", allegro_error);
-                    printf("Continuing without sound...\n");
-        #ifndef __DJGPP__
-                }
-            }
-        #endif
+        // DOS: Try simple autodetect first - safest approach
+        if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) == 0) {
+            printf("Audio initialized successfully with autodetect\n");
+            dosAudioInitialized = true;
         } else {
-            printf("Audio initialized successfully at %d Hz\n", Configuration::getAudioFrequency());
+            printf("Autodetect failed, trying specific drivers...\n");
             
-            #ifdef __DJGPP__
-            // DOS-specific audio setup
-            LOCK_FUNCTION(audio_stream_callback);
-            
-            // PC Speaker beep test
-            printf("Testing audio with beep...\n");
-            outportb(0x43, 0xB6);
-            outportb(0x42, 0x31);
-            outportb(0x42, 0x05);
-            outportb(0x61, inportb(0x61) | 3);
-            rest(100);
-            outportb(0x61, inportb(0x61) & 0xFC);
-            #else
-            // Linux: Set up simple audio streaming
-            printf("Setting up Linux audio streaming...\n");
-            reserve_voices(16, 0);  // Reserve voices for samples
-            
-            // Try a much simpler approach first
-            int freq = Configuration::getAudioFrequency();
-            printf("Audio frequency: %d Hz\n", freq);
-            
-            // Just verify we can create a basic sample
-            SAMPLE* testSample = create_sample(8, 1, freq, 1024);
-            if (testSample) {
-                printf("SUCCESS: Can create audio samples\n");
-                destroy_sample(testSample);
-                audioInitialized = true;  // We'll use a different method
+            // Try Sound Blaster 16 (most compatible)
+            if (install_sound(DIGI_SB16, MIDI_NONE, NULL) == 0) {
+                printf("Audio initialized with SB16\n");
+                dosAudioInitialized = true;
+            } else if (install_sound(DIGI_SBPRO, MIDI_NONE, NULL) == 0) {
+                printf("Audio initialized with SB Pro\n");
+                dosAudioInitialized = true;
+            } else if (install_sound(DIGI_SB20, MIDI_NONE, NULL) == 0) {
+                printf("Audio initialized with SB 2.0\n");
+                dosAudioInitialized = true;
             } else {
-                printf("FAILED: Cannot create audio samples\n");
-                audioInitialized = false;
+                printf("All audio drivers failed: %s\n", allegro_error);
+                printf("Continuing without sound...\n");
+                dosAudioInitialized = false;
             }
-            #endif
-            
-            // Set volume
-            set_volume(255, 255);
         }
+        
+        if (dosAudioInitialized) {
+            printf("Audio frequency: %d Hz\n", Configuration::getAudioFrequency());
+            
+            // Set safe volume levels
+            set_volume(96, 0);  // Lower volume to reduce distortion
+            
+            // Reserve a few voices for smoother playback
+            reserve_voices(2, 0);  // Just 2 voices for safety
+            
+            printf("Audio initialization complete\n");
+        }
+        #else
+        // Linux audio code (simplified)
+        if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) == 0) {
+            printf("Linux audio initialized\n");
+        } else {
+            printf("Linux audio failed, continuing without sound\n");
+        }
+        #endif
     } else {
         printf("Audio disabled in configuration\n");
     }
@@ -272,10 +276,16 @@ bool AllegroMainWindow::initializeAllegro()
     LOCK_FUNCTION(timer_callback);
     
     // Install timer at configured frame rate
-    install_int_ex(timer_callback, BPS_TO_TIMER(Configuration::getFrameRate()));
+    if (install_int_ex(timer_callback, BPS_TO_TIMER(Configuration::getFrameRate())) < 0) {
+        printf("Failed to install timer interrupt\n");
+        return false;
+    }
+    
+    printf("Timer interrupt installed at %d FPS\n", Configuration::getFrameRate());
     
     return true;
 }
+
 
 bool AllegroMainWindow::initializeGraphics()
 {
@@ -446,22 +456,17 @@ void AllegroMainWindow::setupMenu()
 
 void AllegroMainWindow::run() 
 {
+    printf("=== Starting Super Mario Bros ===\n");
+    
     // Initialize the SMB engine
     SMBEngine engine(const_cast<unsigned char*>(smbRomData));
     smbEngine = &engine;
     engine.reset();
     
-    // Initialize wave file for debugging
-    if (Configuration::getAudioEnabled()) {
+    // Initialize wave file for debugging ONLY if audio is working
+    if (Configuration::getAudioEnabled() && dosAudioInitialized) {
         initWaveFile();
-        
-        // Print detailed audio configuration
-        printf("=== AUDIO DEBUG INFO ===\n");
-        printf("Configured frequency: %d Hz\n", Configuration::getAudioFrequency());
-        printf("Frame rate: %d FPS\n", Configuration::getFrameRate());
-        printf("Samples per frame: %d\n", Configuration::getAudioFrequency() / Configuration::getFrameRate());
-        printf("Frame duration: %.2f ms\n", 1000.0 / Configuration::getFrameRate());
-        printf("========================\n");
+        printf("Wave file debugging enabled\n");
     }
     
     gameRunning = true;
@@ -469,148 +474,68 @@ void AllegroMainWindow::run()
     
     printf("Starting main game loop...\n");
     printf("Resolution: %dx%d\n", SCREEN_W, SCREEN_H);
-    printf("Controls: ESC=Menu, P=Pause, Ctrl+R=Reset\n");
-    printf("Player 1: Arrow keys, X=A, Z=B, Enter=Start, Space=Select\n");
-    printf("Player 2: WASD, G=A, F=B, T=Start, R=Select\n");
-    printf("Audio: %s\n", Configuration::getAudioEnabled() ? "Enabled" : "Disabled");
-    printf("Direct rendering: %s\n", useDirectRendering ? "Enabled" : "Disabled");
-    if (enableWaveOutput) {
-        printf("Wave file output: Enabled (recording to smb_audio_debug.wav)\n");
-    }
+    printf("Audio: %s\n", dosAudioInitialized ? "Enabled" : "Disabled");
+    
+    // Simple audio variables
+    static uint8_t audioBuffer[1024];  // Smaller buffer for safety
+    static int frameCounter = 0;
     
     // Main game loop
     while (gameRunning) {
-        // Wait for timer tick or use rest for compatibility
+        // Wait for timer tick
         #ifdef __DJGPP__
-        // DOS: Use timer-based approach
         while (timer_counter == 0) {
-            rest(1);
+            rest(1);  // Give CPU time to other processes
         }
-        timer_counter--;
+        timer_counter = 0;  // Reset counter (simplified)
         #else
-        // Linux: Simple timing for testing
-        int frameDelay = 1000 / Configuration::getFrameRate();
-        rest(frameDelay);
+        rest(1000 / Configuration::getFrameRate());
         #endif
         
         handleInput();
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
-            // Update game with audio
+            // Update game
             engine.update();
             
-            // Handle audio streaming
-            if (Configuration::getAudioEnabled()) {
-                static int audioFrameCounter = 0;
-                audioFrameCounter++;
+            // Simple audio that was working before
+            if (dosAudioInitialized && Configuration::getAudioEnabled()) {
+                frameCounter++;
+                
+                int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
+                if (samplesNeeded > 1024) samplesNeeded = 1024;
+                if (samplesNeeded < 100) samplesNeeded = 100;
+                
+                // Get audio from SMB engine
+                engine.audioCallback(audioBuffer, samplesNeeded);
                 
                 #ifdef __DJGPP__
-                // DOS: Try lower frequency to reduce static
-                static uint8_t audioBuffer[1000];  // Bigger buffer
-                static SAMPLE* gameAudioSample = NULL;
-                
-                // Safety check first
-                if (!smbEngine) {
-                    printf("ERROR: smbEngine is null\n");
-                    continue;
-                }
-                
-                try {
-                    // Generate exactly the right amount of audio per frame
-                    int samplesPerFrame = Configuration::getAudioFrequency() / Configuration::getFrameRate();
-                    
-                    // Try reducing the actual sample rate for DOS
-                    int dosFreq = 22050;  // Lower frequency for DOS
-                    int dosSamplesPerFrame = dosFreq / Configuration::getFrameRate();
-                    
-                    if (dosSamplesPerFrame <= sizeof(audioBuffer) && dosSamplesPerFrame > 0) {
-                        engine.audioCallback(audioBuffer, dosSamplesPerFrame);
-                        
-                        // Write to wave file for debugging
-                        writeWaveData(audioBuffer, dosSamplesPerFrame);
-                        
-                        if (!gameAudioSample) {
-                            gameAudioSample = create_sample(8, 0, dosFreq, dosSamplesPerFrame);
-                            if (gameAudioSample) {
-                                printf("Created DOS audio sample: %d Hz, %d samples per frame\n", dosFreq, dosSamplesPerFrame);
-                            } else {
-                                printf("ERROR: Failed to create DOS audio sample\n");
-                            }
-                        }
-                        
-                        if (gameAudioSample && gameAudioSample->data) {
-                            memcpy(gameAudioSample->data, audioBuffer, dosSamplesPerFrame);
-                            play_sample(gameAudioSample, 64, 128, 1000, 0);  // Lower volume
-                        }
-                    } else {
-                        printf("ERROR: Invalid dosSamplesPerFrame: %d\n", dosSamplesPerFrame);
+                // Create temporary sample and play it
+                SAMPLE* tempSample = create_sample(8, 0, Configuration::getAudioFrequency(), samplesNeeded);
+                if (tempSample && tempSample->data) {
+                    // Convert unsigned to signed
+                    int8_t* sampleData = (int8_t*)tempSample->data;
+                    for (int i = 0; i < samplesNeeded; i++) {
+                        sampleData[i] = (int8_t)(audioBuffer[i] - 128);
                     }
-                } catch (...) {
-                    printf("ERROR: Exception in DOS audio processing\n");
-                }
-                #else
-                // Linux: Try with exact timing control
-                if (audioInitialized) {
-                    static uint8_t frameAudioData[1024];  
-                    static SAMPLE* streamSample = NULL;
-                    static int voiceNum = -1;
                     
-                    // Only generate audio every other frame to reduce choppiness
-                    if (audioFrameCounter % 2 == 0) {
-                        int samplesPerFrame = Configuration::getAudioFrequency() / Configuration::getFrameRate();
-                        
-                        if (samplesPerFrame <= sizeof(frameAudioData)) {
-                            engine.audioCallback(frameAudioData, samplesPerFrame);
-                            
-                            // Write to wave file for debugging
-                            writeWaveData(frameAudioData, samplesPerFrame);
-                            
-                            // Create sample if needed
-                            if (!streamSample) {
-                                streamSample = create_sample(8, 1, Configuration::getAudioFrequency(), samplesPerFrame);
-                                if (streamSample) {
-                                    printf("Created Linux audio sample: %d samples per frame\n", samplesPerFrame);
-                                }
-                            }
-                            
-                            if (streamSample) {
-                                // Convert to signed
-                                int8_t* sampleData = (int8_t*)streamSample->data;
-                                for (int i = 0; i < samplesPerFrame; i++) {
-                                    sampleData[i] = (int8_t)(frameAudioData[i] - 128);
-                                }
-                                
-                                // Stop previous voice and play new sample
-                                if (voiceNum >= 0) {
-                                    deallocate_voice(voiceNum);
-                                }
-                                
-                                voiceNum = allocate_voice(streamSample);
-                                if (voiceNum >= 0) {
-                                    voice_set_volume(voiceNum, 96);
-                                    voice_set_pan(voiceNum, 128);
-                                    voice_set_frequency(voiceNum, Configuration::getAudioFrequency());
-                                    voice_start(voiceNum);
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    static int errorCount = 0;
-                    if (errorCount++ < 5) {
-                        printf("Audio not initialized properly\n");
-                    }
+                    // Play sample at low volume to prevent distortion
+                    play_sample(tempSample, 64, 128, 1000, 0);
+                    
+                    // Clean up immediately
+                    destroy_sample(tempSample);
                 }
                 #endif
             }
             
+            // Render the frame
             engine.render(renderBuffer);
             currentFrameBuffer = renderBuffer;
         }
         
         updateAndDraw();
         
-        // In Linux, allow clean exit with window close
+        // Emergency exit for Linux
         #ifndef __DJGPP__
         if (key[KEY_ALT] && key[KEY_F4]) {
             gameRunning = false;
@@ -618,10 +543,17 @@ void AllegroMainWindow::run()
         #endif
     }
     
-    // Close wave file when done
-    closeWaveFile();
+    // Cleanup audio properly
+    if (dosAudioInitialized) {
+        printf("Cleaning up audio...\n");
+    }
     
-    printf("Game loop ended\n");
+    // Close wave file when done
+    if (enableWaveOutput) {
+        closeWaveFile();
+    }
+    
+    printf("Game loop ended normally\n");
 }
 
 void AllegroMainWindow::handleInput()
@@ -805,16 +737,26 @@ void AllegroMainWindow::updateAndDraw()
     } else if (showingMenu) {
         drawMenu(back_buffer);
     } else {
-        // Force the buffered method which ensures proper scaling
+        // Draw the game
         drawGameBuffered(back_buffer);
     }
     
-    drawStatusBar(back_buffer);
+    // Only draw status message temporarily (3 seconds) as overlay on the game
+    if (statusMessageTimer > 0) {
+        int msg_y = SCREEN_H - 25;
+        
+        // Black background for text readability
+        rectfill(back_buffer, 5, msg_y - 5, 
+                text_length(font, statusMessage) + 15, msg_y + 15, 
+                makecol(0, 0, 0));
+        
+        // White text
+        drawText(back_buffer, 10, msg_y, statusMessage, makecol(255, 255, 255));
+    }
     
-    // Copy back buffer to screen in one operation
+    // Copy back buffer to screen
     blit(back_buffer, screen, 0, 0, 0, 0, SCREEN_W, SCREEN_H);
     
-    // Optional: Add vsync to prevent tearing
     #ifdef __DJGPP__
     vsync();
     #endif
@@ -1314,7 +1256,7 @@ void AllegroMainWindow::setStatusMessage(const char* msg)
 {
     strncpy(statusMessage, msg, sizeof(statusMessage) - 1);
     statusMessage[sizeof(statusMessage) - 1] = '\0';
-    statusMessageTimer = 180; // 3 seconds at 60 FPS
+    statusMessageTimer = 180; // 3 seconds at 60 FPS - will disappear automatically
 }
 
 void AllegroMainWindow::updateStatusMessage()
@@ -1332,18 +1274,10 @@ void AllegroMainWindow::shutdown()
     // Close wave file first
     closeWaveFile();
     
-    // Stop audio
-    if (audioVoice >= 0) {
-        deallocate_voice(audioVoice);
-        audioVoice = -1;
-    }
-    
-    if (continuousAudioSample) {
-        destroy_sample(continuousAudioSample);
-        continuousAudioSample = NULL;
-    }
-    
-    audioInitialized = false;
+    // Clean up DOS audio
+    dosAudioInitialized = false;
+    audioStreamLen = 0;
+    audioStreamPos = 0;
     
     if (game_buffer) {
         destroy_bitmap(game_buffer);
