@@ -160,7 +160,6 @@ case "${1:-dos}" in
         $DJGPP_IMAGE \
         /bin/sh -c "
             mkdir -p /src/$BUILD_DIR/obj && 
-            set -x
             g++ -c /src/source/Configuration.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Configuration.o -O2 -fpermissive -w && 
             g++ -c /src/source/Emulation/APU.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/APU.o -O2 -fpermissive -w && 
             g++ -c /src/source/Emulation/Controller.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Controller.o -O2 -fpermissive -w && 
@@ -175,13 +174,11 @@ case "${1:-dos}" in
             g++ -c /src/source/dos_main.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Main.o -O2 -fpermissive -w && 
             g++ /src/$BUILD_DIR/obj/*.o -lalleg -lm -L/src/$BUILD_DIR/source-install/lib -o /src/$BUILD_DIR/smb.exe && 
             exe2coff /src/$BUILD_DIR/smb.exe && 
-            set +x
             cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/smb.exe &&
             echo 'Quick compile complete!'
-            rm /src/$BUILD_DIR/smb -f
         "
-    
-    echo "🎮 SMB DOS Emulator compiled!"
+    rm build/dos/smb -f
+    echo "🎮 SMB DOS Virtualizer compiled!"
     echo "📁 Files:"
     ls -la $BUILD_DIR/*.exe $BUILD_DIR/*.EXE 2>/dev/null || true
     ;;
