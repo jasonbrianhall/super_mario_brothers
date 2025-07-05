@@ -128,19 +128,28 @@ END_OF_FUNCTION(timer_callback)
 void audio_stream_callback(void* buffer, int len)
 {
     if (!smbEngine || !Configuration::getAudioEnabled()) {
-        // Fill with silence (0 for signed, 128 for unsigned)
-        memset(buffer, 0, len);  // Try 0 instead of 128
+        // CRITICAL: Use 0 for signed audio silence (not 128)
+        memset(buffer, 0, len);
         return;
     }
     
-    // Get audio data
-    uint8_t temp_buffer[2048];
-    smbEngine->audioCallback(temp_buffer, len);
+    // Use a properly sized buffer
+    static uint8_t temp_buffer[4096];
+    int actual_len = (len > 4096) ? 4096 : len;
     
-    // Convert unsigned to signed if needed
+    // Get unsigned audio from engine (same as GTK version does)
+    smbEngine->audioCallback(temp_buffer, actual_len);
+    
+    // Convert unsigned 8-bit to signed 8-bit (CRITICAL STEP)
     int8_t* signed_buffer = (int8_t*)buffer;
-    for (int i = 0; i < len; i++) {
+    for (int i = 0; i < actual_len; i++) {
+        // Convert range [0,255] to [-128,127] 
         signed_buffer[i] = (int8_t)(temp_buffer[i] - 128);
+    }
+    
+    // Fill remaining buffer with silence if needed
+    if (len > actual_len) {
+        memset(signed_buffer + actual_len, 0, len - actual_len);
     }
 }
 END_OF_FUNCTION(audio_stream_callback)
@@ -240,7 +249,7 @@ bool AllegroMainWindow::initializeAllegro()
             int freq = Configuration::getAudioFrequency();
             int samples = freq / Configuration::getFrameRate();
             
-            audiostream = play_audio_stream(samples, 8, FALSE, freq, 255, 128);
+            audiostream = play_audio_stream(samples, 8, FALSE, freq, 200, 128);
             if (!audiostream) {
                 printf("Failed to create audio stream\n");
                 dosAudioInitialized = false;

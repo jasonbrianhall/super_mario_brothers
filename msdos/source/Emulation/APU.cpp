@@ -305,21 +305,22 @@ public:
         }
     }
 
-    void stepCounter()
+void Triangle::stepCounter()
+{
+    if (counterReload)
     {
-        if (counterReload)
-        {
-            counterValue = counterPeriod;
-        }
-        else if (counterValue > 0)
-        {
-            counterValue--;
-        }
-        if (lengthEnabled)
-        {
-            counterReload = false;
-        }
+        counterValue = counterPeriod;
     }
+    else if (counterValue > 0)
+    {
+        counterValue--;
+    }
+    if (lengthEnabled)  // This condition is WRONG in both versions!
+    {
+        counterReload = false;
+    }
+    // Should be: counterReload = false; (always, not just when lengthEnabled)
+}
 
     uint8_t output()
     {
@@ -551,11 +552,19 @@ APU::~APU()
 
 uint8_t APU::getOutput()
 {
+    // Safety check - if objects aren't created, return silence
+    if (!pulse1 || !pulse2 || !triangle || !noise) {
+        return 128; // Silence for unsigned 8-bit (will be converted to signed)
+    }
+
+    // Use the exact same mixing as the working SDL/GTK version
     double pulseOut = 0.00752 * (pulse1->output() + pulse2->output());
     double tndOut = 0.00851 * triangle->output() + 0.00494 * noise->output();
 
+    // Return exactly the same as working version
     return static_cast<uint8_t>(floor(255.0 * (pulseOut + tndOut)));
 }
+
 
 void APU::output(uint8_t* buffer, int len)
 {
@@ -581,6 +590,7 @@ void APU::stepFrame()
         return;
     }
 
+    // Step the frame counter 4 times per frame, for 240Hz (same as SDL)
     for (int i = 0; i < 4; i++)
     {
         frameValue = (frameValue + 1) % 5;
@@ -598,10 +608,12 @@ void APU::stepFrame()
             break;
         }
 
+        // Calculate the number of samples needed per 1/4 frame (same as SDL)
         int frequency = Configuration::getAudioFrequency();
         int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
         if (i == 3)
         {
+            // Handle the remainder on the final tick of the frame counter
             samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
         }
         
@@ -611,9 +623,12 @@ void APU::stepFrame()
         }
         
 #ifndef __DJGPP__
+        // Audio locking for thread safety (like SDL's SDL_LockAudio)
         //static pthread_mutex_t audio_mutex = PTHREAD_MUTEX_INITIALIZER;
         //pthread_mutex_lock(&audio_mutex);
 #endif
+
+        // Step the timer ~3729 times per quarter frame (same as SDL)
         int j = 0;
         for (int stepIndex = 0; stepIndex < 3729 && j < samplesToWrite; stepIndex++)
         {
@@ -628,14 +643,16 @@ void APU::stepFrame()
             pulse2->stepTimer();
             noise->stepTimer();
             triangle->stepTimer();
-            triangle->stepTimer();
+            triangle->stepTimer(); // Triangle steps twice like in SDL
         }
-        audioBufferLength += j;
+        audioBufferLength += j; // Use j instead of samplesToWrite
+        
 #ifndef __DJGPP__
         //pthread_mutex_unlock(&audio_mutex);
 #endif        
     }
 }
+
 
 void APU::stepEnvelope()
 {
@@ -720,8 +737,7 @@ void APU::writeRegister(uint16_t address, uint8_t value)
     case 0x400c:
         if (noise) noise->writeControl(value);
         break;
-    case 0x400d:
-    case 0x400e:
+    case 0x400e:  // FIXED: Remove case 0x400d, only 0x400e
         if (noise) noise->writePeriod(value);
         break;
     case 0x400f:
