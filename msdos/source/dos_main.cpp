@@ -676,7 +676,15 @@ void AllegroMainWindow::run()
     static int frameCounter = 0;
     
  while (gameRunning) {
-    clock_t frameStart = clock();    
+    #ifdef __DJGPP__
+    // DJGPP: Use high-resolution timer
+    static uclock_t frameStart = 0;
+    frameStart = uclock();
+    #else
+    // Other platforms: Use standard clock
+    clock_t frameStart = clock();
+    #endif
+    
     handleInput();
     
     if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
@@ -699,6 +707,18 @@ void AllegroMainWindow::run()
     
     updateAndDraw();
     
+    #ifdef __DJGPP__
+    // Calculate elapsed time using high-resolution timer
+    uclock_t frameEnd = uclock();
+    double frameTime = ((double)(frameEnd - frameStart)) / UCLOCKS_PER_SEC * 1000.0; // Convert to milliseconds
+    
+    int targetFrameTime = 1000 / Configuration::getFrameRate();
+    int sleepTime = targetFrameTime - (int)frameTime;
+    
+    if (sleepTime > 0) {
+        (sleepTime);
+    }
+    #else
     // Calculate how much time has passed and sleep for remaining time
     clock_t frameEnd = clock();
     double frameTime = ((double)(frameEnd - frameStart)) / CLOCKS_PER_SEC * 1000.0; // Convert to milliseconds
@@ -709,11 +729,8 @@ void AllegroMainWindow::run()
     if (sleepTime > 0) {
         rest(sleepTime);
     }
-    // If sleepTime <= 0, we're running behind and should continue immediately
+    #endif
     
-    if (key[KEY_ALT] && key[KEY_F4]) {
-        gameRunning = false;
-    }
 }
     
     if (dosAudioInitialized) {
