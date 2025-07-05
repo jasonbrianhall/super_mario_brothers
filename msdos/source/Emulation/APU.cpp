@@ -6,10 +6,12 @@
 #include <dos.h>
 #include <pc.h>
 #include <dpmi.h>
+#else
+#include <allegro.h>
+#include <pthread.h>
 #endif
 
 #include "../Configuration.hpp"
-
 #include "APU.hpp"
 
 static const uint8_t lengthTable[] = {
@@ -548,39 +550,16 @@ APU::~APU()
 
 uint8_t APU::getOutput()
 {
-    // Get raw channel outputs (0-15 range)
-    uint8_t pulse1Out = pulse1->output();
-    uint8_t pulse2Out = pulse2->output();
-    uint8_t triangleOut = triangle->output();
-    uint8_t noiseOut = noise->output();
-    
-    // Simpler, more accurate NES mixer
-    // Based on Blargg's NES sound quality doc
-    double pulse_out = 0;
-    if (pulse1Out || pulse2Out) {
-        pulse_out = 95.88 / (8128.0 / (pulse1Out + pulse2Out) + 100.0);
-    }
-    
-    double tnd_out = 0;
-    if (triangleOut || noiseOut) {
-        tnd_out = 159.79 / (1.0 / (triangleOut / 8227.0 + noiseOut / 12241.0) + 100.0);
-    }
-    
-    // Combine and scale to 8-bit unsigned
-    double output = pulse_out + tnd_out;
-    
-    // Scale to 8-bit unsigned (0-255, 128 = silence)
-    int sample = (int)(output * 255.0 + 128.5);
-    if (sample > 255) sample = 255;
-    if (sample < 0) sample = 0;
-    
-    return (uint8_t)sample;
+    double pulseOut = 0.00752 * (pulse1->output() + pulse2->output());
+    double tndOut = 0.00851 * triangle->output() + 0.00494 * noise->output();
+
+    return static_cast<uint8_t>(floor(255.0 * (pulseOut + tndOut)));
 }
 
 void APU::output(uint8_t* buffer, int len)
 {
-    // Use the exact same buffer management as the original
     len = (len > audioBufferLength) ? audioBufferLength : len;
+    memcpy(buffer, audioBuffer, len);
     if (len > audioBufferLength)
     {
         memcpy(buffer, audioBuffer, audioBufferLength);
@@ -590,87 +569,63 @@ void APU::output(uint8_t* buffer, int len)
     {
         memcpy(buffer, audioBuffer, len);
         audioBufferLength -= len;
-        memmove(audioBuffer, audioBuffer + len, audioBufferLength);
+        memcpy(audioBuffer, audioBuffer + len, audioBufferLength);
     }
 }
 
 void APU::stepFrame()
 {
-    // Comprehensive safety checks
-    if (!pulse1 || !pulse2 || !triangle || !noise) {
-        // Don't spam error messages
-        static int errorCount = 0;
-        if (errorCount++ < 3) {
-            printf("ERROR: APU objects are null\n");
-        }
-        return;
-    }
-
-    // Reset buffer if it's getting too full
-    if (audioBufferLength >= AUDIO_BUFFER_LENGTH - 200) {
-        audioBufferLength = 0;  // Reset buffer instead of failing
-    }
-
-    int frequency = Configuration::getAudioFrequency();
-    int frameRate = Configuration::getFrameRate();
-    
-    // Validate configuration
-    if (frequency <= 0 || frequency > 48000 || frameRate <= 0 || frameRate > 120) {
-        static int configErrorCount = 0;
-        if (configErrorCount++ < 3) {
-            printf("ERROR: Invalid audio config: freq=%d, rate=%d\n", frequency, frameRate);
-        }
-        return;
-    }
-
-    // Simplified frame stepping - less likely to crash
     for (int i = 0; i < 4; i++)
     {
         frameValue = (frameValue + 1) % 5;
-        
-        // Step audio components
-        if (frameValue == 1 || frameValue == 3) {
+        switch (frameValue)
+        {
+        case 1:
+        case 3:
             stepEnvelope();
-        } else if (frameValue == 0 || frameValue == 2) {
+            break;
+        case 0:
+        case 2:
             stepEnvelope();
             stepSweep();
             stepLength();
+            break;
         }
 
-        // Calculate samples needed for this quarter frame
-        int samplesToWrite = frequency / (frameRate * 4);
-        if (i == 3) {
-            // Handle remainder on last iteration
-            samplesToWrite = (frequency / frameRate) - (3 * frequency / (frameRate * 4));
+        int frequency = Configuration::getAudioFrequency();
+        int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
+        if (i == 3)
+        {
+            samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
         }
         
-        // Clamp to reasonable values
-        if (samplesToWrite < 1) samplesToWrite = 1;
-        if (samplesToWrite > 500) samplesToWrite = 500;
-        
-        // Generate audio samples with simplified timing
-        int samplesGenerated = 0;
-        for (int step = 0; step < 1000 && samplesGenerated < samplesToWrite; step++) {
-            // Step the audio hardware every iteration
-            if (pulse1) pulse1->stepTimer();
-            if (pulse2) pulse2->stepTimer();
-            if (noise) noise->stepTimer();
-            if (triangle) {
-                triangle->stepTimer();
-                triangle->stepTimer();  // Triangle channel runs at 2x
+        #ifndef __DJGPP__
+        static pthread_mutex_t audio_mutex = PTHREAD_MUTEX_INITIALIZER;
+        pthread_mutex_lock(&audio_mutex);
+        #endif
+
+        int j = 0;
+        for (int stepIndex = 0; stepIndex < 3729; stepIndex++)
+        {
+            if (j < samplesToWrite &&
+                (stepIndex / 3729.0) > (j / (double)samplesToWrite))
+            {
+                uint8_t sample = getOutput();
+                audioBuffer[audioBufferLength + j] = sample;
+                j++;
             }
-            
-            // Generate a sample every few steps
-            if (step % (1000 / samplesToWrite) == 0 && samplesGenerated < samplesToWrite) {
-                if (audioBufferLength < AUDIO_BUFFER_LENGTH - 1) {
-                    audioBuffer[audioBufferLength] = getOutput();
-                    audioBufferLength++;
-                    samplesGenerated++;
-                } else {
-                    break;  // Buffer full
-                }
-            }
+
+            pulse1->stepTimer();
+            pulse2->stepTimer();
+            noise->stepTimer();
+            triangle->stepTimer();
+            triangle->stepTimer();
         }
+        audioBufferLength += samplesToWrite;
+        
+        #ifndef __DJGPP__
+        pthread_mutex_unlock(&audio_mutex);
+        #endif
     }
 }
 

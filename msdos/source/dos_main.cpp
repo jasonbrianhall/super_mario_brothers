@@ -20,6 +20,8 @@
 #include <pc.h>
 #endif
 
+static AUDIOSTREAM* audiostream = NULL;
+
 // Global variables for DOS compatibility
 static SMBEngine* smbEngine = NULL;
 static uint32_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
@@ -199,87 +201,57 @@ bool AllegroMainWindow::initializeAllegro()
     }
     printf("Allegro initialized successfully\n");
     
-    // Install keyboard
     if (install_keyboard() < 0) {
         printf("Failed to install keyboard\n");
         return false;
     }
     printf("Keyboard installed\n");
     
-    // Install timer
     if (install_timer() < 0) {
         printf("Failed to install timer\n");
         return false;
     }
     printf("Timer installed\n");
     
-    // Install joystick (optional, don't fail if not present)
     if (install_joystick(JOY_TYPE_AUTODETECT) == 0) {
         printf("Joystick installed\n");
     } else {
         printf("No joystick detected\n");
     }
     
-    // Initialize audio flag
     dosAudioInitialized = false;
     
-    // Install sound if audio is enabled
     if (Configuration::getAudioEnabled()) {
         printf("Attempting to initialize audio...\n");
         
-        #ifdef __DJGPP__
-        // DOS: Try simple autodetect first - safest approach
         if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) == 0) {
-            printf("Audio initialized successfully with autodetect\n");
+            printf("Audio initialized successfully\n");
             dosAudioInitialized = true;
-        } else {
-            printf("Autodetect failed, trying specific drivers...\n");
             
-            // Try Sound Blaster 16 (most compatible)
-            if (install_sound(DIGI_SB16, MIDI_NONE, NULL) == 0) {
-                printf("Audio initialized with SB16\n");
-                dosAudioInitialized = true;
-            } else if (install_sound(DIGI_SBPRO, MIDI_NONE, NULL) == 0) {
-                printf("Audio initialized with SB Pro\n");
-                dosAudioInitialized = true;
-            } else if (install_sound(DIGI_SB20, MIDI_NONE, NULL) == 0) {
-                printf("Audio initialized with SB 2.0\n");
-                dosAudioInitialized = true;
-            } else {
-                printf("All audio drivers failed: %s\n", allegro_error);
-                printf("Continuing without sound...\n");
+            set_volume(128, 0);
+            
+            int freq = Configuration::getAudioFrequency();
+            int samples = freq / Configuration::getFrameRate();
+            
+            audiostream = play_audio_stream(samples, 8, FALSE, freq, 255, 128);
+            if (!audiostream) {
+                printf("Failed to create audio stream\n");
                 dosAudioInitialized = false;
+            } else {
+                printf("Audio stream started: %d Hz\n", freq);
             }
-        }
-        
-        if (dosAudioInitialized) {
-            printf("Audio frequency: %d Hz\n", Configuration::getAudioFrequency());
             
-            // Set safe volume levels
-            set_volume(96, 0);  // Lower volume to reduce distortion
-            
-            // Reserve a few voices for smoother playback
-            reserve_voices(2, 0);  // Just 2 voices for safety
-            
-            printf("Audio initialization complete\n");
-        }
-        #else
-        // Linux audio code (simplified)
-        if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) == 0) {
-            printf("Linux audio initialized\n");
         } else {
-            printf("Linux audio failed, continuing without sound\n");
+            printf("Audio initialization failed: %s\n", allegro_error);
+            dosAudioInitialized = false;
         }
-        #endif
     } else {
         printf("Audio disabled in configuration\n");
     }
     
-    // Lock timer function for DOS
     LOCK_VARIABLE(timer_counter);
     LOCK_FUNCTION(timer_callback);
     
-    // Install timer at configured frame rate
     if (install_int_ex(timer_callback, BPS_TO_TIMER(Configuration::getFrameRate())) < 0) {
         printf("Failed to install timer interrupt\n");
         return false;
@@ -289,7 +261,6 @@ bool AllegroMainWindow::initializeAllegro()
     
     return true;
 }
-
 bool AllegroMainWindow::isValidJoystickButton(int joyIndex, int buttonNum)
 {
     if (joyIndex < 0 || joyIndex >= num_joysticks) return false;
@@ -686,22 +657,14 @@ void AllegroMainWindow::setupMenu()
 void AllegroMainWindow::run() 
 {
     printf("=== Starting Super Mario Bros ===\n");
-    // Force initial state
     
     gamePaused = false;
     showingMenu = false;
     currentDialog = DIALOG_NONE;
     
-    // Initialize the SMB engine
     SMBEngine engine(const_cast<unsigned char*>(smbRomData));
     smbEngine = &engine;
     engine.reset();
-    
-    // Initialize wave file for debugging ONLY if audio is working
-    if (Configuration::getAudioEnabled() && dosAudioInitialized) {
-        initWaveFile();
-        printf("Wave file debugging enabled\n");
-    }
     
     gameRunning = true;
     setStatusMessage("Game started - Press ESC for menu");
@@ -710,19 +673,14 @@ void AllegroMainWindow::run()
     printf("Resolution: %dx%d\n", SCREEN_W, SCREEN_H);
     printf("Audio: %s\n", dosAudioInitialized ? "Enabled" : "Disabled");
     
-    // Simple audio variables
-    static uint8_t audioBuffer[1024];
     static int frameCounter = 0;
     
-    // FIXED: Replace the problematic timer loop
-    // Main game loop
     while (gameRunning) {
         #ifdef __DJGPP__
-        // DOS: Simple timer approach - don't get stuck waiting
         if (timer_counter > 0) {
-            //rest(1); // Consume one timer tick
+            
         } else {
-            rest(16); // ~60 FPS fallback - prevent infinite waiting
+            rest(16);
         }
         #else
         rest(1000 / Configuration::getFrameRate());
@@ -731,29 +689,25 @@ void AllegroMainWindow::run()
         handleInput();
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
-            // Update game
             engine.update();
             
-            // Simple audio that was working before
-            if (dosAudioInitialized && Configuration::getAudioEnabled()) {
-                frameCounter++;
-                
-                int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
-                if (samplesNeeded > 1024) samplesNeeded = 1024;
-                if (samplesNeeded < 100) samplesNeeded = 100;
-                
-                // Get audio from SMB engine
-                engine.audioCallback(audioBuffer, samplesNeeded);                
+            if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
+                void* audiobuf = get_audio_stream_buffer(audiostream);
+                if (audiobuf) {
+                    int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
+                    if (samplesNeeded > 1024) samplesNeeded = 1024;
+                    
+                    engine.audioCallback((uint8_t*)audiobuf, samplesNeeded);
+                    free_audio_stream_buffer(audiostream);
+                }
             }
             
-            // Render the frame
             engine.render(renderBuffer);
             currentFrameBuffer = renderBuffer;
         }
         
         updateAndDraw();
         
-        // Emergency exit for Linux
         #ifndef __DJGPP__
         if (key[KEY_ALT] && key[KEY_F4]) {
             gameRunning = false;
@@ -761,14 +715,8 @@ void AllegroMainWindow::run()
         #endif
     }
     
-    // Cleanup audio properly
     if (dosAudioInitialized) {
         printf("Cleaning up audio...\n");
-    }
-    
-    // Close wave file when done
-    if (enableWaveOutput) {
-        closeWaveFile();
     }
     
     printf("Game loop ended normally\n");
@@ -2530,10 +2478,11 @@ void AllegroMainWindow::updateStatusMessage()
 
 void AllegroMainWindow::shutdown() 
 {
-    // Close wave file first
-    closeWaveFile();
+    if (audiostream) {
+        stop_audio_stream(audiostream);
+        audiostream = NULL;
+    }
     
-    // Clean up DOS audio
     dosAudioInitialized = false;
     audioStreamLen = 0;
     audioStreamPos = 0;
@@ -2548,7 +2497,6 @@ void AllegroMainWindow::shutdown()
         back_buffer = NULL;
     }
     
-    // Save configuration before shutdown
     saveControlConfig();
     
     allegro_exit();
