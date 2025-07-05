@@ -1255,34 +1255,7 @@ void AllegroMainWindow::checkPlayerInput(Player player)
             joystick_available = true;
         }
     }
-if (num_joysticks > 0) {
-    static FILE* debug_file = NULL;
-    static bool buttons_pressed[32] = {false}; // Track previous state to avoid spam
-    
-    // Open file on first use - 8.3 filename format
-    if (!debug_file) {
-        debug_file = fopen("JOYDEBUG.TXT", "w");
-        if (debug_file) {
-            fprintf(debug_file, "Joystick Debug Log\n");
-            fprintf(debug_file, "==================\n");
-            fflush(debug_file);
-        }
-    }
-    
-    if (debug_file) {
-        for (int i = 0; i < joy[0].num_buttons && i < 32; i++) {
-            bool current_pressed = joy[0].button[i].b;
-            
-            // Only log when button state changes (pressed, not held)
-            if (current_pressed && !buttons_pressed[i]) {
-                fprintf(debug_file, "Button %d pressed!\n", i);
-                fflush(debug_file); // Force write immediately
-            }
-            
-            buttons_pressed[i] = current_pressed;
-        }
-    }
-}
+
     if (player == PLAYER_1) {
         Controller& controller = smbEngine->getController1();
         
