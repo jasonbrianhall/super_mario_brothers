@@ -159,7 +159,10 @@ void convertBuffer16ToBitmap16(uint16_t* buffer16, BITMAP* bitmap,
                               int dest_x, int dest_y, int dest_w, int dest_h, int scale);
 void convertBuffer16ToBitmapGeneric(uint16_t* buffer16, BITMAP* bitmap, 
                                    int dest_x, int dest_y, int dest_w, int dest_h, int scale);
-// Add this to the private section:
+
+void handleMenuInputNoEsc();
+void handleGameInputNoEsc();
+void handleDialogInputNoEsc();
 void convertBuffer16ToBitmapScaled(uint16_t* buffer16, BITMAP* bitmap, int width, int height);                                   
 };
 

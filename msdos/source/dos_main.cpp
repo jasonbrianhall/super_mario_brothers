@@ -556,6 +556,7 @@ void AllegroMainWindow::run()
     printf("Game loop ended normally\n");
 }
 
+
 void AllegroMainWindow::handleInput()
 {
     // Poll input devices
@@ -564,16 +565,107 @@ void AllegroMainWindow::handleInput()
         poll_joystick();
     }
     
+    // Handle ESC key globally with proper state tracking
+    static bool escPressed = false;
+    bool escCurrentlyPressed = (key[KEY_ESC] != 0);
+    
+    // ESC key was just pressed (transition from not pressed to pressed)
+    if (escCurrentlyPressed && !escPressed) {
+        if (currentDialog != DIALOG_NONE) {
+            // Close dialog
+            currentDialog = DIALOG_NONE;
+            if (!showingMenu) {
+                gamePaused = false;
+                setStatusMessage("Game Resumed");
+            }
+        } else if (showingMenu) {
+            // Close menu
+            showingMenu = false;
+            gamePaused = false;
+            setStatusMessage("Game Resumed");
+        } else {
+            // Open menu
+            showingMenu = true;
+            gamePaused = true;
+            setStatusMessage("Game Paused - Menu Active");
+        }
+    }
+    escPressed = escCurrentlyPressed;
+    
+    // Handle other input based on current state
     if (currentDialog != DIALOG_NONE) {
-        handleDialogInput();
+        handleDialogInputNoEsc();
     } else if (showingMenu) {
-        handleMenuInput();
+        handleMenuInputNoEsc();
     } else {
-        handleGameInput();
+        handleGameInputNoEsc();
     }
     
     updateStatusMessage();
 }
+
+void AllegroMainWindow::handleDialogInputNoEsc()
+{
+    if (isCapturingInput) {
+        // Wait for key press to capture
+        if (keypressed()) {
+            int k = readkey();
+            int scancode = k >> 8;
+            
+            if (scancode != KEY_ESC) {
+                // Assign the captured key based on current capture context
+                // This would be expanded based on which control is being configured
+                isCapturingInput = false;
+                strcpy(currentCaptureKey, "");
+                setStatusMessage("Key captured");
+            } else {
+                isCapturingInput = false;
+                strcpy(currentCaptureKey, "");
+                setStatusMessage("Capture cancelled");
+            }
+        }
+        return;
+    }
+    
+    // ESC is handled globally now, so we don't need to handle it here
+    // Just handle other dialog-specific keys if needed
+}
+
+void AllegroMainWindow::handleGameInputNoEsc()
+{
+    // Check for pause (only when menu is not showing)
+    static bool pPressed = false;
+    if (key[KEY_P] && !pPressed) {
+        gamePaused = !gamePaused;
+        setStatusMessage(gamePaused ? "Game Paused" : "Game Resumed");
+        pPressed = true;
+        return;
+    }
+    if (!key[KEY_P]) {
+        pPressed = false;
+    }
+    
+    // Check for reset (only when menu is not showing)
+    static bool rPressed = false;
+    if (key[KEY_R] && key[KEY_LCONTROL] && !rPressed) {
+        if (smbEngine) {
+            smbEngine->reset();
+            setStatusMessage("Game Reset");
+        }
+        rPressed = true;
+        return;
+    }
+    if (!key[KEY_R]) {
+        rPressed = false;
+    }
+    
+    // Process player input ONLY if game is not paused
+    if (!gamePaused) {
+        checkPlayerInput(PLAYER_1);
+        checkPlayerInput(PLAYER_2);
+    }
+}
+
 
 void AllegroMainWindow::handleMenuInput()
 {
@@ -628,6 +720,11 @@ void AllegroMainWindow::handleDialogInput()
         
         if (scancode == KEY_ESC) {
             currentDialog = DIALOG_NONE;
+            // When closing dialog, resume game if menu was not originally showing
+            if (!showingMenu) {
+                gamePaused = false;
+                setStatusMessage("Game Resumed");
+            }
         }
     }
 }
@@ -638,6 +735,8 @@ void AllegroMainWindow::handleGameInput()
     static bool escPressed = false;
     if (key[KEY_ESC] && !escPressed) {
         showingMenu = true;
+        gamePaused = true;  // Explicitly pause the game when menu opens
+        setStatusMessage("Game Paused - Menu Active");
         escPressed = true;
         return;
     }
@@ -645,7 +744,7 @@ void AllegroMainWindow::handleGameInput()
         escPressed = false;
     }
     
-    // Check for pause
+    // Check for pause (only when menu is not showing)
     static bool pPressed = false;
     if (key[KEY_P] && !pPressed) {
         gamePaused = !gamePaused;
@@ -657,7 +756,7 @@ void AllegroMainWindow::handleGameInput()
         pPressed = false;
     }
     
-    // Check for reset
+    // Check for reset (only when menu is not showing)
     static bool rPressed = false;
     if (key[KEY_R] && key[KEY_LCONTROL] && !rPressed) {
         if (smbEngine) {
@@ -671,9 +770,11 @@ void AllegroMainWindow::handleGameInput()
         rPressed = false;
     }
     
-    // Process player input
-    checkPlayerInput(PLAYER_1);
-    checkPlayerInput(PLAYER_2);
+    // Process player input ONLY if game is not paused
+    if (!gamePaused) {
+        checkPlayerInput(PLAYER_1);
+        checkPlayerInput(PLAYER_2);
+    }
 }
 
 void AllegroMainWindow::checkPlayerInput(Player player)
@@ -1202,12 +1303,35 @@ void AllegroMainWindow::menuDown()
     }
 }
 
+void AllegroMainWindow::handleMenuInputNoEsc()
+{
+    // Check for key presses
+    if (keypressed()) {
+        int k = readkey();
+        int scancode = k >> 8;
+        
+        switch (scancode) {
+            case KEY_UP:
+                menuUp();
+                break;
+            case KEY_DOWN:
+                menuDown();
+                break;
+            case KEY_ENTER:
+                menuSelect();
+                break;
+            // ESC is handled globally, don't handle it here
+        }
+    }
+}
+
 void AllegroMainWindow::menuSelect()
 {
     switch (mainMenu[selectedMenuItem].id) {
         case 1: // Resume Game
             showingMenu = false;
-            gamePaused = false;
+            gamePaused = false;  // Resume the game
+            setStatusMessage("Game Resumed");
             break;
             
         case 2: // Reset Game
@@ -1216,29 +1340,33 @@ void AllegroMainWindow::menuSelect()
                 setStatusMessage("Game Reset");
             }
             showingMenu = false;
-            gamePaused = false;
+            gamePaused = false;  // Resume after reset
             break;
             
         case 3: // Player 1 Controls
             currentDialog = DIALOG_CONTROLS_P1;
             currentConfigPlayer = PLAYER_1;
             showingMenu = false;
+            // Keep game paused while in dialog
             break;
             
         case 4: // Player 2 Controls
             currentDialog = DIALOG_CONTROLS_P2;
             currentConfigPlayer = PLAYER_2;
             showingMenu = false;
+            // Keep game paused while in dialog
             break;
             
         case 5: // Help
             currentDialog = DIALOG_HELP;
             showingMenu = false;
+            // Keep game paused while in dialog
             break;
             
         case 6: // About
             currentDialog = DIALOG_ABOUT;
             showingMenu = false;
+            // Keep game paused while in dialog
             break;
             
         case 7: // Quit
@@ -1250,6 +1378,8 @@ void AllegroMainWindow::menuSelect()
 void AllegroMainWindow::menuEscape()
 {
     showingMenu = false;
+    gamePaused = false;  // Resume the game when exiting menu with ESC
+    setStatusMessage("Game Resumed");
 }
 
 void AllegroMainWindow::setStatusMessage(const char* msg)
