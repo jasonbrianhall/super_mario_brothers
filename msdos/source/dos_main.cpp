@@ -1975,7 +1975,7 @@ void AllegroMainWindow::drawGameBuffered(BITMAP* target)
         if (bitmap_color_depth(target) == 16) {
             convertBuffer16ToBitmap16(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
         } else {
-            convertBuffer16ToBitmapGeneric(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
+            //convertBuffer16ToBitmapGeneric(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
         }
     }
     #else
@@ -1983,7 +1983,7 @@ void AllegroMainWindow::drawGameBuffered(BITMAP* target)
     if (bitmap_color_depth(target) == 16) {
         convertBuffer16ToBitmap16(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
     } else {
-        convertBuffer16ToBitmapGeneric(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
+        //convertBuffer16ToBitmapGeneric(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
     }
     #endif
 }
@@ -2011,7 +2011,7 @@ void AllegroMainWindow::convertBuffer16ToBitmap(uint16_t* buffer16, BITMAP* bitm
         convertBuffer16ToBitmap16(buffer16, bitmap, dest_x, dest_y, dest_w, dest_h, scale);
     } else {
         // Other color depths
-        convertBuffer16ToBitmapGeneric(buffer16, bitmap, dest_x, dest_y, dest_w, dest_h, scale);
+        //convertBuffer16ToBitmapGeneric(buffer16, bitmap, dest_x, dest_y, dest_w, dest_h, scale);
     }
 }
 
@@ -2184,7 +2184,7 @@ void AllegroMainWindow::convertNESBuffer16ToBitmap(uint16_t* nesBuffer, BITMAP* 
         if (bitmap_color_depth(bitmap) == 16) {
             convertBuffer16ToBitmap16(nesBuffer, bitmap, dest_x, dest_y, dest_w, dest_h, scale);
         } else {
-            convertBuffer16ToBitmapGeneric(nesBuffer, bitmap, dest_x, dest_y, dest_w, dest_h, scale);
+            //convertBuffer16ToBitmapGeneric(nesBuffer, bitmap, dest_x, dest_y, dest_w, dest_h, scale);
         }
     }
 }
