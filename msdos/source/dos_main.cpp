@@ -141,7 +141,8 @@ AllegroMainWindow::AllegroMainWindow()
       showingMenu(false), selectedMenuItem(0), inMenu(false),
       isCapturingInput(false), currentDialog(DIALOG_NONE),
       statusMessageTimer(0), currentFrameBuffer(NULL),
-      screenBuffer16(NULL), useDirectRendering(true)
+      screenBuffer16(NULL), useDirectRendering(true),
+      currentCaptureType(CAPTURE_NONE), currentConfigPlayer(PLAYER_1)
 {
     strcpy(statusMessage, "Ready");
     strcpy(currentCaptureKey, "");
@@ -151,6 +152,7 @@ AllegroMainWindow::AllegroMainWindow()
     // Initialize default controls
     setupDefaultControls();
 }
+
 
 AllegroMainWindow::~AllegroMainWindow() 
 {
@@ -286,6 +288,196 @@ bool AllegroMainWindow::initializeAllegro()
     return true;
 }
 
+bool AllegroMainWindow::isValidJoystickButton(int joyIndex, int buttonNum)
+{
+    if (joyIndex >= num_joysticks) return false;
+    if (buttonNum < 0 || buttonNum >= joy[joyIndex].num_buttons) return false;
+    return true;
+}
+
+bool AllegroMainWindow::getJoystickDirection(int joyIndex, int* x_dir, int* y_dir)
+{
+    if (joyIndex >= num_joysticks) return false;
+    if (joy[joyIndex].num_sticks == 0) return false;
+    if (joy[joyIndex].stick[0].num_axis < 2) return false;
+    
+    poll_joystick();
+    
+    int x = joy[joyIndex].stick[0].axis[0].pos;
+    int y = joy[joyIndex].stick[0].axis[1].pos;
+    
+    // Apply deadzone (larger deadzone for better control)
+    const int deadzone = 96;  // Increased from 64 for more precise control
+    
+    *x_dir = 0;
+    *y_dir = 0;
+    
+    if (x < -deadzone) *x_dir = -1;
+    else if (x > deadzone) *x_dir = 1;
+    
+    if (y < -deadzone) *y_dir = -1;
+    else if (y > deadzone) *y_dir = 1;
+    
+    return true;
+}
+
+void AllegroMainWindow::checkPlayerInputFixed(Player player)
+{
+    if (!smbEngine) return;
+    
+    poll_keyboard();
+    if (num_joysticks > 0) {
+        poll_joystick();
+    }
+    
+    if (player == PLAYER_1) {
+        Controller& controller = smbEngine->getController1();
+        
+        // Initialize all inputs as false
+        bool up = false, down = false, left = false, right = false;
+        bool a = false, b = false, start = false, select = false;
+        
+        // Keyboard input
+        if (key[player1Keys.up]) up = true;
+        if (key[player1Keys.down]) down = true;
+        if (key[player1Keys.left]) left = true;
+        if (key[player1Keys.right]) right = true;
+        if (key[player1Keys.button_a]) a = true;
+        if (key[player1Keys.button_b]) b = true;
+        if (key[player1Keys.start]) start = true;
+        if (key[player1Keys.select]) select = true;
+        
+        // Joystick input (Player 1 uses joystick 0)
+        if (num_joysticks > 0) {
+            // Directional input
+            if (player1Joy.use_stick) {
+                // Analog stick with improved deadzone
+                int x_dir, y_dir;
+                if (getJoystickDirection(0, &x_dir, &y_dir)) {
+                    if (x_dir < 0) left = true;
+                    if (x_dir > 0) right = true;
+                    if (y_dir < 0) up = true;
+                    if (y_dir > 0) down = true;
+                }
+            } else {
+                // Digital d-pad - check if digital directions are available
+                if (joy[0].num_sticks > 0 && joy[0].stick[0].num_axis >= 2) {
+                    // Try to use digital flags if available
+                    if (joy[0].stick[0].axis[0].d1) left = true;
+                    if (joy[0].stick[0].axis[0].d2) right = true;
+                    if (joy[0].stick[0].axis[1].d1) up = true;
+                    if (joy[0].stick[0].axis[1].d2) down = true;
+                }
+            }
+            
+            // Button input with validation
+            if (isValidJoystickButton(0, player1Joy.button_a) && joy[0].button[player1Joy.button_a].b) a = true;
+            if (isValidJoystickButton(0, player1Joy.button_b) && joy[0].button[player1Joy.button_b].b) b = true;
+            if (isValidJoystickButton(0, player1Joy.start) && joy[0].button[player1Joy.start].b) start = true;
+            if (isValidJoystickButton(0, player1Joy.select) && joy[0].button[player1Joy.select].b) select = true;
+        }
+        
+        controller.setButtonState(BUTTON_UP, up);
+        controller.setButtonState(BUTTON_DOWN, down);
+        controller.setButtonState(BUTTON_LEFT, left);
+        controller.setButtonState(BUTTON_RIGHT, right);
+        controller.setButtonState(BUTTON_A, a);
+        controller.setButtonState(BUTTON_B, b);
+        controller.setButtonState(BUTTON_START, start);
+        controller.setButtonState(BUTTON_SELECT, select);
+    }
+    else if (player == PLAYER_2) {
+        Controller& controller = smbEngine->getController2();
+        
+        // Initialize all inputs as false
+        bool up = false, down = false, left = false, right = false;
+        bool a = false, b = false, start = false, select = false;
+        
+        // Keyboard input
+        if (key[player2Keys.up]) up = true;
+        if (key[player2Keys.down]) down = true;
+        if (key[player2Keys.left]) left = true;
+        if (key[player2Keys.right]) right = true;
+        if (key[player2Keys.button_a]) a = true;
+        if (key[player2Keys.button_b]) b = true;
+        if (key[player2Keys.start]) start = true;
+        if (key[player2Keys.select]) select = true;
+        
+        // Joystick input for Player 2
+        if (num_joysticks > 1) {
+            // Player 2 uses joystick 1 if available
+            if (player2Joy.use_stick) {
+                int x_dir, y_dir;
+                if (getJoystickDirection(1, &x_dir, &y_dir)) {
+                    if (x_dir < 0) left = true;
+                    if (x_dir > 0) right = true;
+                    if (y_dir < 0) up = true;
+                    if (y_dir > 0) down = true;
+                }
+            } else {
+                // Digital d-pad for joystick 1
+                if (joy[1].num_sticks > 0 && joy[1].stick[0].num_axis >= 2) {
+                    if (joy[1].stick[0].axis[0].d1) left = true;
+                    if (joy[1].stick[0].axis[0].d2) right = true;
+                    if (joy[1].stick[0].axis[1].d1) up = true;
+                    if (joy[1].stick[0].axis[1].d2) down = true;
+                }
+            }
+            
+            if (isValidJoystickButton(1, player2Joy.button_a) && joy[1].button[player2Joy.button_a].b) a = true;
+            if (isValidJoystickButton(1, player2Joy.button_b) && joy[1].button[player2Joy.button_b].b) b = true;
+            if (isValidJoystickButton(1, player2Joy.start) && joy[1].button[player2Joy.start].b) start = true;
+            if (isValidJoystickButton(1, player2Joy.select) && joy[1].button[player2Joy.select].b) select = true;
+        } else if (num_joysticks > 0) {
+            // Share joystick 0 with different buttons for Player 2
+            int offset = 4; // Use buttons 4+ for Player 2
+            if (isValidJoystickButton(0, player2Joy.button_a + offset) && joy[0].button[player2Joy.button_a + offset].b) a = true;
+            if (isValidJoystickButton(0, player2Joy.button_b + offset) && joy[0].button[player2Joy.button_b + offset].b) b = true;
+            if (isValidJoystickButton(0, player2Joy.start + offset) && joy[0].button[player2Joy.start + offset].b) start = true;
+            if (isValidJoystickButton(0, player2Joy.select + offset) && joy[0].button[player2Joy.select + offset].b) select = true;
+        }
+        
+        controller.setButtonState(BUTTON_UP, up);
+        controller.setButtonState(BUTTON_DOWN, down);
+        controller.setButtonState(BUTTON_LEFT, left);
+        controller.setButtonState(BUTTON_RIGHT, right);
+        controller.setButtonState(BUTTON_A, a);
+        controller.setButtonState(BUTTON_B, b);
+        controller.setButtonState(BUTTON_START, start);
+        controller.setButtonState(BUTTON_SELECT, select);
+    }
+}
+
+void AllegroMainWindow::debugJoystickInfo(int joyIndex)
+{
+    if (joyIndex >= num_joysticks) {
+        printf("Joystick %d not available\n", joyIndex);
+        return;
+    }
+    
+    printf("=== Joystick %d Debug Info ===\n", joyIndex);
+    printf("Number of sticks: %d\n", joy[joyIndex].num_sticks);
+    printf("Number of buttons: %d\n", joy[joyIndex].num_buttons);
+    
+    for (int stick = 0; stick < joy[joyIndex].num_sticks; stick++) {
+        printf("Stick %d:\n", stick);
+        printf("  Number of axes: %d\n", joy[joyIndex].stick[stick].num_axis);
+        
+        for (int axis = 0; axis < joy[joyIndex].stick[stick].num_axis; axis++) {
+            printf("  Axis %d:\n", axis);
+            printf("    Position: %d\n", joy[joyIndex].stick[stick].axis[axis].pos);
+            printf("    Digital 1: %d\n", joy[joyIndex].stick[stick].axis[axis].d1);
+            printf("    Digital 2: %d\n", joy[joyIndex].stick[stick].axis[axis].d2);
+        }
+    }
+    
+    printf("Button states: ");
+    for (int btn = 0; btn < joy[joyIndex].num_buttons && btn < 16; btn++) {
+        printf("%d", joy[joyIndex].button[btn].b ? 1 : 0);
+    }
+    printf("\n");
+    printf("===============================\n");
+}
 
 bool AllegroMainWindow::initializeGraphics()
 {
@@ -369,14 +561,167 @@ bool AllegroMainWindow::initializeInput()
     // Clear keyboard buffer
     clear_keybuf();
     
+    // Initialize joystick detection with more comprehensive approach
+    if (install_joystick(JOY_TYPE_AUTODETECT) == 0) {
+        if (num_joysticks > 0) {
+            printf("Joystick initialization successful!\n");
+            printf("Number of joysticks detected: %d\n", num_joysticks);
+            
+            // Test joystick capabilities
+            for (int i = 0; i < num_joysticks && i < 2; i++) {
+                printf("Joystick %d:\n", i);
+                // Note: Allegro 4 JOYSTICK_INFO doesn't have a name field
+                printf("  Sticks: %d\n", joy[i].num_sticks);
+                printf("  Buttons: %d\n", joy[i].num_buttons);
+                
+                if (joy[i].num_sticks > 0) {
+                    printf("  Stick 0 axes: %d\n", joy[i].stick[0].num_axis);
+                    if (joy[i].stick[0].num_axis >= 2) {
+                        printf("    X-axis: axis 0\n");
+                        printf("    Y-axis: axis 1\n");
+                    }
+                }
+                printf("\n");
+            }
+            
+            // Calibrate joysticks
+            printf("Calibrating joysticks...\n");
+            for (int i = 0; i < num_joysticks; i++) {
+                calibrate_joystick(i);
+            }
+            printf("Joystick calibration complete\n");
+            
+        } else {
+            printf("Joystick driver installed but no joysticks detected\n");
+        }
+    } else {
+        printf("Failed to install joystick driver: %s\n", allegro_error);
+        printf("Continuing without joystick support\n");
+    }
+    
     // Poll joystick to get initial state
     if (num_joysticks > 0) {
         poll_joystick();
-        printf("Joystick detected: %d joysticks found\n", num_joysticks);
+        printf("Initial joystick poll completed\n");
+        
+        // Display initial joystick states for debugging
+        for (int i = 0; i < num_joysticks && i < 2; i++) {
+            if (joy[i].num_sticks > 0 && joy[i].stick[0].num_axis >= 2) {
+                printf("Joy %d initial state: X=%d, Y=%d\n", 
+                       i, joy[i].stick[0].axis[0].pos, joy[i].stick[0].axis[1].pos);
+            }
+        }
     }
     
     return true;
 }
+
+const char* AllegroMainWindow::getKeyName(int scancode)
+{
+    switch (scancode) {
+        case KEY_A: return "A";
+        case KEY_B: return "B";
+        case KEY_C: return "C";
+        case KEY_D: return "D";
+        case KEY_E: return "E";
+        case KEY_F: return "F";
+        case KEY_G: return "G";
+        case KEY_H: return "H";
+        case KEY_I: return "I";
+        case KEY_J: return "J";
+        case KEY_K: return "K";
+        case KEY_L: return "L";
+        case KEY_M: return "M";
+        case KEY_N: return "N";
+        case KEY_O: return "O";
+        case KEY_P: return "P";
+        case KEY_Q: return "Q";
+        case KEY_R: return "R";
+        case KEY_S: return "S";
+        case KEY_T: return "T";
+        case KEY_U: return "U";
+        case KEY_V: return "V";
+        case KEY_W: return "W";
+        case KEY_X: return "X";
+        case KEY_Y: return "Y";
+        case KEY_Z: return "Z";
+        case KEY_0: return "0";
+        case KEY_1: return "1";
+        case KEY_2: return "2";
+        case KEY_3: return "3";
+        case KEY_4: return "4";
+        case KEY_5: return "5";
+        case KEY_6: return "6";
+        case KEY_7: return "7";
+        case KEY_8: return "8";
+        case KEY_9: return "9";
+        case KEY_UP: return "UP";
+        case KEY_DOWN: return "DOWN";
+        case KEY_LEFT: return "LEFT";
+        case KEY_RIGHT: return "RIGHT";
+        case KEY_ENTER: return "ENTER";
+        case KEY_SPACE: return "SPACE";
+        case KEY_LSHIFT: return "L-SHIFT";
+        case KEY_RSHIFT: return "R-SHIFT";
+        case KEY_LCONTROL: return "L-CTRL";
+        case KEY_RCONTROL: return "R-CTRL";
+        case KEY_ALT: return "ALT";
+        case KEY_TAB: return "TAB";
+        case KEY_ESC: return "ESC";
+        case KEY_BACKSPACE: return "BACKSPACE";
+        case KEY_INSERT: return "INSERT";
+        case KEY_DEL: return "DELETE";
+        case KEY_HOME: return "HOME";
+        case KEY_END: return "END";
+        case KEY_PGUP: return "PAGE UP";
+        case KEY_PGDN: return "PAGE DN";
+        case KEY_F1: return "F1";
+        case KEY_F2: return "F2";
+        case KEY_F3: return "F3";
+        case KEY_F4: return "F4";
+        case KEY_F5: return "F5";
+        case KEY_F6: return "F6";
+        case KEY_F7: return "F7";
+        case KEY_F8: return "F8";
+        case KEY_F9: return "F9";
+        case KEY_F10: return "F10";
+        case KEY_F11: return "F11";
+        case KEY_F12: return "F12";
+        case KEY_MINUS: return "-";
+        case KEY_EQUALS: return "=";
+        case KEY_OPENBRACE: return "[";
+        case KEY_CLOSEBRACE: return "]";
+        case KEY_SEMICOLON: return ";";
+        case KEY_QUOTE: return "'";
+        case KEY_BACKSLASH: return "\\";
+        case KEY_COMMA: return ",";
+        case KEY_STOP: return ".";
+        case KEY_SLASH: return "/";
+        case KEY_TILDE: return "`";
+        case KEY_ASTERISK: return "*";
+        case KEY_PLUS_PAD: return "NUM +";
+        case KEY_MINUS_PAD: return "NUM -";
+        case KEY_SLASH_PAD: return "NUM /";
+        case KEY_0_PAD: return "NUM 0";
+        case KEY_1_PAD: return "NUM 1";
+        case KEY_2_PAD: return "NUM 2";
+        case KEY_3_PAD: return "NUM 3";
+        case KEY_4_PAD: return "NUM 4";
+        case KEY_5_PAD: return "NUM 5";
+        case KEY_6_PAD: return "NUM 6";
+        case KEY_7_PAD: return "NUM 7";
+        case KEY_8_PAD: return "NUM 8";
+        case KEY_9_PAD: return "NUM 9";
+        case KEY_DEL_PAD: return "NUM DEL";
+        case KEY_ENTER_PAD: return "NUM ENTER";
+        default: 
+            // For unknown keys, return a formatted string with the scancode
+            static char unknownKey[16];
+            sprintf(unknownKey, "KEY_%d", scancode);
+            return unknownKey;
+    }
+}
+
 
 void AllegroMainWindow::setupDefaultControls()
 {
@@ -438,6 +783,11 @@ void AllegroMainWindow::setupMenu()
     mainMenu[menuCount].enabled = true;
     menuCount++;
     
+    strcpy(mainMenu[menuCount].text, "Test Joystick");
+    mainMenu[menuCount].id = 8;
+    mainMenu[menuCount].enabled = (num_joysticks > 0);
+    menuCount++;
+    
     strcpy(mainMenu[menuCount].text, "Help");
     mainMenu[menuCount].id = 5;
     mainMenu[menuCount].enabled = true;
@@ -453,7 +803,6 @@ void AllegroMainWindow::setupMenu()
     mainMenu[menuCount].enabled = true;
     menuCount++;
 }
-
 void AllegroMainWindow::run() 
 {
     printf("=== Starting Super Mario Bros ===\n");
@@ -556,6 +905,42 @@ void AllegroMainWindow::run()
     printf("Game loop ended normally\n");
 }
 
+void AllegroMainWindow::showJoystickStatus()
+{
+    if (num_joysticks == 0) {
+        setStatusMessage("No joysticks detected");
+        return;
+    }
+    
+    static char statusBuffer[256];
+    statusBuffer[0] = '\0';
+    
+    poll_joystick();
+    
+    for (int i = 0; i < num_joysticks && i < 2; i++) {
+        char joyInfo[128];
+        
+        if (joy[i].num_sticks > 0 && joy[i].stick[0].num_axis >= 2) {
+            int x = joy[i].stick[0].axis[0].pos;
+            int y = joy[i].stick[0].axis[1].pos;
+            
+            // Count pressed buttons
+            int pressedButtons = 0;
+            for (int btn = 0; btn < joy[i].num_buttons; btn++) {
+                if (joy[i].button[btn].b) pressedButtons++;
+            }
+            
+            sprintf(joyInfo, "J%d: X=%d Y=%d Btns=%d ", i, x, y, pressedButtons);
+        } else {
+            sprintf(joyInfo, "J%d: No analog stick ", i);
+        }
+        
+        strcat(statusBuffer, joyInfo);
+    }
+    
+    setStatusMessage(statusBuffer);
+}
+
 
 void AllegroMainWindow::handleInput()
 {
@@ -607,28 +992,246 @@ void AllegroMainWindow::handleInput()
 void AllegroMainWindow::handleDialogInputNoEsc()
 {
     if (isCapturingInput) {
-        // Wait for key press to capture
-        if (keypressed()) {
-            int k = readkey();
-            int scancode = k >> 8;
+        // Check for joystick button press first (for joystick button captures)
+        if (num_joysticks > 0 && (currentCaptureType >= CAPTURE_JOY_A && currentCaptureType <= CAPTURE_JOY_SELECT)) {
+            poll_joystick();
+            int joyIndex = (currentConfigPlayer == PLAYER_1) ? 0 : (num_joysticks > 1 ? 1 : 0);
             
-            if (scancode != KEY_ESC) {
-                // Assign the captured key based on current capture context
-                // This would be expanded based on which control is being configured
-                isCapturingInput = false;
-                strcpy(currentCaptureKey, "");
-                setStatusMessage("Key captured");
-            } else {
-                isCapturingInput = false;
-                strcpy(currentCaptureKey, "");
-                setStatusMessage("Capture cancelled");
+            static bool buttonPressed[32] = {false}; // Track button states to detect press events
+            for (int i = 0; i < joy[joyIndex].num_buttons && i < 32; i++) {
+                if (joy[joyIndex].button[i].b && !buttonPressed[i]) {
+                    // Button was just pressed
+                    assignCapturedJoyButton(i);
+                    // Reset all button states
+                    for (int j = 0; j < 32; j++) buttonPressed[j] = false;
+                    return;
+                }
+                buttonPressed[i] = joy[joyIndex].button[i].b;
+            }
+        }
+        
+        // Check for keyboard input (for keyboard captures)
+        if (currentCaptureType >= CAPTURE_KEY_UP && currentCaptureType <= CAPTURE_KEY_SELECT) {
+            if (keypressed()) {
+                int k = readkey();
+                int scancode = k >> 8;
+                
+                if (scancode != KEY_ESC) {
+                    assignCapturedKey(scancode);
+                } else {
+                    // Cancel capture
+                    isCapturingInput = false;
+                    currentCaptureType = CAPTURE_NONE;
+                    strcpy(currentCaptureKey, "");
+                    setStatusMessage("Capture cancelled");
+                }
             }
         }
         return;
     }
     
-    // ESC is handled globally now, so we don't need to handle it here
-    // Just handle other dialog-specific keys if needed
+    // Handle configuration menu input when not capturing
+    if (currentDialog == DIALOG_CONTROLS_P1 || currentDialog == DIALOG_CONTROLS_P2) {
+        if (keypressed()) {
+            int k = readkey();
+            int scancode = k >> 8;
+            char key_char = k & 0xFF;
+            
+            switch (key_char) {
+                case '1': // Configure Up
+                    startKeyCapture(CAPTURE_KEY_UP, "Press key for UP");
+                    break;
+                case '2': // Configure Down
+                    startKeyCapture(CAPTURE_KEY_DOWN, "Press key for DOWN");
+                    break;
+                case '3': // Configure Left
+                    startKeyCapture(CAPTURE_KEY_LEFT, "Press key for LEFT");
+                    break;
+                case '4': // Configure Right
+                    startKeyCapture(CAPTURE_KEY_RIGHT, "Press key for RIGHT");
+                    break;
+                case '5': // Configure A button
+                    startKeyCapture(CAPTURE_KEY_A, "Press key for A BUTTON");
+                    break;
+                case '6': // Configure B button
+                    startKeyCapture(CAPTURE_KEY_B, "Press key for B BUTTON");
+                    break;
+                case '7': // Configure Start
+                    startKeyCapture(CAPTURE_KEY_START, "Press key for START");
+                    break;
+                case '8': // Configure Select
+                    startKeyCapture(CAPTURE_KEY_SELECT, "Press key for SELECT");
+                    break;
+                    
+                // Joystick button configuration
+                case 'a':
+                case 'A': // Configure joystick A button
+                    if (num_joysticks > 0) {
+                        startKeyCapture(CAPTURE_JOY_A, "Press joystick button for A");
+                    } else {
+                        setStatusMessage("No joystick detected");
+                    }
+                    break;
+                case 'b':
+                case 'B': // Configure joystick B button
+                    if (num_joysticks > 0) {
+                        startKeyCapture(CAPTURE_JOY_B, "Press joystick button for B");
+                    } else {
+                        setStatusMessage("No joystick detected");
+                    }
+                    break;
+                case 's':
+                case 'S': // Configure joystick Start button
+                    if (num_joysticks > 0) {
+                        startKeyCapture(CAPTURE_JOY_START, "Press joystick button for START");
+                    } else {
+                        setStatusMessage("No joystick detected");
+                    }
+                    break;
+                case 'e':
+                case 'E': // Configure joystick Select button
+                    if (num_joysticks > 0) {
+                        startKeyCapture(CAPTURE_JOY_SELECT, "Press joystick button for SELECT");
+                    } else {
+                        setStatusMessage("No joystick detected");
+                    }
+                    break;
+                    
+                case 'j':
+                case 'J': // Toggle joystick analog/digital
+                    if (num_joysticks > 0) {
+                        if (currentDialog == DIALOG_CONTROLS_P1) {
+                            player1Joy.use_stick = !player1Joy.use_stick;
+                            setStatusMessage(player1Joy.use_stick ? "P1 using analog stick" : "P1 using digital pad");
+                        } else {
+                            player2Joy.use_stick = !player2Joy.use_stick;
+                            setStatusMessage(player2Joy.use_stick ? "P2 using analog stick" : "P2 using digital pad");
+                        }
+                        saveControlConfig();
+                    } else {
+                        setStatusMessage("No joystick detected");
+                    }
+                    break;
+                    
+                case 't':
+                case 'T': // Test joystick
+                    if (num_joysticks > 0) {
+                        testCurrentJoystick();
+                    } else {
+                        setStatusMessage("No joystick detected");
+                    }
+                    break;
+                    
+                case 'r':
+                case 'R': // Reset to defaults
+                    if (currentDialog == DIALOG_CONTROLS_P1) {
+                        resetPlayer1ControlsToDefault();
+                        setStatusMessage("Player 1 controls reset to defaults");
+                    } else {
+                        resetPlayer2ControlsToDefault();
+                        setStatusMessage("Player 2 controls reset to defaults");
+                    }
+                    saveControlConfig();
+                    break;
+                    
+                case 'd':
+                case 'D': // Display detailed joystick info
+                    if (num_joysticks > 0) {
+                        displayJoystickInfo();
+                    } else {
+                        setStatusMessage("No joystick detected");
+                    }
+                    break;
+            }
+        }
+    }
+}
+
+void AllegroMainWindow::resetPlayer1ControlsToDefault()
+{
+    player1Keys.up = KEY_UP;
+    player1Keys.down = KEY_DOWN;
+    player1Keys.left = KEY_LEFT;
+    player1Keys.right = KEY_RIGHT;
+    player1Keys.button_a = KEY_X;
+    player1Keys.button_b = KEY_Z;
+    player1Keys.start = KEY_ENTER;
+    player1Keys.select = KEY_SPACE;
+    
+    player1Joy.button_a = 0;
+    player1Joy.button_b = 1;
+    player1Joy.start = 2;
+    player1Joy.select = 3;
+    player1Joy.use_stick = true;
+}
+
+void AllegroMainWindow::testCurrentJoystick()
+{
+    if (num_joysticks == 0) return;
+    
+    int joyIndex = (currentConfigPlayer == PLAYER_1) ? 0 : (num_joysticks > 1 ? 1 : 0);
+    poll_joystick();
+    
+    char testMsg[128];
+    if (joy[joyIndex].num_sticks > 0) {
+        int x = joy[joyIndex].stick[0].axis[0].pos;
+        int y = joy[joyIndex].stick[0].axis[1].pos;
+        sprintf(testMsg, "Joy %d: X=%d Y=%d Btns:", joyIndex, x, y);
+        
+        char btnStr[32] = "";
+        for (int i = 0; i < joy[joyIndex].num_buttons && i < 8; i++) {
+            if (joy[joyIndex].button[i].b) {
+                char temp[8];
+                sprintf(temp, "%d ", i);
+                strcat(btnStr, temp);
+            }
+        }
+        strcat(testMsg, btnStr);
+    } else {
+        sprintf(testMsg, "Joystick %d: No sticks detected", joyIndex);
+    }
+    
+    setStatusMessage(testMsg);
+}
+
+void AllegroMainWindow::displayJoystickInfo()
+{
+    // This would show detailed joystick information in the status message
+    // For a full implementation, you might want to create a separate info dialog
+    if (num_joysticks == 0) {
+        setStatusMessage("No joysticks detected");
+        return;
+    }
+    
+    char infoMsg[128];
+    sprintf(infoMsg, "%d joystick(s): Joy0 %d btns", 
+            num_joysticks, joy[0].num_buttons);
+    
+    if (num_joysticks > 1) {
+        char temp[32];
+        sprintf(temp, ", Joy1 %d btns", joy[1].num_buttons);
+        strcat(infoMsg, temp);
+    }
+    
+    setStatusMessage(infoMsg);
+}
+
+void AllegroMainWindow::resetPlayer2ControlsToDefault()
+{
+    player2Keys.up = KEY_W;
+    player2Keys.down = KEY_S;
+    player2Keys.left = KEY_A;
+    player2Keys.right = KEY_D;
+    player2Keys.button_a = KEY_G;
+    player2Keys.button_b = KEY_F;
+    player2Keys.start = KEY_T;
+    player2Keys.select = KEY_R;
+    
+    player2Joy.button_a = 0;
+    player2Joy.button_b = 1;
+    player2Joy.start = 2;
+    player2Joy.select = 3;
+    player2Joy.use_stick = true;
 }
 
 void AllegroMainWindow::handleGameInputNoEsc()
@@ -782,18 +1385,53 @@ void AllegroMainWindow::checkPlayerInput(Player player)
     if (!smbEngine) return;
     
     poll_keyboard();
+    if (num_joysticks > 0) {
+        poll_joystick();
+    }
     
     if (player == PLAYER_1) {
         Controller& controller = smbEngine->getController1();
         
-        bool up = (key[KEY_UP] != 0);
-        bool down = (key[KEY_DOWN] != 0);
-        bool left = (key[KEY_LEFT] != 0);
-        bool right = (key[KEY_RIGHT] != 0);
-        bool a = (key[KEY_X] != 0);
-        bool b = (key[KEY_Z] != 0);
-        bool start = (key[KEY_ENTER] != 0);
-        bool select = (key[KEY_SPACE] != 0);
+        // Initialize all inputs as false
+        bool up = false, down = false, left = false, right = false;
+        bool a = false, b = false, start = false, select = false;
+        
+        // Keyboard input
+        if (key[player1Keys.up]) up = true;
+        if (key[player1Keys.down]) down = true;
+        if (key[player1Keys.left]) left = true;
+        if (key[player1Keys.right]) right = true;
+        if (key[player1Keys.button_a]) a = true;
+        if (key[player1Keys.button_b]) b = true;
+        if (key[player1Keys.start]) start = true;
+        if (key[player1Keys.select]) select = true;
+        
+        // Joystick input (Player 1 uses joystick 0)
+        if (num_joysticks > 0) {
+            // Directional input
+            if (player1Joy.use_stick) {
+                // Analog stick with improved deadzone
+                int x_dir, y_dir;
+                if (getJoystickDirection(0, &x_dir, &y_dir)) {
+                    if (x_dir < 0) left = true;
+                    if (x_dir > 0) right = true;
+                    if (y_dir < 0) up = true;
+                    if (y_dir > 0) down = true;
+                }
+            } else {
+                // Digital d-pad
+                if (joy[0].stick[0].axis[0].d1) left = true;
+                if (joy[0].stick[0].axis[0].d2) right = true;
+                if (joy[0].stick[0].axis[1].d1) up = true;
+                if (joy[0].stick[0].axis[1].d2) down = true;
+            }
+            
+            // Button input with validation
+            if (isValidJoystickButton(0, player1Joy.button_a) && joy[0].button[player1Joy.button_a].b) a = true;
+            if (isValidJoystickButton(0, player1Joy.button_b) && joy[0].button[player1Joy.button_b].b) b = true;
+            if (isValidJoystickButton(0, player1Joy.start) && joy[0].button[player1Joy.start].b) start = true;
+            if (isValidJoystickButton(0, player1Joy.select) && joy[0].button[player1Joy.select].b) select = true;
+        }
         
         controller.setButtonState(BUTTON_UP, up);
         controller.setButtonState(BUTTON_DOWN, down);
@@ -807,14 +1445,50 @@ void AllegroMainWindow::checkPlayerInput(Player player)
     else if (player == PLAYER_2) {
         Controller& controller = smbEngine->getController2();
         
-        bool up = (key[KEY_W] != 0);
-        bool down = (key[KEY_S] != 0);
-        bool left = (key[KEY_A] != 0);
-        bool right = (key[KEY_D] != 0);
-        bool a = (key[KEY_G] != 0);
-        bool b = (key[KEY_F] != 0);
-        bool start = (key[KEY_T] != 0);
-        bool select = (key[KEY_R] != 0);
+        // Initialize all inputs as false
+        bool up = false, down = false, left = false, right = false;
+        bool a = false, b = false, start = false, select = false;
+        
+        // Keyboard input
+        if (key[player2Keys.up]) up = true;
+        if (key[player2Keys.down]) down = true;
+        if (key[player2Keys.left]) left = true;
+        if (key[player2Keys.right]) right = true;
+        if (key[player2Keys.button_a]) a = true;
+        if (key[player2Keys.button_b]) b = true;
+        if (key[player2Keys.start]) start = true;
+        if (key[player2Keys.select]) select = true;
+        
+        // Joystick input for Player 2
+        if (num_joysticks > 1) {
+            // Player 2 uses joystick 1 if available
+            if (player2Joy.use_stick) {
+                int x_dir, y_dir;
+                if (getJoystickDirection(1, &x_dir, &y_dir)) {
+                    if (x_dir < 0) left = true;
+                    if (x_dir > 0) right = true;
+                    if (y_dir < 0) up = true;
+                    if (y_dir > 0) down = true;
+                }
+            } else {
+                if (joy[1].stick[0].axis[0].d1) left = true;
+                if (joy[1].stick[0].axis[0].d2) right = true;
+                if (joy[1].stick[0].axis[1].d1) up = true;
+                if (joy[1].stick[0].axis[1].d2) down = true;
+            }
+            
+            if (isValidJoystickButton(1, player2Joy.button_a) && joy[1].button[player2Joy.button_a].b) a = true;
+            if (isValidJoystickButton(1, player2Joy.button_b) && joy[1].button[player2Joy.button_b].b) b = true;
+            if (isValidJoystickButton(1, player2Joy.start) && joy[1].button[player2Joy.start].b) start = true;
+            if (isValidJoystickButton(1, player2Joy.select) && joy[1].button[player2Joy.select].b) select = true;
+        } else if (num_joysticks > 0) {
+            // Share joystick 0 with different buttons for Player 2
+            int offset = 4; // Use buttons 4+ for Player 2
+            if (isValidJoystickButton(0, player2Joy.button_a + offset) && joy[0].button[player2Joy.button_a + offset].b) a = true;
+            if (isValidJoystickButton(0, player2Joy.button_b + offset) && joy[0].button[player2Joy.button_b + offset].b) b = true;
+            if (isValidJoystickButton(0, player2Joy.start + offset) && joy[0].button[player2Joy.start + offset].b) start = true;
+            if (isValidJoystickButton(0, player2Joy.select + offset) && joy[0].button[player2Joy.select + offset].b) select = true;
+        }
         
         controller.setButtonState(BUTTON_UP, up);
         controller.setButtonState(BUTTON_DOWN, down);
@@ -824,6 +1498,231 @@ void AllegroMainWindow::checkPlayerInput(Player player)
         controller.setButtonState(BUTTON_B, b);
         controller.setButtonState(BUTTON_START, start);
         controller.setButtonState(BUTTON_SELECT, select);
+    }
+}
+
+void AllegroMainWindow::saveControlConfig()
+{
+    FILE* f = fopen("controls.cfg", "wb");
+    if (f) {
+        // Write version header
+        uint32_t version = 1;
+        fwrite(&version, sizeof(uint32_t), 1, f);
+        
+        // Write control data
+        fwrite(&player1Keys, sizeof(PlayerKeys), 1, f);
+        fwrite(&player2Keys, sizeof(PlayerKeys), 1, f);
+        fwrite(&player1Joy, sizeof(PlayerJoy), 1, f);
+        fwrite(&player2Joy, sizeof(PlayerJoy), 1, f);
+        
+        fclose(f);
+        printf("Control configuration saved\n");
+    } else {
+        printf("Warning: Could not save control configuration\n");
+    }
+}
+
+void AllegroMainWindow::printControlMappings()
+{
+    printf("\n=== Current Control Mappings ===\n");
+    
+    printf("Player 1 Keyboard:\n");
+    printf("  Up: %s (%d)\n", getKeyName(player1Keys.up), player1Keys.up);
+    printf("  Down: %s (%d)\n", getKeyName(player1Keys.down), player1Keys.down);
+    printf("  Left: %s (%d)\n", getKeyName(player1Keys.left), player1Keys.left);
+    printf("  Right: %s (%d)\n", getKeyName(player1Keys.right), player1Keys.right);
+    printf("  A: %s (%d)\n", getKeyName(player1Keys.button_a), player1Keys.button_a);
+    printf("  B: %s (%d)\n", getKeyName(player1Keys.button_b), player1Keys.button_b);
+    printf("  Start: %s (%d)\n", getKeyName(player1Keys.start), player1Keys.start);
+    printf("  Select: %s (%d)\n", getKeyName(player1Keys.select), player1Keys.select);
+    
+    printf("\nPlayer 1 Joystick:\n");
+    printf("  Use analog: %s\n", player1Joy.use_stick ? "Yes" : "No");
+    printf("  Button A: %d\n", player1Joy.button_a);
+    printf("  Button B: %d\n", player1Joy.button_b);
+    printf("  Start: %d\n", player1Joy.start);
+    printf("  Select: %d\n", player1Joy.select);
+    
+    printf("\nPlayer 2 Keyboard:\n");
+    printf("  Up: %s (%d)\n", getKeyName(player2Keys.up), player2Keys.up);
+    printf("  Down: %s (%d)\n", getKeyName(player2Keys.down), player2Keys.down);
+    printf("  Left: %s (%d)\n", getKeyName(player2Keys.left), player2Keys.left);
+    printf("  Right: %s (%d)\n", getKeyName(player2Keys.right), player2Keys.right);
+    printf("  A: %s (%d)\n", getKeyName(player2Keys.button_a), player2Keys.button_a);
+    printf("  B: %s (%d)\n", getKeyName(player2Keys.button_b), player2Keys.button_b);
+    printf("  Start: %s (%d)\n", getKeyName(player2Keys.start), player2Keys.start);
+    printf("  Select: %s (%d)\n", getKeyName(player2Keys.select), player2Keys.select);
+    
+    printf("\nPlayer 2 Joystick:\n");
+    printf("  Use analog: %s\n", player2Joy.use_stick ? "Yes" : "No");
+    printf("  Button A: %d\n", player2Joy.button_a);
+    printf("  Button B: %d\n", player2Joy.button_b);
+    printf("  Start: %d\n", player2Joy.start);
+    printf("  Select: %d\n", player2Joy.select);
+    printf("================================\n\n");
+}
+
+
+void AllegroMainWindow::runJoystickTest()
+{
+    if (num_joysticks == 0) {
+        setStatusMessage("No joysticks to test");
+        return;
+    }
+    
+    // This could be expanded into a full joystick test mode
+    // For now, just show current state
+    static int testCounter = 0;
+    testCounter++;
+    
+    if (testCounter % 30 == 0) { // Update every 30 frames (0.5 seconds at 60fps)
+        showJoystickStatus();
+    }
+}
+
+void AllegroMainWindow::loadControlConfig()
+{
+    FILE* f = fopen("controls.cfg", "rb");
+    if (f) {
+        // Check version
+        uint32_t version = 0;
+        if (fread(&version, sizeof(uint32_t), 1, f) == 1 && version == 1) {
+            // Read control data
+            if (fread(&player1Keys, sizeof(PlayerKeys), 1, f) == 1 &&
+                fread(&player2Keys, sizeof(PlayerKeys), 1, f) == 1 &&
+                fread(&player1Joy, sizeof(PlayerJoy), 1, f) == 1 &&
+                fread(&player2Joy, sizeof(PlayerJoy), 1, f) == 1) {
+                printf("Control configuration loaded successfully\n");
+            } else {
+                printf("Warning: Incomplete control configuration file, using defaults\n");
+                setupDefaultControls();
+            }
+        } else {
+            printf("Warning: Unsupported control configuration version, using defaults\n");
+            setupDefaultControls();
+        }
+        fclose(f);
+    } else {
+        printf("No control configuration file found, using defaults\n");
+        setupDefaultControls();
+    }
+}
+
+
+void AllegroMainWindow::drawControlsDialog(BITMAP* target, Player player)
+{
+    int dialog_x = SCREEN_W / 8;  // Wider dialog
+    int dialog_y = SCREEN_H / 8;
+    int dialog_w = SCREEN_W * 3 / 4;
+    int dialog_h = SCREEN_H * 3 / 4;
+    
+    const char* player_name = (player == PLAYER_1) ? "PLAYER 1" : "PLAYER 2";
+    PlayerKeys* keys = (player == PLAYER_1) ? &player1Keys : &player2Keys;
+    PlayerJoy* joy = (player == PLAYER_1) ? &player1Joy : &player2Joy;
+    
+    // Draw dialog background
+    rectfill(target, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
+             makecol(32, 32, 32));
+    
+    // Draw dialog border
+    rect(target, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
+         makecol(255, 255, 255));
+    
+    // Title
+    drawTextCentered(target, dialog_y + 15, player_name, makecol(255, 255, 0));
+    drawTextCentered(target, dialog_y + 35, "CONTROL CONFIGURATION", makecol(255, 255, 0));
+    
+    int left_col = dialog_x + 20;
+    int right_col = dialog_x + dialog_w / 2 + 10;
+    int y_pos = dialog_y + 65;
+    
+    // Left column - Keyboard controls
+    drawText(target, left_col, y_pos, "KEYBOARD CONTROLS:", makecol(255, 255, 0));
+    y_pos += 25;
+    
+    char temp[64];
+    sprintf(temp, "1. Up:     %-10s", getKeyName(keys->up));
+    drawText(target, left_col, y_pos, temp, makecol(255, 255, 255));
+    y_pos += 20;
+    
+    sprintf(temp, "2. Down:   %-10s", getKeyName(keys->down));
+    drawText(target, left_col, y_pos, temp, makecol(255, 255, 255));
+    y_pos += 20;
+    
+    sprintf(temp, "3. Left:   %-10s", getKeyName(keys->left));
+    drawText(target, left_col, y_pos, temp, makecol(255, 255, 255));
+    y_pos += 20;
+    
+    sprintf(temp, "4. Right:  %-10s", getKeyName(keys->right));
+    drawText(target, left_col, y_pos, temp, makecol(255, 255, 255));
+    y_pos += 20;
+    
+    sprintf(temp, "5. A:      %-10s", getKeyName(keys->button_a));
+    drawText(target, left_col, y_pos, temp, makecol(255, 255, 255));
+    y_pos += 20;
+    
+    sprintf(temp, "6. B:      %-10s", getKeyName(keys->button_b));
+    drawText(target, left_col, y_pos, temp, makecol(255, 255, 255));
+    y_pos += 20;
+    
+    sprintf(temp, "7. Start:  %-10s", getKeyName(keys->start));
+    drawText(target, left_col, y_pos, temp, makecol(255, 255, 255));
+    y_pos += 20;
+    
+    sprintf(temp, "8. Select: %-10s", getKeyName(keys->select));
+    drawText(target, left_col, y_pos, temp, makecol(255, 255, 255));
+    
+    // Right column - Joystick controls
+    y_pos = dialog_y + 65;
+    drawText(target, right_col, y_pos, "JOYSTICK CONTROLS:", makecol(255, 255, 0));
+    y_pos += 25;
+    
+    if (num_joysticks > 0) {
+        sprintf(temp, "Detected: %d joystick(s)", num_joysticks);
+        drawText(target, right_col, y_pos, temp, makecol(255, 255, 255));
+        y_pos += 20;
+        
+        sprintf(temp, "J. Use analog: %s", joy->use_stick ? "Yes" : "No");
+        drawText(target, right_col, y_pos, temp, makecol(255, 255, 255));
+        y_pos += 25;
+        
+        sprintf(temp, "A. Button A: %d", joy->button_a);
+        drawText(target, right_col, y_pos, temp, makecol(255, 255, 255));
+        y_pos += 20;
+        
+        sprintf(temp, "B. Button B: %d", joy->button_b);
+        drawText(target, right_col, y_pos, temp, makecol(255, 255, 255));
+        y_pos += 20;
+        
+        sprintf(temp, "S. Start:    %d", joy->start);
+        drawText(target, right_col, y_pos, temp, makecol(255, 255, 255));
+        y_pos += 20;
+        
+        sprintf(temp, "E. Select:   %d", joy->select);
+        drawText(target, right_col, y_pos, temp, makecol(255, 255, 255));
+        y_pos += 25;
+        
+        drawText(target, right_col, y_pos, "T. Test joystick", makecol(128, 255, 128));
+        y_pos += 20;
+        
+        drawText(target, right_col, y_pos, "D. Show joy info", makecol(128, 255, 128));
+    } else {
+        drawText(target, right_col, y_pos, "No joystick detected", makecol(255, 128, 128));
+        y_pos += 25;
+        drawText(target, right_col, y_pos, "Connect a joystick and", makecol(255, 128, 128));
+        y_pos += 20;
+        drawText(target, right_col, y_pos, "restart the program", makecol(255, 128, 128));
+    }
+    
+    // Bottom instructions
+    if (isCapturingInput) {
+        drawTextCentered(target, dialog_y + dialog_h - 60, "PRESS A KEY OR BUTTON...", makecol(255, 255, 0));
+        drawTextCentered(target, dialog_y + dialog_h - 40, currentCaptureKey, makecol(255, 255, 255));
+        drawTextCentered(target, dialog_y + dialog_h - 20, "ESC to cancel", makecol(255, 128, 128));
+    } else {
+        drawTextCentered(target, dialog_y + dialog_h - 60, "R: Reset to defaults", makecol(128, 255, 128));
+        drawTextCentered(target, dialog_y + dialog_h - 40, "Numbers/Letters: Configure controls", makecol(255, 255, 255));
+        drawTextCentered(target, dialog_y + dialog_h - 20, "ESC: Close", makecol(255, 255, 0));
     }
 }
 
@@ -1230,41 +2129,58 @@ void AllegroMainWindow::drawMenu(BITMAP* target)
 
 void AllegroMainWindow::drawDialog(BITMAP* target)
 {
-    int dialog_x = SCREEN_W / 4;
-    int dialog_y = SCREEN_H / 4;
-    int dialog_w = SCREEN_W / 2;
-    int dialog_h = SCREEN_H / 2;
-    
-    // Draw dialog background
-    rectfill(target, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
-             makecol(32, 32, 32));
-    
-    // Draw dialog border
-    rect(target, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
-         makecol(255, 255, 255));
-    
     switch (currentDialog) {
         case DIALOG_ABOUT:
-            drawTextCentered(target, dialog_y + 20, "SUPER MARIO BROS Virtualizer", makecol(255, 255, 0));
-            drawTextCentered(target, dialog_y + 40, "Version 1.0", makecol(255, 255, 255));
-            drawTextCentered(target, dialog_y + 60, "Built with Allegro 4", makecol(255, 255, 255));
-            drawTextCentered(target, dialog_y + 100, "Original game (c) Nintendo", makecol(255, 255, 255));
-            drawTextCentered(target, dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
+            {
+                int dialog_x = SCREEN_W / 4;
+                int dialog_y = SCREEN_H / 4;
+                int dialog_w = SCREEN_W / 2;
+                int dialog_h = SCREEN_H / 2;
+                
+                rectfill(target, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
+                         makecol(32, 32, 32));
+                rect(target, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
+                     makecol(255, 255, 255));
+                
+                drawTextCentered(target, dialog_y + 20, "SUPER MARIO BROS Virtualizer", makecol(255, 255, 0));
+                drawTextCentered(target, dialog_y + 40, "Version 1.0", makecol(255, 255, 255));
+                drawTextCentered(target, dialog_y + 60, "Built with Allegro 4", makecol(255, 255, 255));
+                drawTextCentered(target, dialog_y + 100, "Original game (c) Nintendo", makecol(255, 255, 255));
+                drawTextCentered(target, dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
+            }
             break;
             
         case DIALOG_HELP:
-            drawTextCentered(target, dialog_y + 20, "HELP", makecol(255, 255, 0));
-            drawTextCentered(target, dialog_y + 50, "ESC - Show menu", makecol(255, 255, 255));
-            drawTextCentered(target, dialog_y + 70, "P - Pause game", makecol(255, 255, 255));
-            drawTextCentered(target, dialog_y + 90, "Ctrl+R - Reset game", makecol(255, 255, 255));
-            drawTextCentered(target, dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
+            {
+                int dialog_x = SCREEN_W / 4;
+                int dialog_y = SCREEN_H / 4;
+                int dialog_w = SCREEN_W / 2;
+                int dialog_h = SCREEN_H / 2;
+                
+                rectfill(target, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
+                         makecol(32, 32, 32));
+                rect(target, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
+                     makecol(255, 255, 255));
+                
+                drawTextCentered(target, dialog_y + 20, "HELP", makecol(255, 255, 0));
+                drawText(target, dialog_x + 20, dialog_y + 50, "ESC - Show menu", makecol(255, 255, 255));
+                drawText(target, dialog_x + 20, dialog_y + 70, "P - Pause game", makecol(255, 255, 255));
+                drawText(target, dialog_x + 20, dialog_y + 90, "Ctrl+R - Reset game", makecol(255, 255, 255));
+                drawText(target, dialog_x + 20, dialog_y + 110, "", makecol(255, 255, 255));
+                drawText(target, dialog_x + 20, dialog_y + 130, "Default Player 1:", makecol(255, 255, 0));
+                drawText(target, dialog_x + 20, dialog_y + 150, "Arrow Keys, Z/X, Enter, Space", makecol(255, 255, 255));
+                drawText(target, dialog_x + 20, dialog_y + 170, "Default Player 2:", makecol(255, 255, 0));
+                drawText(target, dialog_x + 20, dialog_y + 190, "WASD, F/G, T, R", makecol(255, 255, 255));
+                drawTextCentered(target, dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
+            }
             break;
             
         case DIALOG_CONTROLS_P1:
+            drawControlsDialog(target, PLAYER_1);
+            break;
+            
         case DIALOG_CONTROLS_P2:
-            drawTextCentered(target, dialog_y + 20, "CONTROL CONFIGURATION", makecol(255, 255, 0));
-            drawTextCentered(target, dialog_y + 50, "Not yet implemented", makecol(255, 255, 255));
-            drawTextCentered(target, dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
+            drawControlsDialog(target, PLAYER_2);
             break;
     }
 }
@@ -1330,7 +2246,7 @@ void AllegroMainWindow::menuSelect()
     switch (mainMenu[selectedMenuItem].id) {
         case 1: // Resume Game
             showingMenu = false;
-            gamePaused = false;  // Resume the game
+            gamePaused = false;
             setStatusMessage("Game Resumed");
             break;
             
@@ -1340,37 +2256,42 @@ void AllegroMainWindow::menuSelect()
                 setStatusMessage("Game Reset");
             }
             showingMenu = false;
-            gamePaused = false;  // Resume after reset
+            gamePaused = false;
             break;
             
         case 3: // Player 1 Controls
             currentDialog = DIALOG_CONTROLS_P1;
             currentConfigPlayer = PLAYER_1;
             showingMenu = false;
-            // Keep game paused while in dialog
             break;
             
         case 4: // Player 2 Controls
             currentDialog = DIALOG_CONTROLS_P2;
             currentConfigPlayer = PLAYER_2;
             showingMenu = false;
-            // Keep game paused while in dialog
             break;
             
         case 5: // Help
             currentDialog = DIALOG_HELP;
             showingMenu = false;
-            // Keep game paused while in dialog
             break;
             
         case 6: // About
             currentDialog = DIALOG_ABOUT;
             showingMenu = false;
-            // Keep game paused while in dialog
             break;
             
         case 7: // Quit
             gameRunning = false;
+            break;
+            
+        case 8: // Test Joystick
+            if (num_joysticks > 0) {
+                showJoystickStatus();
+                // Keep menu open for joystick testing
+            } else {
+                setStatusMessage("No joystick detected");
+            }
             break;
     }
 }
@@ -1425,29 +2346,92 @@ void AllegroMainWindow::shutdown()
     allegro_exit();
 }
 
-void AllegroMainWindow::saveControlConfig()
+void AllegroMainWindow::startKeyCapture(CaptureType captureType, const char* promptText)
 {
-    // Simple file I/O for DOS
-    FILE* f = fopen("controls.cfg", "wb");
-    if (f) {
-        fwrite(&player1Keys, sizeof(PlayerKeys), 1, f);
-        fwrite(&player2Keys, sizeof(PlayerKeys), 1, f);
-        fwrite(&player1Joy, sizeof(PlayerJoy), 1, f);
-        fwrite(&player2Joy, sizeof(PlayerJoy), 1, f);
-        fclose(f);
-    }
+    currentCaptureType = captureType;
+    isCapturingInput = true;
+    strncpy(currentCaptureKey, promptText, sizeof(currentCaptureKey) - 1);
+    currentCaptureKey[sizeof(currentCaptureKey) - 1] = '\0';
 }
 
-void AllegroMainWindow::loadControlConfig()
+void AllegroMainWindow::assignCapturedKey(int scancode)
 {
-    FILE* f = fopen("controls.cfg", "rb");
-    if (f) {
-        fread(&player1Keys, sizeof(PlayerKeys), 1, f);
-        fread(&player2Keys, sizeof(PlayerKeys), 1, f);
-        fread(&player1Joy, sizeof(PlayerJoy), 1, f);
-        fread(&player2Joy, sizeof(PlayerJoy), 1, f);
-        fclose(f);
+    PlayerKeys* keys = (currentConfigPlayer == PLAYER_1) ? &player1Keys : &player2Keys;
+    
+    switch (currentCaptureType) {
+        case CAPTURE_KEY_UP:
+            keys->up = scancode;
+            setStatusMessage("UP key assigned");
+            break;
+        case CAPTURE_KEY_DOWN:
+            keys->down = scancode;
+            setStatusMessage("DOWN key assigned");
+            break;
+        case CAPTURE_KEY_LEFT:
+            keys->left = scancode;
+            setStatusMessage("LEFT key assigned");
+            break;
+        case CAPTURE_KEY_RIGHT:
+            keys->right = scancode;
+            setStatusMessage("RIGHT key assigned");
+            break;
+        case CAPTURE_KEY_A:
+            keys->button_a = scancode;
+            setStatusMessage("A BUTTON key assigned");
+            break;
+        case CAPTURE_KEY_B:
+            keys->button_b = scancode;
+            setStatusMessage("B BUTTON key assigned");
+            break;
+        case CAPTURE_KEY_START:
+            keys->start = scancode;
+            setStatusMessage("START key assigned");
+            break;
+        case CAPTURE_KEY_SELECT:
+            keys->select = scancode;
+            setStatusMessage("SELECT key assigned");
+            break;
+        default:
+            setStatusMessage("Unknown key assignment");
+            break;
     }
+    
+    isCapturingInput = false;
+    currentCaptureType = CAPTURE_NONE;
+    strcpy(currentCaptureKey, "");
+    saveControlConfig();
+}
+
+void AllegroMainWindow::assignCapturedJoyButton(int buttonNum)
+{
+    PlayerJoy* joy = (currentConfigPlayer == PLAYER_1) ? &player1Joy : &player2Joy;
+    
+    switch (currentCaptureType) {
+        case CAPTURE_JOY_A:
+            joy->button_a = buttonNum;
+            setStatusMessage("A BUTTON (joystick) assigned");
+            break;
+        case CAPTURE_JOY_B:
+            joy->button_b = buttonNum;
+            setStatusMessage("B BUTTON (joystick) assigned");
+            break;
+        case CAPTURE_JOY_START:
+            joy->start = buttonNum;
+            setStatusMessage("START (joystick) assigned");
+            break;
+        case CAPTURE_JOY_SELECT:
+            joy->select = buttonNum;
+            setStatusMessage("SELECT (joystick) assigned");
+            break;
+        default:
+            setStatusMessage("Unknown joystick assignment");
+            break;
+    }
+    
+    isCapturingInput = false;
+    currentCaptureType = CAPTURE_NONE;
+    strcpy(currentCaptureKey, "");
+    saveControlConfig();
 }
 
 // Main function for DOS
