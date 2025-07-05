@@ -849,7 +849,7 @@ void AllegroMainWindow::handleInput()
                 gamePaused = false;
                 setStatusMessage("Game Resumed");
             }
-        } else if (showingMenu) {
+        } else if (showingMenu && gamePaused==true) {
             // Close menu
             showingMenu = false;
             gamePaused = false;
