@@ -675,11 +675,34 @@ void AllegroMainWindow::run()
     
     static int frameCounter = 0;
     
- while (gameRunning) {
+while (gameRunning) {
     #ifdef __DJGPP__
-    // DJGPP: Use high-resolution timer
-    static uclock_t frameStart = 0;
-    frameStart = uclock();
+    // DJGPP: Try to use CPU timestamp counter for high precision
+    static unsigned long long frameStart = 0;
+    static double cpuFreqMHz = 0;
+    
+    // Initialize CPU frequency detection (do this once)
+    if (cpuFreqMHz == 0) {
+        // Simple CPU frequency detection - measure TSC over known time
+        unsigned long long tsc1, tsc2;
+        clock_t c1 = clock();
+        
+        // Get TSC (Time Stamp Counter) - inline assembly
+        asm volatile("rdtsc" : "=A" (tsc1));
+        
+        // Wait for clock to advance (crude but works)
+        while (clock() == c1);
+        clock_t c2 = clock();
+        
+        asm volatile("rdtsc" : "=A" (tsc2));
+        
+        // Calculate approximate CPU frequency
+        double clockDiff = (double)(c2 - c1) / CLOCKS_PER_SEC;
+        cpuFreqMHz = (double)(tsc2 - tsc1) / (clockDiff * 1000000.0);
+    }
+    
+    // Get current timestamp
+    asm volatile("rdtsc" : "=A" (frameStart));
     #else
     // Other platforms: Use standard clock
     clock_t frameStart = clock();
@@ -708,31 +731,54 @@ void AllegroMainWindow::run()
     updateAndDraw();
     
     #ifdef __DJGPP__
-    // Calculate elapsed time using high-resolution timer
-    uclock_t frameEnd = uclock();
-    double frameTime = ((double)(frameEnd - frameStart)) / UCLOCKS_PER_SEC * 1000.0; // Convert to milliseconds
-    
-    int targetFrameTime = 1000 / Configuration::getFrameRate();
-    int sleepTime = targetFrameTime - (int)frameTime;
-    
-    if (sleepTime > 0) {
-        (sleepTime);
+    if (cpuFreqMHz > 0) {
+        // Calculate elapsed time using TSC
+        unsigned long long frameEnd;
+        asm volatile("rdtsc" : "=A" (frameEnd));
+        
+        double frameTime = (double)(frameEnd - frameStart) / (cpuFreqMHz * 1000.0); // Convert to milliseconds
+        
+        double targetFrameTime = 1000.0 / Configuration::getFrameRate();
+        double sleepTime = targetFrameTime - frameTime;
+        
+        // Rest in 1ms increments, checking each time
+        while (sleepTime > 1.0) {
+            rest(1);
+            
+            // Recalculate remaining time
+            asm volatile("rdtsc" : "=A" (frameEnd));
+            frameTime = (double)(frameEnd - frameStart) / (cpuFreqMHz * 1000.0);
+            sleepTime = targetFrameTime - frameTime;
+        }
+    } else {
+        // Fallback to simple fixed timing if TSC not available
+        rest(1000 / Configuration::getFrameRate());
     }
     #else
     // Calculate how much time has passed and sleep for remaining time
     clock_t frameEnd = clock();
     double frameTime = ((double)(frameEnd - frameStart)) / CLOCKS_PER_SEC * 1000.0; // Convert to milliseconds
     
-    int targetFrameTime = 1000 / Configuration::getFrameRate();
-    int sleepTime = targetFrameTime - (int)frameTime;
+    double targetFrameTime = 1000.0 / Configuration::getFrameRate();
+    double sleepTime = targetFrameTime - frameTime;
     
-    if (sleepTime > 0) {
-        rest(sleepTime);
+    // Rest in 1ms increments, checking each time
+    while (sleepTime > 1.0) {
+        rest(1);
+        
+        // Recalculate remaining time
+        frameEnd = clock();
+        frameTime = ((double)(frameEnd - frameStart)) / CLOCKS_PER_SEC * 1000.0;
+        sleepTime = targetFrameTime - frameTime;
     }
     #endif
     
+    #ifndef __DJGPP__
+    if (key[KEY_ALT] && key[KEY_F4]) {
+        gameRunning = false;
+    }
+    #endif
 }
-    
     if (dosAudioInitialized) {
         printf("Cleaning up audio...\n");
     }
