@@ -625,14 +625,14 @@ void AllegroMainWindow::setupDefaultControls()
     // Default joystick controls
     player1Joy.button_a = 0;
     player1Joy.button_b = 1;
-    player1Joy.start = 2;
-    player1Joy.select = 3;
+    player1Joy.start = 9;
+    player1Joy.select = 8;
     player1Joy.use_stick = true;
     
     player2Joy.button_a = 0;
     player2Joy.button_b = 1;
-    player2Joy.start = 2;
-    player2Joy.select = 3;
+    player2Joy.start = 9;
+    player2Joy.select = 8;
     player2Joy.use_stick = true;
 }
 
@@ -1020,8 +1020,8 @@ void AllegroMainWindow::resetPlayer1ControlsToDefault()
     
     player1Joy.button_a = 0;
     player1Joy.button_b = 1;
-    player1Joy.start = 2;
-    player1Joy.select = 3;
+    player1Joy.start = 9;
+    player1Joy.select = 8;
     player1Joy.use_stick = true;
 }
 
@@ -1089,8 +1089,8 @@ void AllegroMainWindow::resetPlayer2ControlsToDefault()
     
     player2Joy.button_a = 0;
     player2Joy.button_b = 1;
-    player2Joy.start = 2;
-    player2Joy.select = 3;
+    player2Joy.start = 9;
+    player2Joy.select = 8;
     player2Joy.use_stick = true;
 }
 
@@ -1253,7 +1253,7 @@ void AllegroMainWindow::checkPlayerInput(Player player)
             joystick_available = true;
         }
     }
-    
+
     if (player == PLAYER_1) {
         Controller& controller = smbEngine->getController1();
         
