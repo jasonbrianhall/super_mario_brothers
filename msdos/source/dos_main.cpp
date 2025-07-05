@@ -237,7 +237,7 @@ bool AllegroMainWindow::initializeAllegro()
     
     dosAudioInitialized = false;
     
-    if (Configuration::getAudioEnabled()) {
+    if (Configuration::getAudioEnabled() && !showingMenu) {
         printf("Attempting to initialize audio...\n");
         
         if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) == 0) {
