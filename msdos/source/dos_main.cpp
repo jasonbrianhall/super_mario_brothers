@@ -683,7 +683,7 @@ void AllegroMainWindow::setupMenu()
 void AllegroMainWindow::run() 
 {
     printf("=== Starting Super Mario Bros ===\n");
-    
+    gamePaused = false;
     // Initialize the SMB engine
     SMBEngine engine(const_cast<unsigned char*>(smbRomData));
     smbEngine = &engine;
