@@ -128,13 +128,20 @@ END_OF_FUNCTION(timer_callback)
 void audio_stream_callback(void* buffer, int len)
 {
     if (!smbEngine || !Configuration::getAudioEnabled()) {
-        // Fill with silence
-        memset(buffer, 128, len);
+        // Fill with silence (0 for signed, 128 for unsigned)
+        memset(buffer, 0, len);  // Try 0 instead of 128
         return;
     }
     
-    // Get audio data from the SMB engine
-    smbEngine->audioCallback((uint8_t*)buffer, len);
+    // Get audio data
+    uint8_t temp_buffer[2048];
+    smbEngine->audioCallback(temp_buffer, len);
+    
+    // Convert unsigned to signed if needed
+    int8_t* signed_buffer = (int8_t*)buffer;
+    for (int i = 0; i < len; i++) {
+        signed_buffer[i] = (int8_t)(temp_buffer[i] - 128);
+    }
 }
 END_OF_FUNCTION(audio_stream_callback)
 
@@ -761,22 +768,9 @@ while (gameRunning) {
     
     double targetFrameTime = 1000.0 / Configuration::getFrameRate();
     double sleepTime = targetFrameTime - frameTime;
-    
-    // Rest in 1ms increments, checking each time
-    while (sleepTime > 1.0) {
-        rest(1);
-        
-        // Recalculate remaining time
-        frameEnd = clock();
-        frameTime = ((double)(frameEnd - frameStart)) / CLOCKS_PER_SEC * 1000.0;
-        sleepTime = targetFrameTime - frameTime;
-    }
-    #endif
-    
-    #ifndef __DJGPP__
-    if (key[KEY_ALT] && key[KEY_F4]) {
-        gameRunning = false;
-    }
+    if (sleepTime>0) {
+        rest(sleepTime);
+    }    
     #endif
 }
     if (dosAudioInitialized) {
