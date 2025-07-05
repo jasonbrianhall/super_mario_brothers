@@ -148,7 +148,9 @@ AllegroMainWindow::AllegroMainWindow()
     strcpy(currentCaptureKey, "");
     menuCount = 0;
     g_mainWindow = this;
-    
+    gamePaused = false;
+    showingMenu = false;
+    currentDialog = DIALOG_NONE;
     // Initialize default controls
     setupDefaultControls();
 }
@@ -680,12 +682,16 @@ void AllegroMainWindow::setupMenu()
     mainMenu[menuCount].enabled = true;
     menuCount++;
 }
+
 void AllegroMainWindow::run() 
 {
     printf("=== Starting Super Mario Bros ===\n");
+    // Force initial state
+    
     gamePaused = false;
-
-
+    showingMenu = false;
+    currentDialog = DIALOG_NONE;
+    
     // Initialize the SMB engine
     SMBEngine engine(const_cast<unsigned char*>(smbRomData));
     smbEngine = &engine;
@@ -705,17 +711,19 @@ void AllegroMainWindow::run()
     printf("Audio: %s\n", dosAudioInitialized ? "Enabled" : "Disabled");
     
     // Simple audio variables
-    static uint8_t audioBuffer[1024];  // Smaller buffer for safety
+    static uint8_t audioBuffer[1024];
     static int frameCounter = 0;
     
+    // FIXED: Replace the problematic timer loop
     // Main game loop
     while (gameRunning) {
-        // Wait for timer tick
         #ifdef __DJGPP__
-        while (timer_counter == 0) {
-            rest(1);  // Give CPU time to other processes
+        // DOS: Simple timer approach - don't get stuck waiting
+        if (timer_counter > 0) {
+            //rest(1); // Consume one timer tick
+        } else {
+            rest(16); // ~60 FPS fallback - prevent infinite waiting
         }
-        timer_counter = 0;  // Reset counter (simplified)
         #else
         rest(1000 / Configuration::getFrameRate());
         #endif
@@ -735,25 +743,7 @@ void AllegroMainWindow::run()
                 if (samplesNeeded < 100) samplesNeeded = 100;
                 
                 // Get audio from SMB engine
-                engine.audioCallback(audioBuffer, samplesNeeded);
-                
-                #ifdef __DJGPP__
-                // Create temporary sample and play it
-                SAMPLE* tempSample = create_sample(8, 0, Configuration::getAudioFrequency(), samplesNeeded);
-                if (tempSample && tempSample->data) {
-                    // Convert unsigned to signed
-                    int8_t* sampleData = (int8_t*)tempSample->data;
-                    for (int i = 0; i < samplesNeeded; i++) {
-                        sampleData[i] = (int8_t)(audioBuffer[i] - 128);
-                    }
-                    
-                    // Play sample at low volume to prevent distortion
-                    play_sample(tempSample, 64, 128, 1000, 0);
-                    
-                    // Clean up immediately
-                    destroy_sample(tempSample);
-                }
-                #endif
+                engine.audioCallback(audioBuffer, samplesNeeded);                
             }
             
             // Render the frame
@@ -1242,87 +1232,97 @@ void AllegroMainWindow::handleGameInput()
     }
 }
 
+/*void AllegroMainWindow::checkPlayerInput(Player player)
+{
+    if (!smbEngine) return;
+    
+    poll_keyboard();
+    
+    if (player == PLAYER_1) {
+        Controller& controller = smbEngine->getController1();
+        
+        bool up = (key[KEY_UP] != 0);
+        bool down = (key[KEY_DOWN] != 0);
+        bool left = (key[KEY_LEFT] != 0);
+        bool right = (key[KEY_RIGHT] != 0);
+        bool a = (key[KEY_X] != 0);
+        bool b = (key[KEY_Z] != 0);
+        bool start = (key[KEY_ENTER] != 0);
+        bool select = (key[KEY_SPACE] != 0);
+        
+        controller.setButtonState(BUTTON_UP, up);
+        controller.setButtonState(BUTTON_DOWN, down);
+        controller.setButtonState(BUTTON_LEFT, left);
+        controller.setButtonState(BUTTON_RIGHT, right);
+        controller.setButtonState(BUTTON_A, a);
+        controller.setButtonState(BUTTON_B, b);
+        controller.setButtonState(BUTTON_START, start);
+        controller.setButtonState(BUTTON_SELECT, select);
+    }
+    else if (player == PLAYER_2) {
+        Controller& controller = smbEngine->getController2();
+        
+        bool up = (key[KEY_W] != 0);
+        bool down = (key[KEY_S] != 0);
+        bool left = (key[KEY_A] != 0);
+        bool right = (key[KEY_D] != 0);
+        bool a = (key[KEY_G] != 0);
+        bool b = (key[KEY_F] != 0);
+        bool start = (key[KEY_T] != 0);
+        bool select = (key[KEY_R] != 0);
+        
+        controller.setButtonState(BUTTON_UP, up);
+        controller.setButtonState(BUTTON_DOWN, down);
+        controller.setButtonState(BUTTON_LEFT, left);
+        controller.setButtonState(BUTTON_RIGHT, right);
+        controller.setButtonState(BUTTON_A, a);
+        controller.setButtonState(BUTTON_B, b);
+        controller.setButtonState(BUTTON_START, start);
+        controller.setButtonState(BUTTON_SELECT, select);
+    }
+}*/
+
 void AllegroMainWindow::checkPlayerInput(Player player)
 {
     if (!smbEngine) return;
     
     poll_keyboard();
     
-    // Only poll joystick if we have joysticks and polling succeeds
     bool joystick_available = false;
     if (num_joysticks > 0) {
         if (poll_joystick() == 0) {
             joystick_available = true;
         }
     }
-
+    
     if (player == PLAYER_1) {
         Controller& controller = smbEngine->getController1();
         
-        // Initialize all inputs as false
-        bool up = false, down = false, left = false, right = false;
-        bool a = false, b = false, start = false, select = false;
+        bool up = (key[player1Keys.up] != 0);
+        bool down = (key[player1Keys.down] != 0);
+        bool left = (key[player1Keys.left] != 0);
+        bool right = (key[player1Keys.right] != 0);
+        bool a = (key[player1Keys.button_a] != 0);
+        bool b = (key[player1Keys.button_b] != 0);
+        bool start = (key[player1Keys.start] != 0);
+        bool select = (key[player1Keys.select] != 0);
         
-        // Keyboard input (always check first)
-        if (key[player1Keys.up]) up = true;
-        if (key[player1Keys.down]) down = true;
-        if (key[player1Keys.left]) left = true;
-        if (key[player1Keys.right]) right = true;
-        if (key[player1Keys.button_a]) a = true;
-        if (key[player1Keys.button_b]) b = true;
-        if (key[player1Keys.start]) start = true;
-        if (key[player1Keys.select]) select = true;
-        
-        // Joystick input (only if available and working)
+        // Test accessing button data
         if (joystick_available && num_joysticks > 0) {
-            const int joyIndex = 0; // Player 1 uses joystick 0
+            const int joyIndex = 0;
             
-            // Check if this joystick exists and has the required components
             if (joyIndex < num_joysticks && 
                 joy[joyIndex].num_sticks > 0 && 
                 joy[joyIndex].stick[0].num_axis >= 2) {
                 
-                // Directional input
-                if (player1Joy.use_stick) {
-                    // Analog stick
-                    int x_dir, y_dir;
-                    if (getJoystickDirection(joyIndex, &x_dir, &y_dir)) {
-                        if (x_dir < 0) left = true;
-                        if (x_dir > 0) right = true;
-                        if (y_dir < 0) up = true;
-                        if (y_dir > 0) down = true;
-                    }
-                } else {
-                    // Digital d-pad
-                    if (joy[joyIndex].stick[0].axis[0].d1) left = true;
-                    if (joy[joyIndex].stick[0].axis[0].d2) right = true;
-                    if (joy[joyIndex].stick[0].axis[1].d1) up = true;
-                    if (joy[joyIndex].stick[0].axis[1].d2) down = true;
-                }
+                // Read axis values
+                int x = joy[joyIndex].stick[0].axis[0].pos;
+                int y = joy[joyIndex].stick[0].axis[1].pos;
                 
-                // Button input with bounds checking
-                if (player1Joy.button_a >= 0 && 
-                    player1Joy.button_a < joy[joyIndex].num_buttons &&
-                    joy[joyIndex].button[player1Joy.button_a].b) {
-                    a = true;
-                }
-                
-                if (player1Joy.button_b >= 0 && 
-                    player1Joy.button_b < joy[joyIndex].num_buttons &&
-                    joy[joyIndex].button[player1Joy.button_b].b) {
-                    b = true;
-                }
-                
-                if (player1Joy.start >= 0 && 
-                    player1Joy.start < joy[joyIndex].num_buttons &&
-                    joy[joyIndex].button[player1Joy.start].b) {
-                    start = true;
-                }
-                
-                if (player1Joy.select >= 0 && 
-                    player1Joy.select < joy[joyIndex].num_buttons &&
-                    joy[joyIndex].button[player1Joy.select].b) {
-                    select = true;
+                // Test just reading ONE button without bounds checking player1Joy values
+                if (joy[joyIndex].num_buttons > 0) {
+                    bool button0 = joy[joyIndex].button[0].b;
+                    // Don't use button0 value
                 }
             }
         }
@@ -1339,74 +1339,14 @@ void AllegroMainWindow::checkPlayerInput(Player player)
     else if (player == PLAYER_2) {
         Controller& controller = smbEngine->getController2();
         
-        // Initialize all inputs as false
-        bool up = false, down = false, left = false, right = false;
-        bool a = false, b = false, start = false, select = false;
-        
-        // Keyboard input
-        if (key[player2Keys.up]) up = true;
-        if (key[player2Keys.down]) down = true;
-        if (key[player2Keys.left]) left = true;
-        if (key[player2Keys.right]) right = true;
-        if (key[player2Keys.button_a]) a = true;
-        if (key[player2Keys.button_b]) b = true;
-        if (key[player2Keys.start]) start = true;
-        if (key[player2Keys.select]) select = true;
-        
-        // Joystick input for Player 2
-        if (joystick_available) {
-            int joyIndex = (num_joysticks > 1) ? 1 : 0; // Use joystick 1 if available, else share joystick 0
-            
-            if (joyIndex < num_joysticks && 
-                joy[joyIndex].num_sticks > 0 && 
-                joy[joyIndex].stick[0].num_axis >= 2) {
-                
-                // For shared joystick (Player 2 on joystick 0), use different buttons
-                int button_offset = (joyIndex == 0) ? 4 : 0;
-                
-                // Directional input
-                if (player2Joy.use_stick) {
-                    int x_dir, y_dir;
-                    if (getJoystickDirection(joyIndex, &x_dir, &y_dir)) {
-                        if (x_dir < 0) left = true;
-                        if (x_dir > 0) right = true;
-                        if (y_dir < 0) up = true;
-                        if (y_dir > 0) down = true;
-                    }
-                } else {
-                    if (joy[joyIndex].stick[0].axis[0].d1) left = true;
-                    if (joy[joyIndex].stick[0].axis[0].d2) right = true;
-                    if (joy[joyIndex].stick[0].axis[1].d1) up = true;
-                    if (joy[joyIndex].stick[0].axis[1].d2) down = true;
-                }
-                
-                // Button input with offset for shared joystick
-                int btn_a = player2Joy.button_a + button_offset;
-                int btn_b = player2Joy.button_b + button_offset;
-                int btn_start = player2Joy.start + button_offset;
-                int btn_select = player2Joy.select + button_offset;
-                
-                if (btn_a >= 0 && btn_a < joy[joyIndex].num_buttons &&
-                    joy[joyIndex].button[btn_a].b) {
-                    a = true;
-                }
-                
-                if (btn_b >= 0 && btn_b < joy[joyIndex].num_buttons &&
-                    joy[joyIndex].button[btn_b].b) {
-                    b = true;
-                }
-                
-                if (btn_start >= 0 && btn_start < joy[joyIndex].num_buttons &&
-                    joy[joyIndex].button[btn_start].b) {
-                    start = true;
-                }
-                
-                if (btn_select >= 0 && btn_select < joy[joyIndex].num_buttons &&
-                    joy[joyIndex].button[btn_select].b) {
-                    select = true;
-                }
-            }
-        }
+        bool up = (key[player2Keys.up] != 0);
+        bool down = (key[player2Keys.down] != 0);
+        bool left = (key[player2Keys.left] != 0);
+        bool right = (key[player2Keys.right] != 0);
+        bool a = (key[player2Keys.button_a] != 0);
+        bool b = (key[player2Keys.button_b] != 0);
+        bool start = (key[player2Keys.start] != 0);
+        bool select = (key[player2Keys.select] != 0);
         
         controller.setButtonState(BUTTON_UP, up);
         controller.setButtonState(BUTTON_DOWN, down);
@@ -1418,6 +1358,187 @@ void AllegroMainWindow::checkPlayerInput(Player player)
         controller.setButtonState(BUTTON_SELECT, select);
     }
 }
+
+
+/*void AllegroMainWindow::checkPlayerInput(Player player)
+{
+   setStatusMessage("Check player input");
+   if (!smbEngine) return;
+   
+   //poll_keyboard();
+   
+   // Only poll joystick if we have joysticks and polling succeeds
+   bool joystick_available = false;
+   if (num_joysticks > 0) {
+       if (poll_joystick() == 0) {
+           joystick_available = true;
+       }
+   }
+
+   // REMOVED: Problematic joystick debugging code that was causing DOS hangs
+   
+   if (player == PLAYER_1) {
+       Controller& controller = smbEngine->getController1();
+       
+       // Initialize all inputs as false
+       bool up = false, down = false, left = false, right = false;
+       bool a = false, b = false, start = false, select = false;
+       
+       // Keyboard input (always check first)
+       if (key[player1Keys.up]) up = true;
+       if (key[player1Keys.down]) down = true;
+       if (key[player1Keys.left]) left = true;
+       if (key[player1Keys.right]) right = true;
+       if (key[player1Keys.button_a]) a = true;
+       if (key[player1Keys.button_b]) b = true;
+       if (key[player1Keys.start]) start = true;
+       if (key[player1Keys.select]) select = true;
+       
+       // Joystick input (only if available and working)
+       if (joystick_available && num_joysticks > 0) {
+           const int joyIndex = 0; // Player 1 uses joystick 0
+           
+           // Check if this joystick exists and has the required components
+           if (joyIndex < num_joysticks && 
+               joy[joyIndex].num_sticks > 0 && 
+               joy[joyIndex].stick[0].num_axis >= 2) {
+               
+               // Directional input
+               if (player1Joy.use_stick) {
+                   // Analog stick
+                   int x_dir, y_dir;
+                   if (getJoystickDirection(joyIndex, &x_dir, &y_dir)) {
+                       if (x_dir < 0) left = true;
+                       if (x_dir > 0) right = true;
+                       if (y_dir < 0) up = true;
+                       if (y_dir > 0) down = true;
+                   }
+               } else {
+                   // Digital d-pad
+                   if (joy[joyIndex].stick[0].axis[0].d1) left = true;
+                   if (joy[joyIndex].stick[0].axis[0].d2) right = true;
+                   if (joy[joyIndex].stick[0].axis[1].d1) up = true;
+                   if (joy[joyIndex].stick[0].axis[1].d2) down = true;
+               }
+               
+               // Button input with bounds checking
+               if (player1Joy.button_a >= 0 && 
+                   player1Joy.button_a < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[player1Joy.button_a].b) {
+                   a = true;
+               }
+               
+               if (player1Joy.button_b >= 0 && 
+                   player1Joy.button_b < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[player1Joy.button_b].b) {
+                   b = true;
+               }
+               
+               if (player1Joy.start >= 0 && 
+                   player1Joy.start < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[player1Joy.start].b) {
+                   start = true;
+               }
+               
+               if (player1Joy.select >= 0 && 
+                   player1Joy.select < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[player1Joy.select].b) {
+                   select = true;
+               }
+           }
+       }
+       
+       controller.setButtonState(BUTTON_UP, up);
+       controller.setButtonState(BUTTON_DOWN, down);
+       controller.setButtonState(BUTTON_LEFT, left);
+       controller.setButtonState(BUTTON_RIGHT, right);
+       controller.setButtonState(BUTTON_A, a);
+       controller.setButtonState(BUTTON_B, b);
+       controller.setButtonState(BUTTON_START, start);
+       controller.setButtonState(BUTTON_SELECT, select);
+   }
+   else if (player == PLAYER_2) {
+       Controller& controller = smbEngine->getController2();
+       
+       // Initialize all inputs as false
+       bool up = false, down = false, left = false, right = false;
+       bool a = false, b = false, start = false, select = false;
+       
+       // Keyboard input
+       if (key[player2Keys.up]) up = true;
+       if (key[player2Keys.down]) down = true;
+       if (key[player2Keys.left]) left = true;
+       if (key[player2Keys.right]) right = true;
+       if (key[player2Keys.button_a]) a = true;
+       if (key[player2Keys.button_b]) b = true;
+       if (key[player2Keys.start]) start = true;
+       if (key[player2Keys.select]) select = true;
+       
+       // Joystick input for Player 2
+       if (joystick_available) {
+           int joyIndex = (num_joysticks > 1) ? 1 : 0; // Use joystick 1 if available, else share joystick 0
+           
+           if (joyIndex < num_joysticks && 
+               joy[joyIndex].num_sticks > 0 && 
+               joy[joyIndex].stick[0].num_axis >= 2) {
+               
+               // For shared joystick (Player 2 on joystick 0), use different buttons
+               int button_offset = (joyIndex == 0) ? 4 : 0;
+               
+               // Directional input
+               if (player2Joy.use_stick) {
+                   int x_dir, y_dir;
+                   if (getJoystickDirection(joyIndex, &x_dir, &y_dir)) {
+                       if (x_dir < 0) left = true;
+                       if (x_dir > 0) right = true;
+                       if (y_dir < 0) up = true;
+                       if (y_dir > 0) down = true;
+                   }
+               } else {
+                   if (joy[joyIndex].stick[0].axis[0].d1) left = true;
+                   if (joy[joyIndex].stick[0].axis[0].d2) right = true;
+                   if (joy[joyIndex].stick[0].axis[1].d1) up = true;
+                   if (joy[joyIndex].stick[0].axis[1].d2) down = true;
+               }
+               
+               // Button input with offset for shared joystick
+               int btn_a = player2Joy.button_a + button_offset;
+               int btn_b = player2Joy.button_b + button_offset;
+               int btn_start = player2Joy.start + button_offset;
+               int btn_select = player2Joy.select + button_offset;
+               
+               if (btn_a >= 0 && btn_a < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[btn_a].b) {
+                   a = true;
+               }
+               
+               if (btn_b >= 0 && btn_b < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[btn_b].b) {
+                   b = true;
+               }
+               
+               if (btn_start >= 0 && btn_start < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[btn_start].b) {
+                   start = true;
+               }
+               
+               if (btn_select >= 0 && btn_select < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[btn_select].b) {
+                   select = true;
+               }
+           }
+       }
+       
+       controller.setButtonState(BUTTON_UP, up);
+       controller.setButtonState(BUTTON_DOWN, down);
+       controller.setButtonState(BUTTON_LEFT, left);
+       controller.setButtonState(BUTTON_RIGHT, right);
+       controller.setButtonState(BUTTON_A, a);
+       controller.setButtonState(BUTTON_B, b);
+       controller.setButtonState(BUTTON_START, start);
+       controller.setButtonState(BUTTON_SELECT, select);
+   }
+}*/
 
 void AllegroMainWindow::saveControlConfig()
 {
