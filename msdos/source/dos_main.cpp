@@ -1253,7 +1253,34 @@ void AllegroMainWindow::checkPlayerInput(Player player)
             joystick_available = true;
         }
     }
-
+if (num_joysticks > 0) {
+    static FILE* debug_file = NULL;
+    static bool buttons_pressed[32] = {false}; // Track previous state to avoid spam
+    
+    // Open file on first use - 8.3 filename format
+    if (!debug_file) {
+        debug_file = fopen("JOYDEBUG.TXT", "w");
+        if (debug_file) {
+            fprintf(debug_file, "Joystick Debug Log\n");
+            fprintf(debug_file, "==================\n");
+            fflush(debug_file);
+        }
+    }
+    
+    if (debug_file) {
+        for (int i = 0; i < joy[0].num_buttons && i < 32; i++) {
+            bool current_pressed = joy[0].button[i].b;
+            
+            // Only log when button state changes (pressed, not held)
+            if (current_pressed && !buttons_pressed[i]) {
+                fprintf(debug_file, "Button %d pressed!\n", i);
+                fflush(debug_file); // Force write immediately
+            }
+            
+            buttons_pressed[i] = current_pressed;
+        }
+    }
+}
     if (player == PLAYER_1) {
         Controller& controller = smbEngine->getController1();
         
@@ -1416,22 +1443,58 @@ void AllegroMainWindow::checkPlayerInput(Player player)
         controller.setButtonState(BUTTON_SELECT, select);
     }
 }
+
 void AllegroMainWindow::saveControlConfig()
 {
-    FILE* f = fopen("controls.cfg", "wb");
+    FILE* f = fopen("controls.cfg", "w");  // "w" = write text, 8.3 filename
     if (f) {
         // Write version header
-        uint32_t version = 1;
-        fwrite(&version, sizeof(uint32_t), 1, f);
+        fprintf(f, "# Super Mario Bros Control Configuration\n");
+        fprintf(f, "VERSION=1\n\n");
         
-        // Write control data
-        fwrite(&player1Keys, sizeof(PlayerKeys), 1, f);
-        fwrite(&player2Keys, sizeof(PlayerKeys), 1, f);
-        fwrite(&player1Joy, sizeof(PlayerJoy), 1, f);
-        fwrite(&player2Joy, sizeof(PlayerJoy), 1, f);
+        // Write Player 1 keyboard controls
+        fprintf(f, "# Player 1 Keyboard Controls\n");
+        fprintf(f, "P1_KEY_UP=%d\n", player1Keys.up);
+        fprintf(f, "P1_KEY_DOWN=%d\n", player1Keys.down);
+        fprintf(f, "P1_KEY_LEFT=%d\n", player1Keys.left);
+        fprintf(f, "P1_KEY_RIGHT=%d\n", player1Keys.right);
+        fprintf(f, "P1_KEY_A=%d\n", player1Keys.button_a);
+        fprintf(f, "P1_KEY_B=%d\n", player1Keys.button_b);
+        fprintf(f, "P1_KEY_START=%d\n", player1Keys.start);
+        fprintf(f, "P1_KEY_SELECT=%d\n", player1Keys.select);
+        fprintf(f, "\n");
+        
+        // Write Player 1 joystick controls
+        fprintf(f, "# Player 1 Joystick Controls\n");
+        fprintf(f, "P1_JOY_A=%d\n", player1Joy.button_a);
+        fprintf(f, "P1_JOY_B=%d\n", player1Joy.button_b);
+        fprintf(f, "P1_JOY_START=%d\n", player1Joy.start);
+        fprintf(f, "P1_JOY_SELECT=%d\n", player1Joy.select);
+        fprintf(f, "P1_JOY_USE_STICK=%d\n", player1Joy.use_stick ? 1 : 0);
+        fprintf(f, "\n");
+        
+        // Write Player 2 keyboard controls
+        fprintf(f, "# Player 2 Keyboard Controls\n");
+        fprintf(f, "P2_KEY_UP=%d\n", player2Keys.up);
+        fprintf(f, "P2_KEY_DOWN=%d\n", player2Keys.down);
+        fprintf(f, "P2_KEY_LEFT=%d\n", player2Keys.left);
+        fprintf(f, "P2_KEY_RIGHT=%d\n", player2Keys.right);
+        fprintf(f, "P2_KEY_A=%d\n", player2Keys.button_a);
+        fprintf(f, "P2_KEY_B=%d\n", player2Keys.button_b);
+        fprintf(f, "P2_KEY_START=%d\n", player2Keys.start);
+        fprintf(f, "P2_KEY_SELECT=%d\n", player2Keys.select);
+        fprintf(f, "\n");
+        
+        // Write Player 2 joystick controls
+        fprintf(f, "# Player 2 Joystick Controls\n");
+        fprintf(f, "P2_JOY_A=%d\n", player2Joy.button_a);
+        fprintf(f, "P2_JOY_B=%d\n", player2Joy.button_b);
+        fprintf(f, "P2_JOY_START=%d\n", player2Joy.start);
+        fprintf(f, "P2_JOY_SELECT=%d\n", player2Joy.select);
+        fprintf(f, "P2_JOY_USE_STICK=%d\n", player2Joy.use_stick ? 1 : 0);
         
         fclose(f);
-        printf("Control configuration saved\n");
+        printf("Control configuration saved to controls.cfg\n");
     } else {
         printf("Warning: Could not save control configuration\n");
     }
@@ -1497,26 +1560,60 @@ void AllegroMainWindow::runJoystickTest()
 
 void AllegroMainWindow::loadControlConfig()
 {
-    FILE* f = fopen("controls.cfg", "rb");
+    FILE* f = fopen("controls.cfg", "r");  // "r" = read text
     if (f) {
-        // Check version
-        uint32_t version = 0;
-        if (fread(&version, sizeof(uint32_t), 1, f) == 1 && version == 1) {
-            // Read control data
-            if (fread(&player1Keys, sizeof(PlayerKeys), 1, f) == 1 &&
-                fread(&player2Keys, sizeof(PlayerKeys), 1, f) == 1 &&
-                fread(&player1Joy, sizeof(PlayerJoy), 1, f) == 1 &&
-                fread(&player2Joy, sizeof(PlayerJoy), 1, f) == 1) {
-                printf("Control configuration loaded successfully\n");
-            } else {
-                printf("Warning: Incomplete control configuration file, using defaults\n");
-                setupDefaultControls();
+        char line[256];
+        char key[64];
+        int value;
+        
+        printf("Loading control configuration from controls.cfg\n");
+        
+        while (fgets(line, sizeof(line), f)) {
+            // Skip comments and empty lines
+            if (line[0] == '#' || line[0] == '\n' || line[0] == '\r') {
+                continue;
             }
-        } else {
-            printf("Warning: Unsupported control configuration version, using defaults\n");
-            setupDefaultControls();
+            
+            // Parse KEY=VALUE format
+            if (sscanf(line, "%63[^=]=%d", key, &value) == 2) {
+                // Player 1 keyboard
+                if (strcmp(key, "P1_KEY_UP") == 0) player1Keys.up = value;
+                else if (strcmp(key, "P1_KEY_DOWN") == 0) player1Keys.down = value;
+                else if (strcmp(key, "P1_KEY_LEFT") == 0) player1Keys.left = value;
+                else if (strcmp(key, "P1_KEY_RIGHT") == 0) player1Keys.right = value;
+                else if (strcmp(key, "P1_KEY_A") == 0) player1Keys.button_a = value;
+                else if (strcmp(key, "P1_KEY_B") == 0) player1Keys.button_b = value;
+                else if (strcmp(key, "P1_KEY_START") == 0) player1Keys.start = value;
+                else if (strcmp(key, "P1_KEY_SELECT") == 0) player1Keys.select = value;
+                
+                // Player 1 joystick
+                else if (strcmp(key, "P1_JOY_A") == 0) player1Joy.button_a = value;
+                else if (strcmp(key, "P1_JOY_B") == 0) player1Joy.button_b = value;
+                else if (strcmp(key, "P1_JOY_START") == 0) player1Joy.start = value;
+                else if (strcmp(key, "P1_JOY_SELECT") == 0) player1Joy.select = value;
+                else if (strcmp(key, "P1_JOY_USE_STICK") == 0) player1Joy.use_stick = (value != 0);
+                
+                // Player 2 keyboard
+                else if (strcmp(key, "P2_KEY_UP") == 0) player2Keys.up = value;
+                else if (strcmp(key, "P2_KEY_DOWN") == 0) player2Keys.down = value;
+                else if (strcmp(key, "P2_KEY_LEFT") == 0) player2Keys.left = value;
+                else if (strcmp(key, "P2_KEY_RIGHT") == 0) player2Keys.right = value;
+                else if (strcmp(key, "P2_KEY_A") == 0) player2Keys.button_a = value;
+                else if (strcmp(key, "P2_KEY_B") == 0) player2Keys.button_b = value;
+                else if (strcmp(key, "P2_KEY_START") == 0) player2Keys.start = value;
+                else if (strcmp(key, "P2_KEY_SELECT") == 0) player2Keys.select = value;
+                
+                // Player 2 joystick
+                else if (strcmp(key, "P2_JOY_A") == 0) player2Joy.button_a = value;
+                else if (strcmp(key, "P2_JOY_B") == 0) player2Joy.button_b = value;
+                else if (strcmp(key, "P2_JOY_START") == 0) player2Joy.start = value;
+                else if (strcmp(key, "P2_JOY_SELECT") == 0) player2Joy.select = value;
+                else if (strcmp(key, "P2_JOY_USE_STICK") == 0) player2Joy.use_stick = (value != 0);
+            }
         }
+        
         fclose(f);
+        printf("Control configuration loaded successfully\n");
     } else {
         printf("No control configuration file found, using defaults\n");
         setupDefaultControls();
