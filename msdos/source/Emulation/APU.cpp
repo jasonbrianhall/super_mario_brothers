@@ -11,6 +11,7 @@
 #include <pthread.h>
 #endif
 
+
 #include "../Configuration.hpp"
 #include "APU.hpp"
 
@@ -575,6 +576,11 @@ void APU::output(uint8_t* buffer, int len)
 
 void APU::stepFrame()
 {
+    // Safety check - if objects aren't created, don't crash
+    if (!pulse1 || !pulse2 || !triangle || !noise) {
+        return;
+    }
+
     for (int i = 0; i < 4; i++)
     {
         frameValue = (frameValue + 1) % 5;
@@ -599,16 +605,19 @@ void APU::stepFrame()
             samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
         }
         
-        #ifndef __DJGPP__
-        static pthread_mutex_t audio_mutex = PTHREAD_MUTEX_INITIALIZER;
-        pthread_mutex_lock(&audio_mutex);
-        #endif
-
+        // Bounds check
+        if (samplesToWrite <= 0 || audioBufferLength + samplesToWrite >= AUDIO_BUFFER_LENGTH) {
+            continue;
+        }
+        
+#ifndef __DJGPP__
+        //static pthread_mutex_t audio_mutex = PTHREAD_MUTEX_INITIALIZER;
+        //pthread_mutex_lock(&audio_mutex);
+#endif
         int j = 0;
-        for (int stepIndex = 0; stepIndex < 3729; stepIndex++)
+        for (int stepIndex = 0; stepIndex < 3729 && j < samplesToWrite; stepIndex++)
         {
-            if (j < samplesToWrite &&
-                (stepIndex / 3729.0) > (j / (double)samplesToWrite))
+            if ((stepIndex / 3729.0) > (j / (double)samplesToWrite))
             {
                 uint8_t sample = getOutput();
                 audioBuffer[audioBufferLength + j] = sample;
@@ -621,11 +630,10 @@ void APU::stepFrame()
             triangle->stepTimer();
             triangle->stepTimer();
         }
-        audioBufferLength += samplesToWrite;
-        
-        #ifndef __DJGPP__
-        pthread_mutex_unlock(&audio_mutex);
-        #endif
+        audioBufferLength += j;
+#ifndef __DJGPP__
+        //pthread_mutex_unlock(&audio_mutex);
+#endif        
     }
 }
 
