@@ -195,7 +195,6 @@ private:
   void printControlMappings();
   void startKeyCapture(CaptureType captureType, const char* promptText);
   void debugJoystickInfo(int joyIndex);
-  void checkPlayerInputFixed(Player player);
 
 };
 
