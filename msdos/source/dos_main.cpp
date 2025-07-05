@@ -1284,79 +1284,167 @@ void AllegroMainWindow::handleGameInput()
 
 void AllegroMainWindow::checkPlayerInput(Player player)
 {
-    if (!smbEngine) return;
-    
-    poll_keyboard();
-    
-    bool joystick_available = false;
-    if (num_joysticks > 0) {
-        if (poll_joystick() == 0) {
-            joystick_available = true;
-        }
-    }
-    
-    if (player == PLAYER_1) {
-        Controller& controller = smbEngine->getController1();
-        
-        bool up = (key[player1Keys.up] != 0);
-        bool down = (key[player1Keys.down] != 0);
-        bool left = (key[player1Keys.left] != 0);
-        bool right = (key[player1Keys.right] != 0);
-        bool a = (key[player1Keys.button_a] != 0);
-        bool b = (key[player1Keys.button_b] != 0);
-        bool start = (key[player1Keys.start] != 0);
-        bool select = (key[player1Keys.select] != 0);
-        
-        // Test accessing button data
-        if (joystick_available && num_joysticks > 0) {
-            const int joyIndex = 0;
-            
-            if (joyIndex < num_joysticks && 
-                joy[joyIndex].num_sticks > 0 && 
-                joy[joyIndex].stick[0].num_axis >= 2) {
-                
-                // Read axis values
-                int x = joy[joyIndex].stick[0].axis[0].pos;
-                int y = joy[joyIndex].stick[0].axis[1].pos;
-                
-                // Test just reading ONE button without bounds checking player1Joy values
-                if (joy[joyIndex].num_buttons > 0) {
-                    bool button0 = joy[joyIndex].button[0].b;
-                    // Don't use button0 value
-                }
-            }
-        }
-        
-        controller.setButtonState(BUTTON_UP, up);
-        controller.setButtonState(BUTTON_DOWN, down);
-        controller.setButtonState(BUTTON_LEFT, left);
-        controller.setButtonState(BUTTON_RIGHT, right);
-        controller.setButtonState(BUTTON_A, a);
-        controller.setButtonState(BUTTON_B, b);
-        controller.setButtonState(BUTTON_START, start);
-        controller.setButtonState(BUTTON_SELECT, select);
-    }
-    else if (player == PLAYER_2) {
-        Controller& controller = smbEngine->getController2();
-        
-        bool up = (key[player2Keys.up] != 0);
-        bool down = (key[player2Keys.down] != 0);
-        bool left = (key[player2Keys.left] != 0);
-        bool right = (key[player2Keys.right] != 0);
-        bool a = (key[player2Keys.button_a] != 0);
-        bool b = (key[player2Keys.button_b] != 0);
-        bool start = (key[player2Keys.start] != 0);
-        bool select = (key[player2Keys.select] != 0);
-        
-        controller.setButtonState(BUTTON_UP, up);
-        controller.setButtonState(BUTTON_DOWN, down);
-        controller.setButtonState(BUTTON_LEFT, left);
-        controller.setButtonState(BUTTON_RIGHT, right);
-        controller.setButtonState(BUTTON_A, a);
-        controller.setButtonState(BUTTON_B, b);
-        controller.setButtonState(BUTTON_START, start);
-        controller.setButtonState(BUTTON_SELECT, select);
-    }
+   if (!smbEngine) return;
+   
+   poll_keyboard();
+   
+   #ifndef __DJGPP__
+   // Only poll joystick on non-DOS systems
+   bool joystick_available = false;
+   if (num_joysticks > 0) {
+       if (poll_joystick() == 0) {
+           joystick_available = true;
+       }
+   }
+   #endif
+   
+   if (player == PLAYER_1) {
+       Controller& controller = smbEngine->getController1();
+       
+       bool up = (key[player1Keys.up] != 0);
+       bool down = (key[player1Keys.down] != 0);
+       bool left = (key[player1Keys.left] != 0);
+       bool right = (key[player1Keys.right] != 0);
+       bool a = (key[player1Keys.button_a] != 0);
+       bool b = (key[player1Keys.button_b] != 0);
+       bool start = (key[player1Keys.start] != 0);
+       bool select = (key[player1Keys.select] != 0);
+       
+       #ifndef __DJGPP__
+       // Joystick input only on non-DOS systems
+       if (joystick_available && num_joysticks > 0) {
+           const int joyIndex = 0;
+           
+           if (joyIndex < num_joysticks && 
+               joy[joyIndex].num_sticks > 0 && 
+               joy[joyIndex].stick[0].num_axis >= 2) {
+               
+               if (player1Joy.use_stick) {
+                   int x_dir, y_dir;
+                   if (getJoystickDirection(joyIndex, &x_dir, &y_dir)) {
+                       if (x_dir < 0) left = true;
+                       if (x_dir > 0) right = true;
+                       if (y_dir < 0) up = true;
+                       if (y_dir > 0) down = true;
+                   }
+               } else {
+                   if (joy[joyIndex].stick[0].axis[0].d1) left = true;
+                   if (joy[joyIndex].stick[0].axis[0].d2) right = true;
+                   if (joy[joyIndex].stick[0].axis[1].d1) up = true;
+                   if (joy[joyIndex].stick[0].axis[1].d2) down = true;
+               }
+               
+               if (player1Joy.button_a >= 0 && 
+                   player1Joy.button_a < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[player1Joy.button_a].b) {
+                   a = true;
+               }
+               
+               if (player1Joy.button_b >= 0 && 
+                   player1Joy.button_b < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[player1Joy.button_b].b) {
+                   b = true;
+               }
+               
+               if (player1Joy.start >= 0 && 
+                   player1Joy.start < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[player1Joy.start].b) {
+                   start = true;
+               }
+               
+               if (player1Joy.select >= 0 && 
+                   player1Joy.select < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[player1Joy.select].b) {
+                   select = true;
+               }
+           }
+       }
+       #endif
+       
+       controller.setButtonState(BUTTON_UP, up);
+       controller.setButtonState(BUTTON_DOWN, down);
+       controller.setButtonState(BUTTON_LEFT, left);
+       controller.setButtonState(BUTTON_RIGHT, right);
+       controller.setButtonState(BUTTON_A, a);
+       controller.setButtonState(BUTTON_B, b);
+       controller.setButtonState(BUTTON_START, start);
+       controller.setButtonState(BUTTON_SELECT, select);
+   }
+   else if (player == PLAYER_2) {
+       Controller& controller = smbEngine->getController2();
+       
+       bool up = (key[player2Keys.up] != 0);
+       bool down = (key[player2Keys.down] != 0);
+       bool left = (key[player2Keys.left] != 0);
+       bool right = (key[player2Keys.right] != 0);
+       bool a = (key[player2Keys.button_a] != 0);
+       bool b = (key[player2Keys.button_b] != 0);
+       bool start = (key[player2Keys.start] != 0);
+       bool select = (key[player2Keys.select] != 0);
+       
+       #ifndef __DJGPP__
+       // Joystick input for Player 2 only on non-DOS systems
+       if (joystick_available) {
+           int joyIndex = (num_joysticks > 1) ? 1 : 0;
+           
+           if (joyIndex < num_joysticks && 
+               joy[joyIndex].num_sticks > 0 && 
+               joy[joyIndex].stick[0].num_axis >= 2) {
+               
+               int button_offset = (joyIndex == 0) ? 4 : 0;
+               
+               if (player2Joy.use_stick) {
+                   int x_dir, y_dir;
+                   if (getJoystickDirection(joyIndex, &x_dir, &y_dir)) {
+                       if (x_dir < 0) left = true;
+                       if (x_dir > 0) right = true;
+                       if (y_dir < 0) up = true;
+                       if (y_dir > 0) down = true;
+                   }
+               } else {
+                   if (joy[joyIndex].stick[0].axis[0].d1) left = true;
+                   if (joy[joyIndex].stick[0].axis[0].d2) right = true;
+                   if (joy[joyIndex].stick[0].axis[1].d1) up = true;
+                   if (joy[joyIndex].stick[0].axis[1].d2) down = true;
+               }
+               
+               int btn_a = player2Joy.button_a + button_offset;
+               int btn_b = player2Joy.button_b + button_offset;
+               int btn_start = player2Joy.start + button_offset;
+               int btn_select = player2Joy.select + button_offset;
+               
+               if (btn_a >= 0 && btn_a < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[btn_a].b) {
+                   a = true;
+               }
+               
+               if (btn_b >= 0 && btn_b < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[btn_b].b) {
+                   b = true;
+               }
+               
+               if (btn_start >= 0 && btn_start < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[btn_start].b) {
+                   start = true;
+               }
+               
+               if (btn_select >= 0 && btn_select < joy[joyIndex].num_buttons &&
+                   joy[joyIndex].button[btn_select].b) {
+                   select = true;
+               }
+           }
+       }
+       #endif
+       
+       controller.setButtonState(BUTTON_UP, up);
+       controller.setButtonState(BUTTON_DOWN, down);
+       controller.setButtonState(BUTTON_LEFT, left);
+       controller.setButtonState(BUTTON_RIGHT, right);
+       controller.setButtonState(BUTTON_A, a);
+       controller.setButtonState(BUTTON_B, b);
+       controller.setButtonState(BUTTON_START, start);
+       controller.setButtonState(BUTTON_SELECT, select);
+   }
 }
 
 
