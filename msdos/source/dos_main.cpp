@@ -843,7 +843,7 @@ void AllegroMainWindow::handleInput()
         if (currentDialog != DIALOG_NONE) {
             // Close dialog
             currentDialog = DIALOG_NONE;
-            if (!showingMenu) {
+            if (!showingMenu && gamePaused==true) {
                 gamePaused = false;
                 setStatusMessage("Game Resumed");
             }
