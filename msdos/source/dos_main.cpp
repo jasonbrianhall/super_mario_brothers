@@ -675,45 +675,46 @@ void AllegroMainWindow::run()
     
     static int frameCounter = 0;
     
-    while (gameRunning) {
-        #ifdef __DJGPP__
-        if (timer_counter > 0) {
-            
-        } else {
-            rest(16);
-        }
-        #else
-        rest(1000 / Configuration::getFrameRate());
-        #endif
+ while (gameRunning) {
+    clock_t frameStart = clock();    
+    handleInput();
+    
+    if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
+        engine.update();
         
-        handleInput();
-        
-        if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
-            engine.update();
-            
-            if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
-                void* audiobuf = get_audio_stream_buffer(audiostream);
-                if (audiobuf) {
-                    int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
-                    if (samplesNeeded > 1024) samplesNeeded = 1024;
-                    
-                    engine.audioCallback((uint8_t*)audiobuf, samplesNeeded);
-                    free_audio_stream_buffer(audiostream);
-                }
+        if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
+            void* audiobuf = get_audio_stream_buffer(audiostream);
+            if (audiobuf) {
+                int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
+                if (samplesNeeded > 1024) samplesNeeded = 1024;
+                
+                engine.audioCallback((uint8_t*)audiobuf, samplesNeeded);
+                free_audio_stream_buffer(audiostream);
             }
-            
-            engine.render(renderBuffer);
-            currentFrameBuffer = renderBuffer;
         }
         
-        updateAndDraw();
-        
-        #ifndef __DJGPP__
-        if (key[KEY_ALT] && key[KEY_F4]) {
-            gameRunning = false;
-        }
-        #endif
+        engine.render(renderBuffer);
+        currentFrameBuffer = renderBuffer;
     }
+    
+    updateAndDraw();
+    
+    // Calculate how much time has passed and sleep for remaining time
+    clock_t frameEnd = clock();
+    double frameTime = ((double)(frameEnd - frameStart)) / CLOCKS_PER_SEC * 1000.0; // Convert to milliseconds
+    
+    int targetFrameTime = 1000 / Configuration::getFrameRate();
+    int sleepTime = targetFrameTime - (int)frameTime;
+    
+    if (sleepTime > 0) {
+        rest(sleepTime);
+    }
+    // If sleepTime <= 0, we're running behind and should continue immediately
+    
+    if (key[KEY_ALT] && key[KEY_F4]) {
+        gameRunning = false;
+    }
+}
     
     if (dosAudioInitialized) {
         printf("Cleaning up audio...\n");
