@@ -2586,22 +2586,6 @@ void AllegroMainWindow::convertNESBuffer16ToBitmap(uint16_t* nesBuffer, BITMAP* 
     }
 }
 
-// Alternative ultra-fast version for systems that support it
-/*void AllegroMainWindow::drawGameUltraFast(BITMAP* target)
-{
-    // This version requires the screen bitmap to be 16-bit and accessible
-    if (bitmap_color_depth(target) == 16) {
-        // Get pointer to screen memory
-        uint16_t* screenMem = (uint16_t*)target->line[0];
-        
-        // Render directly to screen memory with centering
-        smbEngine->renderDirectFast(screenMem, SCREEN_W, SCREEN_H);
-    } else {
-        // Fall back to buffered method
-        drawGameDirect(target);
-    }
-}*/
-
 void AllegroMainWindow::convertBuffer16ToBitmapScaled(uint16_t* buffer16, BITMAP* bitmap, int width, int height)
 {
     // This buffer already contains the scaled and centered image from SMBEngine
