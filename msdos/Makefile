@@ -43,6 +43,7 @@ SOURCE_FILES = \
     source/Emulation/APU.cpp \
     source/Emulation/Controller.cpp \
     source/Emulation/MemoryAccess.cpp \
+    source/Emulation/AllegroMidi.cpp \
     source/Emulation/PPU.cpp \
     source/SMB/SMB.cpp \
     source/SMB/SMBData.cpp \
