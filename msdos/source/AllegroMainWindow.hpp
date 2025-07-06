@@ -204,13 +204,45 @@ private:
 #ifndef __DJGPP__
     bool toggleFullscreen();
 #endif
+
+
+    struct ScalingCache {
+        uint16_t* scaledBuffer;          // Pre-scaled buffer
+        int* sourceToDestX;              // X coordinate mapping table
+        int* sourceToDestY;              // Y coordinate mapping table
+        int scaleFactor;                 // Current scale factor
+        int destWidth, destHeight;       // Destination dimensions
+        int destOffsetX, destOffsetY;    // Centering offsets
+        bool isValid;                    // Cache validity flag
+        
+        ScalingCache();
+        ~ScalingCache();
+        void cleanup();
+    };
+    
+    ScalingCache scalingCache;
+    uint32_t* lineStartOffsets;         // Pre-calculated line start offsets
+    bool useOptimizedScaling;           // Enable/disable optimization
+    
+    // Scaling methods
+    void initializeScalingCache();
+    void updateScalingCache();
+    bool isScalingCacheValid();
+    void drawGameCached(BITMAP* target);
+    void drawGameFastScale(BITMAP* target);
+    
+    // Optimized scaling methods
+    void drawGame1x1(uint16_t* nesBuffer, BITMAP* target);
+    void drawGame2x(uint16_t* nesBuffer, BITMAP* target);
+    void drawGame3x(uint16_t* nesBuffer, BITMAP* target);
+    void drawGameGenericScale(uint16_t* nesBuffer, BITMAP* target, int scale);
+    
+    #ifdef __DJGPP__
+    // DOS-specific optimizations
+    void drawGameDOS320x200(BITMAP* target);
+    void drawGameDOSOptimized(BITMAP* target);
+    #endif
 };
 
-
-// Global callback for Allegro timer
-void timer_callback();
-
-// Global instance pointer for callbacks
-extern AllegroMainWindow *g_mainWindow;
 
 #endif // ALLEGRO_MAIN_WINDOW_HPP

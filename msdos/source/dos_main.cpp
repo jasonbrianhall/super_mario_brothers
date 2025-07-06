@@ -20,6 +20,8 @@
 #include <pc.h>
 #endif
 
+//#define DEBUG_SCALING_CACHE 1
+
 static AUDIOSTREAM* audiostream = NULL;
 
 // Global variables for DOS compatibility
@@ -174,10 +176,12 @@ AllegroMainWindow::AllegroMainWindow()
       isCapturingInput(false), currentDialog(DIALOG_NONE),
       statusMessageTimer(0), currentFrameBuffer(NULL),
       screenBuffer16(NULL), useDirectRendering(true),
-      currentCaptureType(CAPTURE_NONE), currentConfigPlayer(PLAYER_1)
+      currentCaptureType(CAPTURE_NONE), currentConfigPlayer(PLAYER_1),
+      lineStartOffsets(NULL), useOptimizedScaling(true)
 #ifndef __DJGPP__
       , isFullscreen(false), windowedWidth(640), windowedHeight(480)  // Only for non-DOS
 #endif
+
 {
     strcpy(statusMessage, "Ready");
     strcpy(currentCaptureKey, "");
@@ -189,15 +193,415 @@ AllegroMainWindow::AllegroMainWindow()
     setupDefaultControls();
 }
 
+void AllegroMainWindow::initializeScalingCache()
+{
+    printf("Initializing scaling cache...\n");
+    
+    // Clean up existing cache
+    scalingCache.cleanup();
+    if (lineStartOffsets) {
+        delete[] lineStartOffsets;
+        lineStartOffsets = NULL;
+    }
+    
+    updateScalingCache();
+    
+    printf("Scaling cache initialized: %dx%d -> %dx%d (scale %d)\n", 
+           256, 240, scalingCache.destWidth, scalingCache.destHeight, scalingCache.scaleFactor);
+}
+
+void AllegroMainWindow::updateScalingCache()
+{
+    // Calculate optimal scaling
+    int scale_x = SCREEN_W / 256;
+    int scale_y = SCREEN_H / 240;
+    int scale = (scale_x < scale_y) ? scale_x : scale_y;
+    if (scale < 1) scale = 1;
+    
+    // Check if cache needs updating
+    if (scalingCache.isValid && 
+        scalingCache.scaleFactor == scale &&
+        scalingCache.destWidth == (256 * scale) &&
+        scalingCache.destHeight == (240 * scale)) {
+        #ifdef DEBUG_SCALING_CACHE
+        printf("Scaling cache is valid - reusing existing cache\n");
+        #endif
+        return; // Cache is still valid
+    }
+    
+    #ifdef DEBUG_SCALING_CACHE
+    printf("Updating scaling cache for scale factor %d\n", scale);
+    printf("Screen: %dx%d -> Scaled: %dx%d\n", SCREEN_W, SCREEN_H, 256*scale, 240*scale);
+    #endif
+    
+    // Clean up old cache
+    scalingCache.cleanup();
+    
+    // Calculate new dimensions
+    scalingCache.scaleFactor = scale;
+    scalingCache.destWidth = 256 * scale;
+    scalingCache.destHeight = 240 * scale;
+    scalingCache.destOffsetX = (SCREEN_W - scalingCache.destWidth) / 2;
+    scalingCache.destOffsetY = (SCREEN_H - scalingCache.destHeight) / 2;
+    
+    // Allocate coordinate mapping tables
+    scalingCache.sourceToDestX = new int[256];
+    scalingCache.sourceToDestY = new int[240];
+    
+    // Pre-calculate X coordinate mappings
+    for (int x = 0; x < 256; x++) {
+        scalingCache.sourceToDestX[x] = x * scale + scalingCache.destOffsetX;
+    }
+    
+    // Pre-calculate Y coordinate mappings
+    for (int y = 0; y < 240; y++) {
+        scalingCache.sourceToDestY[y] = y * scale + scalingCache.destOffsetY;
+    }
+    
+    // Allocate pre-scaled buffer for certain optimizations
+    if (scale == 2 || scale == 3) {
+        scalingCache.scaledBuffer = new uint16_t[scalingCache.destWidth * scalingCache.destHeight];
+        printf("Allocated %dKB for pre-scaled buffer\n", 
+               (scalingCache.destWidth * scalingCache.destHeight * 2) / 1024);
+    }
+    
+    // Pre-calculate line start offsets for screen buffer
+    lineStartOffsets = new uint32_t[SCREEN_H];
+    for (int y = 0; y < SCREEN_H; y++) {
+        lineStartOffsets[y] = y * SCREEN_W;
+    }
+    
+    scalingCache.isValid = true;
+    
+    #ifdef DEBUG_SCALING_CACHE
+    printf("Scaling cache updated successfully\n");
+    printf("- Coordinate tables: %d bytes\n", (256 + 240) * sizeof(int));
+    printf("- Line offsets: %d bytes\n", SCREEN_H * sizeof(uint32_t));
+    if (scalingCache.scaledBuffer) {
+        printf("- Pre-scaled buffer: %d bytes\n", 
+               scalingCache.destWidth * scalingCache.destHeight * sizeof(uint16_t));
+    }
+    printf("- Total cache size: ~%d KB\n", 
+           ((256 + 240) * sizeof(int) + SCREEN_H * sizeof(uint32_t) + 
+            (scalingCache.scaledBuffer ? scalingCache.destWidth * scalingCache.destHeight * sizeof(uint16_t) : 0)) / 1024);
+    #endif
+}
+
+bool AllegroMainWindow::isScalingCacheValid()
+{
+    return scalingCache.isValid && 
+           scalingCache.destWidth > 0 && 
+           scalingCache.destHeight > 0;
+}
+
+// Optimized game drawing with caching
+void AllegroMainWindow::drawGameCached(BITMAP* target)
+{
+    if (!smbEngine || !isScalingCacheValid()) {
+        #ifdef DEBUG_SCALING_CACHE
+        static int fallbackCount = 0;
+        if (fallbackCount++ % 60 == 0) { // Print every second
+            printf("Using fallback rendering (cache invalid)\n");
+        }
+        #endif
+        drawGameBuffered(target); // Fallback to original method
+        return;
+    }
+    
+    #ifdef DEBUG_SCALING_CACHE
+    static int cacheCount = 0;
+    if (cacheCount++ % 300 == 0) { // Print every 5 seconds
+        printf("Using cached scaling (scale %dx)\n", scalingCache.scaleFactor);
+    }
+    #endif
+    
+    #ifdef __DJGPP__
+    // Use DOS-specific optimizations
+    if (SCREEN_W == 320 && SCREEN_H == 200) {
+        #ifdef DEBUG_SCALING_CACHE
+        static bool dosOptimPrinted = false;
+        if (!dosOptimPrinted) {
+            printf("Using DOS 320x200 optimization\n");
+            dosOptimPrinted = true;
+        }
+        #endif
+        drawGameDOS320x200(target);
+        return;
+    } else {
+        drawGameDOSOptimized(target);
+        return;
+    }
+    #endif
+    
+    // Generic optimized scaling
+    drawGameFastScale(target);
+}
+// Fast scaling implementation using coordinate tables
+void AllegroMainWindow::drawGameFastScale(BITMAP* target)
+{
+    // Get NES frame in 16-bit format
+    static uint16_t nesBuffer[256 * 240];
+    smbEngine->render16(nesBuffer);
+    
+    // Clear target efficiently
+    if (bitmap_color_depth(target) == 16) {
+        uint16_t* buffer = (uint16_t*)target->line[0];
+        memset(buffer, 0, SCREEN_W * SCREEN_H * sizeof(uint16_t));
+    } else {
+        clear_to_color(target, makecol(0, 0, 0));
+    }
+    
+    const int scale = scalingCache.scaleFactor;
+    
+    if (scale == 1) {
+        // 1:1 copy - super optimized
+        drawGame1x1(nesBuffer, target);
+    } else if (scale == 2) {
+        // 2x scaling - optimized
+        drawGame2x(nesBuffer, target);
+    } else if (scale == 3) {
+        // 3x scaling - optimized
+        drawGame3x(nesBuffer, target);
+    } else {
+        // Generic scaling with coordinate tables
+        drawGameGenericScale(nesBuffer, target, scale);
+    }
+}
+
+// Optimized 1:1 copy
+void AllegroMainWindow::drawGame1x1(uint16_t* nesBuffer, BITMAP* target)
+{
+    const int dest_x = scalingCache.destOffsetX;
+    const int dest_y = scalingCache.destOffsetY;
+    
+    if (bitmap_color_depth(target) == 16) {
+        // Direct 16-bit copy
+        for (int y = 0; y < 240; y++) {
+            if (y + dest_y >= target->h || y + dest_y < 0) continue;
+            
+            uint16_t* src_row = &nesBuffer[y * 256];
+            uint16_t* dest_row = (uint16_t*)target->line[y + dest_y] + dest_x;
+            
+            // Copy entire row at once
+            memcpy(dest_row, src_row, 256 * sizeof(uint16_t));
+        }
+    } else {
+        // Color conversion required
+        for (int y = 0; y < 240; y++) {
+            if (y + dest_y >= target->h || y + dest_y < 0) continue;
+            
+            uint16_t* src_row = &nesBuffer[y * 256];
+            int dest_row_idx = y + dest_y;
+            
+            for (int x = 0; x < 256; x++) {
+                if (x + dest_x >= target->w || x + dest_x < 0) continue;
+                
+                uint16_t pixel16 = src_row[x];
+                int r = ((pixel16 >> 11) & 0x1F) << 3;
+                int g = ((pixel16 >> 5) & 0x3F) << 2;
+                int b = (pixel16 & 0x1F) << 3;
+                
+                putpixel(target, x + dest_x, dest_row_idx, makecol(r, g, b));
+            }
+        }
+    }
+}
+
+// Optimized 2x scaling
+void AllegroMainWindow::drawGame2x(uint16_t* nesBuffer, BITMAP* target)
+{
+    const int dest_x = scalingCache.destOffsetX;
+    const int dest_y = scalingCache.destOffsetY;
+    
+    if (bitmap_color_depth(target) == 16) {
+        // Ultra-fast 2x scaling for 16-bit
+        for (int y = 0; y < 240; y++) {
+            int dest_y1 = y * 2 + dest_y;
+            int dest_y2 = dest_y1 + 1;
+            
+            if (dest_y2 >= target->h) break;
+            if (dest_y1 < 0) continue;
+            
+            uint16_t* src_row = &nesBuffer[y * 256];
+            uint16_t* dest_row1 = (uint16_t*)target->line[dest_y1] + dest_x;
+            uint16_t* dest_row2 = (uint16_t*)target->line[dest_y2] + dest_x;
+            
+            // Process pixels in groups of 4 for better cache utilization
+            for (int x = 0; x < 256; x += 4) {
+                uint16_t p1 = src_row[x];
+                uint16_t p2 = src_row[x + 1];
+                uint16_t p3 = src_row[x + 2];
+                uint16_t p4 = src_row[x + 3];
+                
+                int dest_base = x * 2;
+                
+                // First row
+                dest_row1[dest_base]     = p1; dest_row1[dest_base + 1] = p1;
+                dest_row1[dest_base + 2] = p2; dest_row1[dest_base + 3] = p2;
+                dest_row1[dest_base + 4] = p3; dest_row1[dest_base + 5] = p3;
+                dest_row1[dest_base + 6] = p4; dest_row1[dest_base + 7] = p4;
+                
+                // Second row (duplicate)
+                dest_row2[dest_base]     = p1; dest_row2[dest_base + 1] = p1;
+                dest_row2[dest_base + 2] = p2; dest_row2[dest_base + 3] = p2;
+                dest_row2[dest_base + 4] = p3; dest_row2[dest_base + 5] = p3;
+                dest_row2[dest_base + 6] = p4; dest_row2[dest_base + 7] = p4;
+            }
+        }
+    } else {
+        // Fallback for other bit depths
+        drawGameGenericScale(nesBuffer, target, 2);
+    }
+}
+
+// Optimized 3x scaling
+void AllegroMainWindow::drawGame3x(uint16_t* nesBuffer, BITMAP* target)
+{
+    const int dest_x = scalingCache.destOffsetX;
+    const int dest_y = scalingCache.destOffsetY;
+    
+    if (bitmap_color_depth(target) == 16) {
+        for (int y = 0; y < 240; y++) {
+            int dest_y1 = y * 3 + dest_y;
+            int dest_y2 = dest_y1 + 1;
+            int dest_y3 = dest_y1 + 2;
+            
+            if (dest_y3 >= target->h) break;
+            if (dest_y1 < 0) continue;
+            
+            uint16_t* src_row = &nesBuffer[y * 256];
+            uint16_t* dest_row1 = (uint16_t*)target->line[dest_y1] + dest_x;
+            uint16_t* dest_row2 = (uint16_t*)target->line[dest_y2] + dest_x;
+            uint16_t* dest_row3 = (uint16_t*)target->line[dest_y3] + dest_x;
+            
+            for (int x = 0; x < 256; x++) {
+                uint16_t pixel = src_row[x];
+                int dest_base = x * 3;
+                
+                // Triple each pixel horizontally
+                dest_row1[dest_base] = dest_row1[dest_base + 1] = dest_row1[dest_base + 2] = pixel;
+                dest_row2[dest_base] = dest_row2[dest_base + 1] = dest_row2[dest_base + 2] = pixel;
+                dest_row3[dest_base] = dest_row3[dest_base + 1] = dest_row3[dest_base + 2] = pixel;
+            }
+        }
+    } else {
+        drawGameGenericScale(nesBuffer, target, 3);
+    }
+}
+
+// Generic scaling using pre-calculated coordinate tables
+void AllegroMainWindow::drawGameGenericScale(uint16_t* nesBuffer, BITMAP* target, int scale)
+{
+    for (int y = 0; y < 240; y++) {
+        uint16_t* src_row = &nesBuffer[y * 256];
+        int* dest_y_coords = &scalingCache.sourceToDestY[y];
+        
+        for (int scale_y = 0; scale_y < scale; scale_y++) {
+            int dest_row_idx = dest_y_coords[0] + scale_y;
+            if (dest_row_idx >= target->h || dest_row_idx < 0) continue;
+            
+            for (int x = 0; x < 256; x++) {
+                uint16_t pixel16 = src_row[x];
+                int dest_x_start = scalingCache.sourceToDestX[x];
+                
+                if (bitmap_color_depth(target) == 16) {
+                    uint16_t* dest_row = (uint16_t*)target->line[dest_row_idx];
+                    for (int scale_x = 0; scale_x < scale; scale_x++) {
+                        int dest_pos = dest_x_start + scale_x;
+                        if (dest_pos < target->w && dest_pos >= 0) {
+                            dest_row[dest_pos] = pixel16;
+                        }
+                    }
+                } else {
+                    // Color conversion
+                    int r = ((pixel16 >> 11) & 0x1F) << 3;
+                    int g = ((pixel16 >> 5) & 0x3F) << 2;
+                    int b = (pixel16 & 0x1F) << 3;
+                    int color = makecol(r, g, b);
+                    
+                    for (int scale_x = 0; scale_x < scale; scale_x++) {
+                        int dest_pos = dest_x_start + scale_x;
+                        if (dest_pos < target->w && dest_pos >= 0) {
+                            putpixel(target, dest_pos, dest_row_idx, color);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#ifdef __DJGPP__
+// DOS-specific optimization for 320x200
+void AllegroMainWindow::drawGameDOS320x200(BITMAP* target)
+{
+    static uint16_t nesBuffer[256 * 240];
+    smbEngine->render16(nesBuffer);
+    
+    // 320x200: Center 256x240 image with slight letterboxing
+    // Scale factor is approximately 1.25x horizontally, 0.83x vertically
+    // We'll use nearest neighbor for speed
+    
+    const int dest_x = (320 - 256) / 2;  // 32 pixels on each side
+    const int dest_y = 0;  // Start at top, slight bottom crop
+    
+    if (bitmap_color_depth(target) == 16) {
+        uint16_t* screen_buffer = (uint16_t*)target->line[0];
+        
+        // Clear screen
+        memset(screen_buffer, 0, 320 * 200 * sizeof(uint16_t));
+        
+        // Copy with slight vertical scaling
+        for (int y = 0; y < 200; y++) {
+            int src_y = (y * 240) / 200;  // Map 200 lines to 240 source lines
+            if (src_y >= 240) src_y = 239;
+            
+            uint16_t* src_row = &nesBuffer[src_y * 256];
+            uint16_t* dest_row = &screen_buffer[y * 320 + dest_x];
+            
+            // Direct copy - no horizontal scaling needed for 256->256 portion
+            memcpy(dest_row, src_row, 256 * sizeof(uint16_t));
+        }
+    } else {
+        // Fallback for non-16-bit
+        clear_to_color(target, makecol(0, 0, 0));
+        
+        for (int y = 0; y < 200; y++) {
+            int src_y = (y * 240) / 200;
+            if (src_y >= 240) src_y = 239;
+            
+            uint16_t* src_row = &nesBuffer[src_y * 256];
+            
+            for (int x = 0; x < 256; x++) {
+                uint16_t pixel16 = src_row[x];
+                int r = ((pixel16 >> 11) & 0x1F) << 3;
+                int g = ((pixel16 >> 5) & 0x3F) << 2;
+                int b = (pixel16 & 0x1F) << 3;
+                
+                putpixel(target, x + dest_x, y, makecol(r, g, b));
+            }
+        }
+    }
+}
+
+// DOS optimized scaling for other resolutions
+void AllegroMainWindow::drawGameDOSOptimized(BITMAP* target)
+{
+    // Use the cached scaling system
+    drawGameFastScale(target);
+}
+#endif
 
 AllegroMainWindow::~AllegroMainWindow() 
 {
-    if (screenBuffer16) {
-        delete[] screenBuffer16;
-        screenBuffer16 = NULL;
+    scalingCache.cleanup();
+    if (lineStartOffsets) {
+        delete[] lineStartOffsets;
+        lineStartOffsets = NULL;
     }
     shutdown();
 }
+
 
 bool AllegroMainWindow::initialize() 
 {
@@ -451,8 +855,42 @@ bool AllegroMainWindow::createBuffers()
     }
     
     clear_to_color(screen, makecol(0, 0, 0));
-    
+    if (useOptimizedScaling) {
+        initializeScalingCache();
+    }
     return true;
+}
+
+AllegroMainWindow::ScalingCache::ScalingCache() 
+    : scaledBuffer(NULL), sourceToDestX(NULL), sourceToDestY(NULL), 
+      scaleFactor(0), destWidth(0), destHeight(0), 
+      destOffsetX(0), destOffsetY(0), isValid(false) 
+{
+    // Constructor body is empty - initialization is done in member initializer list
+}
+
+// ScalingCache destructor implementation
+AllegroMainWindow::ScalingCache::~ScalingCache() 
+{
+    cleanup();
+}
+
+// ScalingCache cleanup implementation
+void AllegroMainWindow::ScalingCache::cleanup() 
+{
+    if (scaledBuffer) { 
+        delete[] scaledBuffer; 
+        scaledBuffer = NULL; 
+    }
+    if (sourceToDestX) { 
+        delete[] sourceToDestX; 
+        sourceToDestX = NULL; 
+    }
+    if (sourceToDestY) { 
+        delete[] sourceToDestY; 
+        sourceToDestY = NULL; 
+    }
+    isValid = false;
 }
 
 #ifndef __DJGPP__
@@ -2066,6 +2504,14 @@ void AllegroMainWindow::drawControlsDialog(BITMAP* target, Player player)
 
 void AllegroMainWindow::updateAndDraw()
 {
+    #ifdef DEBUG_SCALING_CACHE
+    static clock_t lastTime = 0;
+    static int frameCount = 0;
+    static double totalRenderTime = 0;
+    
+    clock_t renderStart = clock();
+    #endif
+    
     // Clear the back buffer
     clear_to_color(back_buffer, makecol(0, 0, 0));
     
@@ -2078,6 +2524,24 @@ void AllegroMainWindow::updateAndDraw()
         // Draw the game
         drawGameBuffered(back_buffer);
     }
+    
+    #ifdef DEBUG_SCALING_CACHE
+    clock_t renderEnd = clock();
+    double renderTime = ((double)(renderEnd - renderStart)) / CLOCKS_PER_SEC * 1000.0;
+    totalRenderTime += renderTime;
+    frameCount++;
+    
+    // Print performance stats every 5 seconds
+    if (frameCount % 300 == 0) {
+        double avgRenderTime = totalRenderTime / frameCount;
+        printf("Avg render time: %.2fms (%.1f FPS capability)\n", 
+               avgRenderTime, 1000.0 / avgRenderTime);
+        
+        // Reset counters
+        totalRenderTime = 0;
+        frameCount = 0;
+    }
+    #endif
     
     // Only draw status message temporarily (3 seconds) as overlay on the game
     if (statusMessageTimer > 0) {
@@ -2122,54 +2586,30 @@ void AllegroMainWindow::drawGameDirect(BITMAP* target)
 
 void AllegroMainWindow::drawGameBuffered(BITMAP* target)
 {
-    // Get NES frame in 16-bit format
-    static uint16_t nesBuffer[256 * 240];
-    smbEngine->render16(nesBuffer);
-    
-    // Calculate proper scaling
-    int scale_x = SCREEN_W / 256;
-    int scale_y = SCREEN_H / 240;
-    int scale = (scale_x < scale_y) ? scale_x : scale_y;
-    
-    if (scale < 1) scale = 1;
-    
-    int dest_w = 256 * scale;
-    int dest_h = 240 * scale;
-    int dest_x = (SCREEN_W - dest_w) / 2;
-    int dest_y = (SCREEN_H - dest_h) / 2;
-    
-    // Clear target first - optimized for 16-bit
-    if (bitmap_color_depth(target) == 16) {
-        uint16_t* buffer = (uint16_t*)target->line[0];
-        memset(buffer, 0, SCREEN_W * SCREEN_H * sizeof(uint16_t));
+    if (useOptimizedScaling && isScalingCacheValid()) {
+        drawGameCached(target);
     } else {
+        // Original implementation as fallback
+        static uint16_t nesBuffer[256 * 240];
+        smbEngine->render16(nesBuffer);
+        
+        int scale_x = SCREEN_W / 256;
+        int scale_y = SCREEN_H / 240;
+        int scale = (scale_x < scale_y) ? scale_x : scale_y;
+        if (scale < 1) scale = 1;
+        
+        int dest_w = 256 * scale;
+        int dest_h = 240 * scale;
+        int dest_x = (SCREEN_W - dest_w) / 2;
+        int dest_y = (SCREEN_H - dest_h) / 2;
+        
         clear_to_color(target, makecol(0, 0, 0));
-    }
-    
-    #ifdef __DJGPP__
-    // DOS-specific optimizations for common resolutions
-    if (SCREEN_W == 512 && SCREEN_H == 480 && bitmap_color_depth(target) == 16) {
-        // Perfect 2x scaling - use optimized path
-        convertBuffer16ToBitmap16_2x(nesBuffer, target, 0, 0);
-        return;
-    }
-    
-    if (SCREEN_W == 320 && SCREEN_H == 240 && bitmap_color_depth(target) == 16) {
-        // Perfect fit with centering
-        for (int y = 0; y < 240; y++) {
-            uint16_t* src_row = &nesBuffer[y * 256];
-            uint16_t* dest_row = (uint16_t*)target->line[y] + 32;  // Center horizontally
-            memcpy(dest_row, src_row, 256 * sizeof(uint16_t));
+        
+        if (bitmap_color_depth(target) == 16) {
+            convertBuffer16ToBitmap16(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
+        } else {
+            convertBuffer16ToBitmapGeneric(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
         }
-        return;
-    }
-    #endif
-    
-    // Generic path
-    if (bitmap_color_depth(target) == 16) {
-        convertBuffer16ToBitmap16(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
-    } else {
-        convertBuffer16ToBitmapGeneric(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
     }
 }
 
