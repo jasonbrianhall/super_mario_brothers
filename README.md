@@ -2,8 +2,9 @@
 
 This is not a remake. This is the original Super Mario Bros. running on a virtualized 6502 CPU with emulated PPU and APU behavior. Unlike cycle-accurate emulators, this virtualizer translates 6502 instructions to native code for maximum performance and won't slow down like a real NES when overwhelmed. Available in two versions:
 
-1. **GTK3+/SDL Version**: Built with GTK3+ for configuration and controls and SDL for input and audio, includes APU and PPU caching optimizations
+1. **GTK3+/SDL Version**: Built with GTK3+ for configuration and controls and SDL for input and audio, includes Scaling, APU, and PPU caching optimizations
 2. **Allegro DOS/Linux Version**: DOS (Allegro 4 only) and Linux (Allegro 4 or 5) with extensive performance caching systems including scaling optimization
+3. **Pure SDL**: Built with SDL for input and audio, includes APU, and PPU caching optimizations
 
 You do have to provide your own NES ROM (md5sum 811b027eaf99c2def7b933c5208636de)
 
@@ -172,7 +173,7 @@ Keyboard controls are fully configurable through the in-game menu system:
 ## Performance
 
 The Allegro version is specifically optimized for older hardware:
-- **Modern systems**: 500+ FPS rendering capability
+- **Modern systems**: 500+ FPS rendering capability (limited to 60)
 - **486 DX2/66**: Smooth 60 FPS gameplay
 - **Pentium systems**: Optimal performance with all caching enabled
 - **Memory usage**: ~2-500KB for all caching systems combined
