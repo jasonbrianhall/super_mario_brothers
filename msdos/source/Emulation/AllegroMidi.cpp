@@ -201,10 +201,10 @@ void AllegroMIDIAudioSystem::setupFMInstruments() {
     
     printf("Setting up FM instruments...\n");
     
-    setFMInstrument(0, 80);  // Lead 1 (square) for Pulse 1
-    setFMInstrument(1, 81);  // Lead 2 (sawtooth) for Pulse 2  
-    setFMInstrument(2, 38);  // Synth Bass 1 for Triangle
-    setFMInstrument(3, 125); // Reverse Cymbal for Noise
+    setFMInstrument(0, 26);
+    setFMInstrument(1, 26);
+    setFMInstrument(2, 26);
+    setFMInstrument(9, 0);
     
     printf("FM instruments configured\n");
 }
