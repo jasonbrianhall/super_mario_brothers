@@ -175,6 +175,9 @@ AllegroMainWindow::AllegroMainWindow()
       statusMessageTimer(0), currentFrameBuffer(NULL),
       screenBuffer16(NULL), useDirectRendering(true),
       currentCaptureType(CAPTURE_NONE), currentConfigPlayer(PLAYER_1)
+#ifndef __DJGPP__
+      , isFullscreen(false), windowedWidth(640), windowedHeight(480)  // Only for non-DOS
+#endif
 {
     strcpy(statusMessage, "Ready");
     strcpy(currentCaptureKey, "");
@@ -183,7 +186,6 @@ AllegroMainWindow::AllegroMainWindow()
     gamePaused = false;
     showingMenu = false;
     currentDialog = DIALOG_NONE;
-    // Initialize default controls
     setupDefaultControls();
 }
 
@@ -360,26 +362,26 @@ void AllegroMainWindow::debugJoystickInfo(int joyIndex)
 
 bool AllegroMainWindow::initializeGraphics()
 {
-    // Set graphics mode - different approach for Linux vs DOS
     set_color_depth(16); // 16-bit color for better DOS compatibility
     
     #ifdef __DJGPP__
-    // DOS: Use optimal resolutions for perfect NES scaling
-    // NES is 256x240, so these give us perfect integer scaling:
-    // 512x480 (2x), 768x720 (3x), 320x240 (1.25x), 320x200 (VGA Mode 13h compatible)
-    
-    if (set_gfx_mode(GFX_AUTODETECT, 512, 480, 0, 0) != 0) {        // 2x scaling
-        if (set_gfx_mode(GFX_AUTODETECT, 320, 240, 0, 0) != 0) {    // 1.25x scaling  
-            if (set_gfx_mode(GFX_AUTODETECT, 320, 200, 0, 0) != 0) { // VGA Mode 13h style
-                if (set_gfx_mode(GFX_AUTODETECT, 640, 480, 0, 0) != 0) { // Fallback
-                    printf("Failed to set graphics mode: %s\n", allegro_error);
-                    return false;
-                }
+    // DOS: Use classic VGA Mode 13h (320x200) - always fullscreen
+    if (set_gfx_mode(GFX_AUTODETECT, 320, 200, 0, 0) != 0) {
+        // Fallback to other DOS-compatible modes
+        if (set_gfx_mode(GFX_AUTODETECT, 320, 240, 0, 0) != 0) {
+            if (set_gfx_mode(GFX_AUTODETECT, 640, 480, 0, 0) != 0) {
+                printf("Failed to set any DOS graphics mode: %s\n", allegro_error);
+                return false;
             }
         }
     }
+    
+    printf("DOS Graphics mode: %dx%d (always fullscreen)\n", SCREEN_W, SCREEN_H);
+    
     #else
-    // Linux: Force windowed mode for development
+    // Linux: Start in windowed mode, support fullscreen toggle
+    isFullscreen = false;
+    
     if (set_gfx_mode(GFX_AUTODETECT_WINDOWED, 640, 480, 0, 0) != 0) {
         if (set_gfx_mode(GFX_AUTODETECT_WINDOWED, 512, 384, 0, 0) != 0) {
             if (set_gfx_mode(GFX_AUTODETECT_WINDOWED, 320, 240, 0, 0) != 0) {
@@ -388,15 +390,12 @@ bool AllegroMainWindow::initializeGraphics()
             }
         }
     }
-    #endif
     
-    printf("Graphics mode: %dx%d %s\n", SCREEN_W, SCREEN_H, 
-           #ifdef __DJGPP__ 
-           "(fullscreen)"
-           #else
-           "(windowed)"
-           #endif
-    );
+    windowedWidth = SCREEN_W;
+    windowedHeight = SCREEN_H;
+    
+    printf("Linux Graphics mode: %dx%d (windowed)\n", SCREEN_W, SCREEN_H);
+    #endif
     
     // Calculate optimal scaling info
     int scale_x = SCREEN_W / 256;
@@ -406,6 +405,27 @@ bool AllegroMainWindow::initializeGraphics()
     
     printf("NES scaling: %dx (NES 256x240 -> %dx%d)\n", 
            optimal_scale, 256 * optimal_scale, 240 * optimal_scale);
+    
+    return createBuffers();
+}
+
+bool AllegroMainWindow::createBuffers()
+{
+    // Destroy existing buffers
+    if (game_buffer) {
+        destroy_bitmap(game_buffer);
+        game_buffer = NULL;
+    }
+    
+    if (back_buffer) {
+        destroy_bitmap(back_buffer);
+        back_buffer = NULL;
+    }
+    
+    if (screenBuffer16) {
+        delete[] screenBuffer16;
+        screenBuffer16 = NULL;
+    }
     
     // Create game buffer matching NES resolution
     game_buffer = create_bitmap(RENDER_WIDTH, RENDER_HEIGHT);
@@ -434,6 +454,74 @@ bool AllegroMainWindow::initializeGraphics()
     
     return true;
 }
+
+#ifndef __DJGPP__
+// Fullscreen toggle function (Linux only):
+bool AllegroMainWindow::toggleFullscreen()
+{
+    printf("Toggling fullscreen mode...\n");
+    
+    bool wasFullscreen = isFullscreen;
+    int newWidth, newHeight, newMode;
+    
+    if (isFullscreen) {
+        // Switch to windowed
+        newWidth = windowedWidth;
+        newHeight = windowedHeight;
+        newMode = GFX_AUTODETECT_WINDOWED;
+        printf("Switching to windowed: %dx%d\n", newWidth, newHeight);
+    } else {
+        // Switch to fullscreen - try to get desktop resolution
+        newWidth = 1024;  // Default fullscreen resolution
+        newHeight = 768;
+        newMode = GFX_AUTODETECT;
+        printf("Switching to fullscreen: %dx%d\n", newWidth, newHeight);
+    }
+    
+    // Attempt to set new graphics mode
+    if (set_gfx_mode(newMode, newWidth, newHeight, 0, 0) != 0) {
+        printf("Failed to switch graphics mode: %s\n", allegro_error);
+        
+        // Try to restore previous mode
+        int restoreMode = wasFullscreen ? GFX_AUTODETECT : GFX_AUTODETECT_WINDOWED;
+        int restoreWidth = wasFullscreen ? 1024 : windowedWidth;
+        int restoreHeight = wasFullscreen ? 768 : windowedHeight;
+        
+        if (set_gfx_mode(restoreMode, restoreWidth, restoreHeight, 0, 0) != 0) {
+            printf("Critical: Failed to restore graphics mode!\n");
+            return false;
+        }
+        
+        setStatusMessage("Failed to toggle fullscreen");
+        return false;
+    }
+    
+    // Update state
+    isFullscreen = !isFullscreen;
+    
+    // Store windowed dimensions when switching to fullscreen
+    if (isFullscreen) {
+        windowedWidth = wasFullscreen ? windowedWidth : SCREEN_W;
+        windowedHeight = wasFullscreen ? windowedHeight : SCREEN_H;
+    }
+    
+    // Recreate buffers for new screen size
+    if (!createBuffers()) {
+        printf("Failed to recreate buffers after mode change\n");
+        return false;
+    }
+    
+    // Clear screen
+    clear_to_color(screen, makecol(0, 0, 0));
+    
+    printf("Successfully switched to %s mode: %dx%d\n", 
+           isFullscreen ? "fullscreen" : "windowed", SCREEN_W, SCREEN_H);
+    
+    setStatusMessage(isFullscreen ? "Switched to fullscreen" : "Switched to windowed");
+    
+    return true;
+}
+#endif
 
 bool AllegroMainWindow::initializeInput()
 {
@@ -854,6 +942,19 @@ void AllegroMainWindow::handleInput()
     if (num_joysticks > 0) {
         poll_joystick();
     }
+    
+    #ifndef __DJGPP__
+    // Handle F11 key for fullscreen toggle (Linux only)
+    static bool f11Pressed = false;
+    bool f11CurrentlyPressed = (key[KEY_F11] != 0);
+    
+    if (f11CurrentlyPressed && !f11Pressed) {
+        if (!toggleFullscreen()) {
+            printf("Fullscreen toggle failed\n");
+        }
+    }
+    f11Pressed = f11CurrentlyPressed;
+    #endif
     
     // Handle ESC key globally with proper state tracking
     static bool escPressed = false;
@@ -2361,6 +2462,13 @@ void AllegroMainWindow::drawDialog(BITMAP* target)
                 drawTextCentered(target, dialog_y + 20, "SUPER MARIO BROS Virtualizer", makecol(255, 255, 0));
                 drawTextCentered(target, dialog_y + 40, "Version 1.0", makecol(255, 255, 255));
                 drawTextCentered(target, dialog_y + 60, "Built with Allegro 4", makecol(255, 255, 255));
+                
+                #ifdef __DJGPP__
+                drawTextCentered(target, dialog_y + 80, "DOS Version", makecol(255, 255, 255));
+                #else
+                drawTextCentered(target, dialog_y + 80, "Linux Version", makecol(255, 255, 255));
+                #endif
+                
                 drawTextCentered(target, dialog_y + 100, "Original game (c) Nintendo", makecol(255, 255, 255));
                 drawTextCentered(target, dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
             }
@@ -2379,14 +2487,30 @@ void AllegroMainWindow::drawDialog(BITMAP* target)
                      makecol(255, 255, 255));
                 
                 drawTextCentered(target, dialog_y + 20, "HELP", makecol(255, 255, 0));
-                drawText(target, dialog_x + 20, dialog_y + 50, "ESC - Show menu", makecol(255, 255, 255));
-                drawText(target, dialog_x + 20, dialog_y + 70, "P - Pause game", makecol(255, 255, 255));
-                drawText(target, dialog_x + 20, dialog_y + 90, "Ctrl+R - Reset game", makecol(255, 255, 255));
-                drawText(target, dialog_x + 20, dialog_y + 110, "", makecol(255, 255, 255));
-                drawText(target, dialog_x + 20, dialog_y + 130, "Default Player 1:", makecol(255, 255, 0));
-                drawText(target, dialog_x + 20, dialog_y + 150, "Arrow Keys, Z/X, Enter, Space", makecol(255, 255, 255));
-                drawText(target, dialog_x + 20, dialog_y + 170, "Default Player 2:", makecol(255, 255, 0));
-                drawText(target, dialog_x + 20, dialog_y + 190, "WASD, F/G, T, R", makecol(255, 255, 255));
+                
+                int y_offset = dialog_y + 50;
+                drawText(target, dialog_x + 20, y_offset, "ESC - Show menu", makecol(255, 255, 255));
+                y_offset += 20;
+                
+                #ifndef __DJGPP__
+                // Only show F11 on Linux
+                drawText(target, dialog_x + 20, y_offset, "F11 - Toggle fullscreen", makecol(255, 255, 255));
+                y_offset += 20;
+                #endif
+                
+                drawText(target, dialog_x + 20, y_offset, "P - Pause game", makecol(255, 255, 255));
+                y_offset += 20;
+                drawText(target, dialog_x + 20, y_offset, "Ctrl+R - Reset game", makecol(255, 255, 255));
+                y_offset += 30;
+                
+                drawText(target, dialog_x + 20, y_offset, "Default Player 1:", makecol(255, 255, 0));
+                y_offset += 20;
+                drawText(target, dialog_x + 20, y_offset, "Arrow Keys, Z/X, [/]", makecol(255, 255, 255));
+                y_offset += 20;
+                drawText(target, dialog_x + 20, y_offset, "Default Player 2:", makecol(255, 255, 0));
+                y_offset += 20;
+                drawText(target, dialog_x + 20, y_offset, "WASD, F/G, O/P", makecol(255, 255, 255));
+                
                 drawTextCentered(target, dialog_y + dialog_h - 40, "Press ESC to close", makecol(255, 255, 0));
             }
             break;

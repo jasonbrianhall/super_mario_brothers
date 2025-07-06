@@ -197,6 +197,13 @@ private:
   void debugJoystickInfo(int joyIndex);
   void convertBuffer16ToBitmap16_2x(uint16_t* buffer16, BITMAP* bitmap, 
                                                     int dest_x, int dest_y);
+    bool isFullscreen;
+    int windowedWidth, windowedHeight;
+    int fullscreenWidth, fullscreenHeight;
+    bool createBuffers();
+#ifndef __DJGPP__
+    bool toggleFullscreen();
+#endif
 };
 
 
