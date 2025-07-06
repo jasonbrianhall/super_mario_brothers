@@ -107,9 +107,9 @@ cd build/linux
 
 # DOS build from scratch (requires Docker)
 cd msdos
-docker run --rm -v $(pwd):/work djgpp/djgpp:latest bash -c "cd /work && ./build_from_scratch.sh /work/path/to/your/Super\ Mario\ Bros.nes"
+./build_from_scratch.sh /work/path/to/your/Super\ Mario\ Bros.nes 
 cd build/dos
-# Copy to DOS system and run smbc.exe
+dosbox smb.exe
 ```
 
 The DOS version builds in `msdos/build/dos/` and the Linux version builds in `msdos/build/linux/`.
