@@ -12,7 +12,9 @@
 #include "Util/VideoFilters.hpp"
 // Include the generated ROM header
 #include "SMBRom.hpp" // This contains smbRomData array
+#include "SDLCacheScaling.hpp"
 
+static SDLScalingCache* scalingCache = nullptr;
 static SDL_Window* window;
 static SDL_Renderer* renderer;
 static SDL_Texture* texture;
@@ -130,6 +132,9 @@ static bool initialize()
         SDL_PauseAudio(0);
     }
 
+    scalingCache = new SDLScalingCache(renderer);
+    scalingCache->initialize();
+
     return true;
 }
 
@@ -142,6 +147,11 @@ static void shutdown()
     if (Configuration::getHqdn3dEnabled())
     {
         cleanupHQDN3D();
+    }
+
+    if (scalingCache) {
+        delete scalingCache;
+        scalingCache = nullptr;
     }
 
     SDL_CloseAudio();
@@ -157,7 +167,6 @@ static void shutdown()
 static void mainLoop()
 {
     // Use the embedded ROM data directly
-    //SMBEngine engine(smbRomData);
     SMBEngine engine(const_cast<uint8_t*>(smbRomData));
     smbEngine = &engine;
     engine.reset();
@@ -177,6 +186,10 @@ static void mainLoop()
     bool running = true;
     int progStartTime = SDL_GetTicks();
     int frame = 0;
+    
+    // Key state tracking for toggle functions
+    static bool optimizedScalingKeyPressed = false;
+    
     while (running)
     {
         SDL_Event event;
@@ -235,6 +248,7 @@ static void mainLoop()
             controller1.updateJoystickState();
         }
 
+        // Game control keys
         if (keys[SDL_SCANCODE_R])
         {
             // Reset
@@ -250,7 +264,20 @@ static void mainLoop()
         {
             SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
         }
+        
+        // Toggle optimized scaling (press O key)
+        if (keys[SDL_SCANCODE_O] && !optimizedScalingKeyPressed) {
+            if (scalingCache) {
+                bool enabled = scalingCache->isOptimizedScaling();
+                scalingCache->setOptimizedScaling(!enabled);
+                printf("Optimized scaling: %s\n", !enabled ? "Enabled" : "Disabled");
+            }
+            optimizedScalingKeyPressed = true;
+        } else if (!keys[SDL_SCANCODE_O]) {
+            optimizedScalingKeyPressed = false;
+        }
 
+        // Game engine update and rendering
         engine.update();
         engine.render(renderBuffer);
 
@@ -286,22 +313,36 @@ static void mainLoop()
             targetBuffer = temp;
         }
 
-        // Update the texture with the filtered buffer
-        SDL_UpdateTexture(texture, NULL, sourceBuffer, sizeof(uint32_t) * RENDER_WIDTH);
-
+        // Clear the renderer
         SDL_RenderClear(renderer);
 
-        // Render the screen
-        SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH, RENDER_HEIGHT);
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
+        // Try optimized rendering first
+        bool optimizedRenderingUsed = false;
+        if (scalingCache && scalingCache->isOptimizedScaling()) {
+            // Get current window size for optimized rendering
+            int window_width, window_height;
+            SDL_GetWindowSize(window, &window_width, &window_height);
+            
+            scalingCache->renderOptimized(sourceBuffer, window_width, window_height);
+            optimizedRenderingUsed = true;
+        }
 
-        // Render scanlines
+        // Fallback to original rendering if optimized rendering is disabled
+        if (!optimizedRenderingUsed) {
+            // Original rendering code
+            SDL_UpdateTexture(texture, NULL, sourceBuffer, sizeof(uint32_t) * RENDER_WIDTH);
+            SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH, RENDER_HEIGHT);
+            SDL_RenderCopy(renderer, texture, NULL, NULL);
+        }
+
+        // Render scanlines if enabled
         if (Configuration::getScanlinesEnabled())
         {
             SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH * 3, RENDER_HEIGHT * 3);
             SDL_RenderCopy(renderer, scanlineTexture, NULL, NULL);
         }
 
+        // Present the rendered frame
         SDL_RenderPresent(renderer);
 
         /**

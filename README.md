@@ -4,7 +4,7 @@ This is not a remake. This is the original Super Mario Bros. running on a virtua
 
 1. **GTK3+/SDL Version**: Built with GTK3+ for configuration and controls and SDL for input and audio, includes Scaling, APU, and PPU caching optimizations
 2. **Allegro DOS/Linux Version**: DOS (Allegro 4 only) and Linux (Allegro 4 or 5) with extensive performance caching systems including scaling optimization
-3. **Pure SDL**: Built with SDL for input and audio, includes APU, and PPU caching optimizations
+3. **Pure SDL**: Built with SDL for input and audio, includes Scaling, APU, and PPU caching optimizations
 
 You do have to provide your own NES ROM (md5sum 811b027eaf99c2def7b933c5208636de)
 
