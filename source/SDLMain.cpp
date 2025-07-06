@@ -260,9 +260,34 @@ static void mainLoop()
             running = false;
             break;
         }
-        if (keys[SDL_SCANCODE_F])
-        {
+        
+        // Toggle fullscreen with F11 (with proper key state tracking)
+        static bool f11KeyPressed = false;
+        if (keys[SDL_SCANCODE_F11] && !f11KeyPressed) {
+            // Get current fullscreen state
+            Uint32 windowFlags = SDL_GetWindowFlags(window);
+            if (windowFlags & SDL_WINDOW_FULLSCREEN_DESKTOP) {
+                // Currently fullscreen, switch to windowed
+                SDL_SetWindowFullscreen(window, 0);
+                printf("Switched to windowed mode\n");
+            } else {
+                // Currently windowed, switch to fullscreen
+                SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+                printf("Switched to fullscreen mode\n");
+            }
+            f11KeyPressed = true;
+        } else if (!keys[SDL_SCANCODE_F11]) {
+            f11KeyPressed = false;
+        }
+        
+        // Keep F key for legacy fullscreen (always switches to fullscreen)
+        static bool fKeyPressed = false;
+        if (keys[SDL_SCANCODE_F] && !fKeyPressed) {
             SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+            printf("F key: Switched to fullscreen mode\n");
+            fKeyPressed = true;
+        } else if (!keys[SDL_SCANCODE_F]) {
+            fKeyPressed = false;
         }
         
         // Toggle optimized scaling (press O key)
