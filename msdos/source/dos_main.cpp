@@ -658,13 +658,49 @@ bool AllegroMainWindow::initializeAllegro()
     dosAudioInitialized = false;
     
     if (Configuration::getAudioEnabled() && !showingMenu) {
-        printf("Attempting to initialize audio...\n");
+        printf("Attempting to initialize audio with MIDI support...\n");
         
-        if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) == 0) {
-            printf("Audio initialized successfully\n");
+        #ifdef __DJGPP__
+        // DOS: Initialize sound system with MIDI support
+        if (install_sound(DIGI_AUTODETECT, MIDI_AUTODETECT, NULL) == 0) {
+            printf("DOS Audio + MIDI initialized successfully\n");
             dosAudioInitialized = true;
             
-            set_volume(255, 255);
+            // Check MIDI availability
+            int midi_voices = get_midi_voices();
+            printf("MIDI voices available: %d\n", midi_voices);
+            
+            if (midi_voices > 0) {
+                printf("DOS MIDI support detected\n");
+            } else {
+                printf("DOS MIDI not available, but digital audio works\n");
+            }
+        } else {
+            printf("Failed to initialize sound with MIDI: %s\n", allegro_error);
+            
+            // Try without MIDI
+            if (install_sound(DIGI_AUTODETECT, MIDI_NONE, NULL) == 0) {
+                printf("Audio initialized without MIDI\n");
+                dosAudioInitialized = true;
+            } else {
+                printf("Complete audio initialization failed: %s\n", allegro_error);
+                dosAudioInitialized = false;
+            }
+        }
+        
+        #else
+        // Linux: Initialize with MIDI support
+        if (install_sound(DIGI_AUTODETECT, MIDI_AUTODETECT, NULL) == 0) {
+            printf("Linux Audio + MIDI initialized successfully\n");
+            dosAudioInitialized = true;
+        } else {
+            printf("Audio initialization failed: %s\n", allegro_error);
+            dosAudioInitialized = false;
+        }
+        #endif
+        
+        if (dosAudioInitialized) {
+            set_volume(255, 255);  // Set both digital and MIDI volume
             
             int freq = Configuration::getAudioFrequency();
             int samples = freq / Configuration::getFrameRate();
@@ -676,10 +712,6 @@ bool AllegroMainWindow::initializeAllegro()
             } else {
                 printf("Audio stream started: %d Hz\n", freq);
             }
-            
-        } else {
-            printf("Audio initialization failed: %s\n", allegro_error);
-            dosAudioInitialized = false;
         }
     } else {
         printf("Audio disabled in configuration\n");
@@ -697,6 +729,7 @@ bool AllegroMainWindow::initializeAllegro()
     
     return true;
 }
+
 bool AllegroMainWindow::isValidJoystickButton(int joyIndex, int buttonNum)
 {
     if (joyIndex < 0 || joyIndex >= num_joysticks) return false;
