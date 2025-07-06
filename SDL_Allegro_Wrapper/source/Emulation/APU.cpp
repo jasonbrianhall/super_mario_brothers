@@ -1,11 +1,23 @@
 #include <cmath>
 #include <cstring>
+#include <iostream>
 
-#include "../SDL.hpp"
+#ifdef __DJGPP__
+#include <dos.h>
+#include <pc.h>
+#include <dpmi.h>
+#else
+#include <allegro.h>
+#include <pthread.h>
+#endif
+
 
 #include "../Configuration.hpp"
-
 #include "APU.hpp"
+
+    APU::MixCache APU::outputCache[256];
+    int APU::cacheIndex = 0;
+
 
 static const uint8_t lengthTable[] = {
     10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14,
@@ -247,6 +259,7 @@ public:
         lengthEnabled = false;
         lengthValue = 0;
         timerPeriod = 0;
+        timerValue = 0;  // This was missing!
         dutyValue = 0;
         counterPeriod = 0;
         counterValue = 0;
@@ -296,21 +309,18 @@ public:
         }
     }
 
-    void stepCounter()
+void Triangle::stepCounter()
+{
+    if (counterReload)
     {
-        if (counterReload)
-        {
-            counterValue = counterPeriod;
-        }
-        else if (counterValue > 0)
-        {
-            counterValue--;
-        }
-        if (lengthEnabled)
-        {
-            counterReload = false;
-        }
+        counterValue = counterPeriod;
     }
+    else if (counterValue > 0)
+    {
+        counterValue--;
+    }
+    counterReload = false;  // Move this outside the if block
+}
 
     uint8_t output()
     {
@@ -490,27 +500,99 @@ APU::APU()
     frameValue = 0;
     audioBufferLength = 0;
 
-    pulse1 = new Pulse(1);
-    pulse2 = new Pulse(2);
-    triangle = new Triangle;
-    noise = new Noise;
+    // Initialize pointers to null first for safety
+    pulse1 = nullptr;
+    pulse2 = nullptr;
+    triangle = nullptr;
+    noise = nullptr;
+
+    // Clear audio buffer
+    memset(audioBuffer, 0, AUDIO_BUFFER_LENGTH);
+
+    try {
+        pulse1 = new Pulse(1);
+        pulse2 = new Pulse(2);
+        triangle = new Triangle;
+        noise = new Noise;
+        
+        #ifdef __DJGPP__
+        printf("APU initialized for DOS - all objects created successfully\n");
+        #else
+        printf("APU initialized for Linux\n");
+        #endif
+    } catch (...) {
+        printf("ERROR: Failed to create APU objects\n");
+        // Clean up any partially created objects
+        if (pulse1) { delete pulse1; pulse1 = nullptr; }
+        if (pulse2) { delete pulse2; pulse2 = nullptr; }
+        if (triangle) { delete triangle; triangle = nullptr; }
+        if (noise) { delete noise; noise = nullptr; }
+    }
 }
 
 APU::~APU()
 {
-    delete pulse1;
-    delete pulse2;
-    delete triangle;
-    delete noise;
+    if (pulse1) {
+        delete pulse1;
+        pulse1 = nullptr;
+    }
+    if (pulse2) {
+        delete pulse2;
+        pulse2 = nullptr;
+    }
+    if (triangle) {
+        delete triangle;
+        triangle = nullptr;
+    }
+    if (noise) {
+        delete noise;
+        noise = nullptr;
+    }
 }
 
-uint8_t APU::getOutput()
-{
-    double pulseOut = 0.00752 * (pulse1->output() + pulse2->output());
-    double tndOut = 0.00851 * triangle->output() + 0.00494 * noise->output();
+    uint8_t APU::getOutput()
+    {
+        if (!pulse1 || !pulse2 || !triangle || !noise) {
+            return 128;
+        }
 
-    return static_cast<uint8_t>(floor(255.0 * (pulseOut + tndOut)));
-}
+        uint8_t p1 = pulse1->output();
+        uint8_t p2 = pulse2->output();
+        uint8_t tri = triangle->output();
+        uint8_t noi = noise->output();
+
+        // Check if we've computed this combination before
+        for (int i = 0; i < 256; i++) {
+            MixCache& cache = outputCache[i];
+            if (cache.valid && 
+                cache.pulse1_val == p1 && cache.pulse2_val == p2 && 
+                cache.triangle_val == tri && cache.noise_val == noi) {
+                return cache.result;  // Cache hit - return stored result
+            }
+        }
+ 
+        // Cache miss - compute the floating point math
+        double pulse_sum = p1 + p2;
+        double pulse_out = (pulse_sum > 0) ? 95.52 / (8128.0 / pulse_sum + 100.0) : 0.0;
+        
+        double tnd_sum = tri / 8227.0 + noi / 12241.0;
+        double tnd_out = (tnd_sum > 0) ? 163.67 / (1.0 / tnd_sum + 100.0) : 0.0;
+        
+        uint8_t result = (uint8_t)((pulse_out + tnd_out) * 255.0 + 128.0);
+
+        // Store in cache for next time
+        MixCache& cache = outputCache[cacheIndex];
+        cache.pulse1_val = p1;
+        cache.pulse2_val = p2;
+        cache.triangle_val = tri;
+        cache.noise_val = noi;
+        cache.result = result;
+        cache.valid = true;
+        cacheIndex = (cacheIndex + 1) & 255;  // Wrap around
+
+        return result;
+    }
+
 
 void APU::output(uint8_t* buffer, int len)
 {
@@ -531,124 +613,114 @@ void APU::output(uint8_t* buffer, int len)
 
 void APU::stepFrame()
 {
-    // Safety check - if any audio objects are corrupted, skip processing
+    // Safety check - if objects aren't created, don't crash
     if (!pulse1 || !pulse2 || !triangle || !noise) {
-        std::cout << "APU objects are null, skipping audio processing" << std::endl;
         return;
     }
 
-    try {
-        // Step the frame counter 4 times per frame, for 240Hz
-        for (int i = 0; i < 4; i++)
+    // Step the frame counter 4 times per frame, for 240Hz (same as SDL)
+    for (int i = 0; i < 4; i++)
+    {
+        frameValue = (frameValue + 1) % 5;
+        switch (frameValue)
         {
-            frameValue = (frameValue + 1) % 5;
-            switch (frameValue)
-            {
-            case 1:
-            case 3:
-                stepEnvelope();
-                break;
-            case 0:
-            case 2:
-                stepEnvelope();
-                stepSweep();
-                stepLength();
-                break;
-            }
-
-            // Calculate the number of samples needed per 1/4 frame
-            //
-            int frequency = Configuration::getAudioFrequency();
-
-            // Example: we need 735 samples per frame for 44.1KHz sound sampling
-            //
-            int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
-            if (i == 3)
-            {
-                // Handle the remainder on the final tick of the frame counter
-                //
-                samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
-            }
-            
-            SDL_LockAudio();
-
-            // Step the timer ~3729 times per quarter frame for most channels
-            //
-            int j = 0;
-            for (int stepIndex = 0; stepIndex < 3729; stepIndex++)
-            {
-                if (j < samplesToWrite &&
-                    (stepIndex / 3729.0) > (j / (double)samplesToWrite))
-                {
-                    uint8_t sample = getOutput();
-                    if (audioBufferLength + j < AUDIO_BUFFER_LENGTH) {
-                        audioBuffer[audioBufferLength + j] = sample;
-                        j++;
-                    }
-                }
-
-                // Safety checks before calling stepTimer on each object
-                if (pulse1) pulse1->stepTimer();
-                if (pulse2) pulse2->stepTimer();
-                if (noise) noise->stepTimer();
-                if (triangle) {
-                    triangle->stepTimer();
-                    triangle->stepTimer();
-                }
-            }
-            audioBufferLength += samplesToWrite;
-            
-            SDL_UnlockAudio();
+        case 1:
+        case 3:
+            stepEnvelope();
+            break;
+        case 0:
+        case 2:
+            stepEnvelope();
+            stepSweep();
+            stepLength();
+            break;
         }
-    } catch (...) {
-        std::cout << "Exception in APU::stepFrame(), disabling audio processing" << std::endl;
-        // If any exception occurs, just return safely
-        SDL_UnlockAudio(); // Make sure we unlock if we were locked
-        return;
+
+        // Calculate the number of samples needed per 1/4 frame (same as SDL)
+        int frequency = Configuration::getAudioFrequency();
+        int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
+        if (i == 3)
+        {
+            // Handle the remainder on the final tick of the frame counter
+            samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
+        }
+        
+        // Bounds check
+        if (samplesToWrite <= 0 || audioBufferLength + samplesToWrite >= AUDIO_BUFFER_LENGTH) {
+            continue;
+        }
+        
+#ifndef __DJGPP__
+        // Audio locking for thread safety (like SDL's SDL_LockAudio)
+        //static pthread_mutex_t audio_mutex = PTHREAD_MUTEX_INITIALIZER;
+        //pthread_mutex_lock(&audio_mutex);
+#endif
+
+        // Step the timer ~3729 times per quarter frame (same as SDL)
+        int j = 0;
+        for (int stepIndex = 0; stepIndex < 3729 && j < samplesToWrite; stepIndex++)
+        {
+            if ((stepIndex / 3729.0) > (j / (double)samplesToWrite))
+            {
+                uint8_t sample = getOutput();
+                audioBuffer[audioBufferLength + j] = sample;
+                j++;
+            }
+
+            pulse1->stepTimer();
+            pulse2->stepTimer();
+            noise->stepTimer();
+            triangle->stepTimer();
+            triangle->stepTimer(); // Triangle steps twice like in SDL
+        }
+        audioBufferLength += j; // Use j instead of samplesToWrite
+        
+#ifndef __DJGPP__
+        //pthread_mutex_unlock(&audio_mutex);
+#endif        
     }
 }
+
+
 void APU::stepEnvelope()
 {
-    pulse1->stepEnvelope();
-    pulse2->stepEnvelope();
-    triangle->stepCounter();
-    noise->stepEnvelope();
+    if (pulse1) pulse1->stepEnvelope();
+    if (pulse2) pulse2->stepEnvelope();
+    if (triangle) triangle->stepCounter();
+    if (noise) noise->stepEnvelope();
 }
 
 void APU::stepSweep()
 {
-    pulse1->stepSweep();
-    pulse2->stepSweep();
+    if (pulse1) pulse1->stepSweep();
+    if (pulse2) pulse2->stepSweep();
 }
 
 void APU::stepLength()
 {
-    pulse1->stepLength();
-    pulse2->stepLength();
-    triangle->stepLength();
-    noise->stepLength();
+    if (pulse1) pulse1->stepLength();
+    if (pulse2) pulse2->stepLength();
+    if (triangle) triangle->stepLength();
+    if (noise) noise->stepLength();
 }
 
 void APU::writeControl(uint8_t value)
 {
-    pulse1->enabled = (value & 1) == 1;
-    pulse2->enabled = (value & 2) == 2;
-    triangle->enabled = (value & 4) == 4;
-    noise->enabled = (value & 8) == 8;
-    if (!pulse1->enabled)
-    {
+    if (pulse1) pulse1->enabled = (value & 1) == 1;
+    if (pulse2) pulse2->enabled = (value & 2) == 2;
+    if (triangle) triangle->enabled = (value & 4) == 4;
+    if (noise) noise->enabled = (value & 8) == 8;
+    
+    if (pulse1 && !pulse1->enabled) {
         pulse1->lengthValue = 0;
     }
-    if (!pulse2->enabled)
-    {
+    if (pulse2 && !pulse2->enabled) {
         pulse2->lengthValue = 0;
     }
-    if (!triangle->enabled)
-    {
+    if (triangle && !triangle->enabled) {
         triangle->lengthValue = 0;
     }
-    if (!noise->enabled)
-    {
+    if (noise && !noise->enabled) {
         noise->lengthValue = 0;
     }
 }
@@ -658,47 +730,46 @@ void APU::writeRegister(uint16_t address, uint8_t value)
     switch (address)
     {
     case 0x4000:
-        pulse1->writeControl(value);
+        if (pulse1) pulse1->writeControl(value);
         break;
     case 0x4001:
-        pulse1->writeSweep(value);
+        if (pulse1) pulse1->writeSweep(value);
         break;
     case 0x4002:
-        pulse1->writeTimerLow(value);
+        if (pulse1) pulse1->writeTimerLow(value);
         break;
     case 0x4003:
-        pulse1->writeTimerHigh(value);
+        if (pulse1) pulse1->writeTimerHigh(value);
         break;
     case 0x4004:
-        pulse2->writeControl(value);
+        if (pulse2) pulse2->writeControl(value);
         break;
     case 0x4005:
-        pulse2->writeSweep(value);
+        if (pulse2) pulse2->writeSweep(value);
         break;
     case 0x4006:
-        pulse2->writeTimerLow(value);
+        if (pulse2) pulse2->writeTimerLow(value);
         break;
     case 0x4007:
-        pulse2->writeTimerHigh(value);
+        if (pulse2) pulse2->writeTimerHigh(value);
         break;
     case 0x4008:
-        triangle->writeControl(value);
+        if (triangle) triangle->writeControl(value);
         break;
     case 0x400a:
-        triangle->writeTimerLow(value);
+        if (triangle) triangle->writeTimerLow(value);
         break;
     case 0x400b:
-        triangle->writeTimerHigh(value);
+        if (triangle) triangle->writeTimerHigh(value);
         break;
     case 0x400c:
-        noise->writeControl(value);
+        if (noise) noise->writeControl(value);
         break;
-    case 0x400d:
-    case 0x400e:
-        noise->writePeriod(value);
+    case 0x400e:  // FIXED: Remove case 0x400d, only 0x400e
+        if (noise) noise->writePeriod(value);
         break;
     case 0x400f:
-        noise->writeLength(value);
+        if (noise) noise->writeLength(value);
         break;
     case 0x4015:
         writeControl(value);
@@ -707,6 +778,7 @@ void APU::writeRegister(uint16_t address, uint8_t value)
         stepEnvelope();
         stepSweep();
         stepLength();
+        break;
     default:
         break;
     }
