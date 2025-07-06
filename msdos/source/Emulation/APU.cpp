@@ -15,6 +15,10 @@
 #include "../Configuration.hpp"
 #include "APU.hpp"
 
+    APU::MixCache APU::outputCache[256];
+    int APU::cacheIndex = 0;
+
+
 static const uint8_t lengthTable[] = {
     10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14,
     12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30
@@ -546,21 +550,48 @@ APU::~APU()
     }
 }
 
-uint8_t APU::getOutput()
-{
-    if (!pulse1 || !pulse2 || !triangle || !noise) {
-        return 128;
-    }
+    uint8_t APU::getOutput()
+    {
+        if (!pulse1 || !pulse2 || !triangle || !noise) {
+            return 128;
+        }
 
-    // Slightly better mixing (still portable)
-    double pulse_sum = pulse1->output() + pulse2->output();
-    double pulse_out = (pulse_sum > 0) ? 95.52 / (8128.0 / pulse_sum + 100.0) : 0.0;
-    
-    double tnd_sum = triangle->output() / 8227.0 + noise->output() / 12241.0;
-    double tnd_out = (tnd_sum > 0) ? 163.67 / (1.0 / tnd_sum + 100.0) : 0.0;
-    
-    return (uint8_t)((pulse_out + tnd_out) * 255.0 + 128.0);
-}
+        uint8_t p1 = pulse1->output();
+        uint8_t p2 = pulse2->output();
+        uint8_t tri = triangle->output();
+        uint8_t noi = noise->output();
+
+        // Check if we've computed this combination before
+        for (int i = 0; i < 256; i++) {
+            MixCache& cache = outputCache[i];
+            if (cache.valid && 
+                cache.pulse1_val == p1 && cache.pulse2_val == p2 && 
+                cache.triangle_val == tri && cache.noise_val == noi) {
+                return cache.result;  // Cache hit - return stored result
+            }
+        }
+ 
+        // Cache miss - compute the floating point math
+        double pulse_sum = p1 + p2;
+        double pulse_out = (pulse_sum > 0) ? 95.52 / (8128.0 / pulse_sum + 100.0) : 0.0;
+        
+        double tnd_sum = tri / 8227.0 + noi / 12241.0;
+        double tnd_out = (tnd_sum > 0) ? 163.67 / (1.0 / tnd_sum + 100.0) : 0.0;
+        
+        uint8_t result = (uint8_t)((pulse_out + tnd_out) * 255.0 + 128.0);
+
+        // Store in cache for next time
+        MixCache& cache = outputCache[cacheIndex];
+        cache.pulse1_val = p1;
+        cache.pulse2_val = p2;
+        cache.triangle_val = tri;
+        cache.noise_val = noi;
+        cache.result = result;
+        cache.valid = true;
+        cacheIndex = (cacheIndex + 1) & 255;  // Wrap around
+
+        return result;
+    }
 
 
 void APU::output(uint8_t* buffer, int len)

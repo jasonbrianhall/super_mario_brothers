@@ -58,6 +58,17 @@ private:
     void stepSweep();
     void stepLength();
     void writeControl(uint8_t value);
+        struct MixCache {
+        uint8_t pulse1_val;
+        uint8_t pulse2_val;
+        uint8_t triangle_val;
+        uint8_t noise_val;
+        uint8_t result;
+        bool valid;
+    };
+    
+    static MixCache outputCache[256];  // Cache recent calculations
+    static int cacheIndex;
 };
 
 #endif // APU_HPP
