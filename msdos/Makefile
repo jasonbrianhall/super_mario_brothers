@@ -45,6 +45,7 @@ SOURCE_FILES = \
     source/Emulation/MemoryAccess.cpp \
     source/Emulation/AllegroMidi.cpp \
     source/Emulation/PPU.cpp \
+    source/Emulation/instruments.cpp \
     source/SMB/SMB.cpp \
     source/SMB/SMBData.cpp \
     source/SMB/SMBEngine.cpp \

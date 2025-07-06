@@ -606,13 +606,14 @@ APU::~APU()
 
 void APU::output(uint8_t* buffer, int len)
 {
-    if (gameAudio && gameAudio->isMIDIMode()) {
-        // Use enhanced MIDI audio
+    // CHANGE FROM: if (gameAudio && gameAudio->isMIDIMode()) {
+    // CHANGE TO:   if (gameAudio && gameAudio->isFMMode()) {
+    if (gameAudio && gameAudio->isFMMode()) {
+        // Use FM synthesis
         gameAudio->generateAudio(buffer, len);
     } else {
         // Use original APU output
         len = (len > audioBufferLength) ? audioBufferLength : len;
-        memcpy(buffer, audioBuffer, len);
         if (len > audioBufferLength)
         {
             memcpy(buffer, audioBuffer, audioBufferLength);
@@ -626,6 +627,7 @@ void APU::output(uint8_t* buffer, int len)
         }
     }
 }
+
 
 void APU::stepFrame()
 {
@@ -808,16 +810,19 @@ void APU::writeRegister(uint16_t address, uint8_t value)
 
 void APU::toggleAudioMode() {
     if (gameAudio) {
-        printf("Current audio mode: %s\n", gameAudio->isMIDIMode() ? "MIDI" : "APU");
+        // CHANGE FROM: gameAudio->isMIDIMode()
+        // CHANGE TO:   gameAudio->isFMMode()
+        printf("Current audio mode: %s\n", gameAudio->isFMMode() ? "FM Synthesis" : "APU");
         gameAudio->toggleAudioMode();
-        printf("New audio mode: %s\n", gameAudio->isMIDIMode() ? "MIDI" : "APU");
+        printf("New audio mode: %s\n", gameAudio->isFMMode() ? "FM Synthesis" : "APU");
     } else {
         printf("Enhanced audio system not available\n");
     }
 }
 
+
 bool APU::isUsingMIDI() const {
-    return gameAudio && gameAudio->isMIDIMode();
+    return gameAudio && gameAudio->isFMMode();
 }
 
 void APU::debugAudio() {
