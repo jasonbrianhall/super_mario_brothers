@@ -441,6 +441,177 @@ void PPU::render(uint32_t* buffer)
     }
 }
 
+void PPU::render16(uint16_t* buffer)
+{
+   // Clear the buffer with the background color (convert to 16-bit once)
+   uint32_t bgColor32 = paletteRGB[palette[0]];
+   uint16_t bgColor16 = ((bgColor32 >> 8) & 0xF800) | ((bgColor32 >> 5) & 0x07E0) | ((bgColor32 >> 3) & 0x001F);
+   
+   for (int index = 0; index < 256 * 240; index++)
+   {
+       buffer[index] = bgColor16;
+   }
+
+   // Draw sprites behind the background
+   if (ppuMask & (1 << 4)) // Are sprites enabled?
+   {
+       for (int i = 63; i >= 0; i--)
+       {
+           uint8_t y          = oam[i * 4];
+           uint8_t index      = oam[i * 4 + 1];
+           uint8_t attributes = oam[i * 4 + 2];
+           uint8_t x          = oam[i * 4 + 3];
+
+           if (!(attributes & (1 << 5))) continue;
+           if (y >= 0xef || x >= 0xf9) continue;
+
+           y++;
+           uint16_t tile = index + (ppuCtrl & (1 << 3) ? 256 : 0);
+           bool flipX = attributes & (1 << 6);
+           bool flipY = attributes & (1 << 7);
+
+           for (int row = 0; row < 8; row++)
+           {
+               uint8_t plane1 = readCHR(tile * 16 + row);
+               uint8_t plane2 = readCHR(tile * 16 + row + 8);
+
+               for (int column = 0; column < 8; column++)
+               {
+                   uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + ((plane2 & (1 << column)) ? 2 : 0));
+                   if (paletteIndex == 0) continue;
+                   
+                   uint8_t colorIndex = palette[0x10 + (attributes & 0x03) * 4 + paletteIndex];
+                   uint32_t pixel32 = paletteRGB[colorIndex];
+                   uint16_t pixel16 = ((pixel32 >> 8) & 0xF800) | ((pixel32 >> 5) & 0x07E0) | ((pixel32 >> 3) & 0x001F);
+
+                   int xOffset = flipX ? column : (7 - column);
+                   int yOffset = flipY ? (7 - row) : row;
+                   int xPixel = (int)x + xOffset;
+                   int yPixel = (int)y + yOffset;
+                   
+                   if (xPixel >= 0 && xPixel < 256 && yPixel >= 0 && yPixel < 240)
+                   {
+                       buffer[yPixel * 256 + xPixel] = pixel16;
+                   }
+               }
+           }
+       }
+   }
+
+   // Draw the background
+   if (ppuMask & (1 << 3))
+   {
+       int scrollX = (int)ppuScrollX + ((ppuCtrl & (1 << 0)) ? 256 : 0);
+       int xMin = scrollX / 8;
+       int xMax = ((int)scrollX + 256) / 8;
+       
+       for (int x = 0; x < 32; x++)
+       {
+           for (int y = 0; y < 4; y++)
+           {
+               renderTile16(buffer, 0x2000 + 32 * y + x, x * 8, y * 8);
+           }
+       }
+       
+       for (int x = xMin; x <= xMax; x++)
+       {
+           for (int y = 4; y < 30; y++)
+           {
+               int index;
+               if (x < 32) {
+                   index = 0x2000 + 32 * y + x;
+               } else if (x < 64) {
+                   index = 0x2400 + 32 * y + (x - 32);
+               } else {
+                   index = 0x2800 + 32 * y + (x - 64);
+               }
+               renderTile16(buffer, index, (x * 8) - (int)scrollX, (y * 8));
+           }
+       }
+   }
+
+   // Draw sprites in front of the background
+   if (ppuMask & (1 << 4))
+   {
+       for (int j = 64; j > 0; j--)
+       {
+           int i = j % 64;
+
+           uint8_t y          = oam[i * 4];
+           uint8_t index      = oam[i * 4 + 1];
+           uint8_t attributes = oam[i * 4 + 2];
+           uint8_t x          = oam[i * 4 + 3];
+
+           if (attributes & (1 << 5) && !(i == 0 && index == 0xff)) continue;
+           if (y >= 0xef || x >= 0xf9) continue;
+
+           y++;
+           uint16_t tile = index + (ppuCtrl & (1 << 3) ? 256 : 0);
+           bool flipX = attributes & (1 << 6);
+           bool flipY = attributes & (1 << 7);
+
+           for (int row = 0; row < 8; row++)
+           {
+               uint8_t plane1 = readCHR(tile * 16 + row);
+               uint8_t plane2 = readCHR(tile * 16 + row + 8);
+
+               for (int column = 0; column < 8; column++)
+               {
+                   uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + ((plane2 & (1 << column)) ? 2 : 0));
+                   if (paletteIndex == 0) continue;
+                   
+                   uint8_t colorIndex = palette[0x10 + (attributes & 0x03) * 4 + paletteIndex];
+                   uint32_t pixel32 = paletteRGB[colorIndex];
+                   uint16_t pixel16 = ((pixel32 >> 8) & 0xF800) | ((pixel32 >> 5) & 0x07E0) | ((pixel32 >> 3) & 0x001F);
+
+                   int xOffset = flipX ? column : (7 - column);
+                   int yOffset = flipY ? (7 - row) : row;
+                   int xPixel = (int)x + xOffset;
+                   int yPixel = (int)y + yOffset;
+                   
+                   if (xPixel >= 0 && xPixel < 256 && yPixel >= 0 && yPixel < 240)
+                   {
+                       if (i == 0 && index == 0xff && row == 5 && column > 3 && column < 6)
+                       {
+                           continue;
+                       }
+                       buffer[yPixel * 256 + xPixel] = pixel16;
+                   }
+               }
+           }
+       }
+   }
+}
+
+void PPU::renderTile16(uint16_t* buffer, int index, int xOffset, int yOffset)
+{
+   uint16_t tile = readByte(index) + (ppuCtrl & (1 << 4) ? 256 : 0);
+   uint8_t attribute = getAttributeTableValue(index);
+
+   for (int row = 0; row < 8; row++)
+   {
+       uint8_t plane1 = readCHR(tile * 16 + row);
+       uint8_t plane2 = readCHR(tile * 16 + row + 8);
+
+       for (int column = 0; column < 8; column++)
+       {
+           uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + ((plane2 & (1 << column)) ? 2 : 0));
+           if (paletteIndex == 0) continue;
+           
+           uint8_t colorIndex = palette[attribute * 4 + paletteIndex];
+           uint32_t pixel32 = paletteRGB[colorIndex];
+           uint16_t pixel16 = ((pixel32 >> 8) & 0xF800) | ((pixel32 >> 5) & 0x07E0) | ((pixel32 >> 3) & 0x001F);
+
+           int x = (xOffset + (7 - column));
+           int y = (yOffset + row);
+           if (x >= 0 && x < 256 && y >= 0 && y < 240)
+           {
+               buffer[y * 256 + x] = pixel16;
+           }
+       }
+   }
+}
+
 void PPU::writeAddressRegister(uint8_t value)
 {
     if (!writeToggle)

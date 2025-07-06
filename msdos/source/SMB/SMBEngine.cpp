@@ -66,6 +66,11 @@ void SMBEngine::render(uint32_t* buffer)
 
 void SMBEngine::render16(uint16_t* buffer)
 {
+    ppu->render16(buffer);  // Direct 16-bit, no conversion
+}
+
+/*void SMBEngine::render16(uint16_t* buffer)
+{
     // Temporary 32-bit buffer for existing render method
     static uint32_t tempBuffer[256 * 240];
     
@@ -84,7 +89,7 @@ void SMBEngine::render16(uint16_t* buffer)
         // Convert to 16-bit RGB565 format
         buffer[i] = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
     }
-}
+}*/
 
 void SMBEngine::renderDirect(uint16_t* buffer, int screenWidth, int screenHeight, int scale)
 {

@@ -23,6 +23,8 @@ public:
     void writeDMA(uint8_t page);
 
     void writeRegister(uint16_t address, uint8_t value);
+    void render16(uint16_t* buffer);
+
 
 private:
     SMBEngine& engine;
@@ -52,6 +54,7 @@ private:
     void writeAddressRegister(uint8_t value);
     void writeByte(uint16_t address, uint8_t value);
     void writeDataRegister(uint8_t value);
+    void renderTile16(uint16_t* buffer, int index, int xOffset, int yOffset);
 };
 
 #endif // PPU_HPP
