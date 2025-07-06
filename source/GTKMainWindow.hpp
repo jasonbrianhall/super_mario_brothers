@@ -138,6 +138,38 @@ private:
   bool backBufferInitialized;
   void initializeBackBuffer();
   static void onSettingsFullscreen(GtkMenuItem* item, gpointer user_data);
+
+class ScalingCache {
+public:
+    uint32_t* scaledBuffer;           // Pre-scaled buffer
+    int* sourceToDestX;               // X coordinate mapping table
+    int* sourceToDestY;               // Y coordinate mapping table
+    int scaleFactor;                  // Current scale factor
+    int destWidth, destHeight;        // Destination dimensions
+    int destOffsetX, destOffsetY;     // Centering offsets
+    bool isValid;                     // Cache validity flag
+    
+    ScalingCache();
+    ~ScalingCache();
+    void cleanup();
+};
+
+ScalingCache scalingCache;
+bool useOptimizedScaling;
+
+// Cache management methods
+void initializeScalingCache();
+void updateScalingCache(int widget_width, int widget_height);
+bool isScalingCacheValid(int widget_width, int widget_height);
+void drawGameCached(cairo_t* cr, int widget_width, int widget_height);
+
+// Optimized scaling methods
+void drawGame1x1(uint32_t* nesBuffer, cairo_t* cr, int widget_width, int widget_height);
+void drawGame2x(uint32_t* nesBuffer, cairo_t* cr, int widget_width, int widget_height);
+void drawGame3x(uint32_t* nesBuffer, cairo_t* cr, int widget_width, int widget_height);
+void drawGameGenericScale(uint32_t* nesBuffer, cairo_t* cr, int widget_width, int widget_height, int scale);
+
+
 };
 
 #endif // GTK_MAIN_WINDOW_HPP
