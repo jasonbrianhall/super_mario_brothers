@@ -89,6 +89,21 @@ public:
      */
     void update();
 
+    /**
+     * Toggle between APU and MIDI audio modes.
+     */
+    void toggleAudioMode();
+    
+    /**
+     * Check if currently using MIDI audio.
+     */
+    bool isUsingMIDIAudio() const;
+    
+    /**
+     * Print debug information about audio channels.
+     */
+    void debugAudioChannels();
+
 private:
     // NES Emulation subsystems:
     APU* apu;

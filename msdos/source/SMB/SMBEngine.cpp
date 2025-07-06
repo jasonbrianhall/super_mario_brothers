@@ -419,3 +419,25 @@ void SMBEngine::writeData(uint16_t address, const uint8_t* data, size_t length)
 
     memcpy(dataStorage + (std::ptrdiff_t)address, data, length);
 }
+
+void SMBEngine::toggleAudioMode()
+{
+    if (apu) {
+        apu->toggleAudioMode();
+    }
+}
+
+bool SMBEngine::isUsingMIDIAudio() const
+{
+    if (apu) {
+        return apu->isUsingMIDI();
+    }
+    return false;
+}
+
+void SMBEngine::debugAudioChannels()
+{
+    if (apu) {
+        apu->debugAudio();
+    }
+}

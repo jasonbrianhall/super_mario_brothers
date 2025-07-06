@@ -8,6 +8,7 @@
 class Pulse;
 class Triangle;
 class Noise;
+class AllegroMIDIAudioSystem; // Forward declaration
 
 /**
  * Audio processing unit emulator.
@@ -37,6 +38,21 @@ public:
      */
     void writeRegister(uint16_t address, uint8_t value);
 
+    /**
+     * Toggle between APU and MIDI audio modes.
+     */
+    void toggleAudioMode();
+
+    /**
+     * Check if currently using MIDI mode.
+     */
+    bool isUsingMIDI() const;
+
+    /**
+     * Debug audio channels.
+     */
+    void debugAudio();
+
 private:
     uint8_t audioBuffer[AUDIO_BUFFER_LENGTH];
     int audioBufferLength;      /**< Amount of data currently in buffer */
@@ -48,6 +64,8 @@ private:
     Triangle* triangle;
     Noise* noise;
 
+    AllegroMIDIAudioSystem* gameAudio;  /**< Enhanced audio system */
+
     /**
      * Get the current mixed audio output sample.
      * @return 8-bit unsigned audio sample (0-255, 128=silence)
@@ -58,7 +76,8 @@ private:
     void stepSweep();
     void stepLength();
     void writeControl(uint8_t value);
-        struct MixCache {
+    
+    struct MixCache {
         uint8_t pulse1_val;
         uint8_t pulse2_val;
         uint8_t triangle_val;

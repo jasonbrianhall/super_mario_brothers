@@ -664,7 +664,7 @@ bool AllegroMainWindow::initializeAllegro()
             printf("Audio initialized successfully\n");
             dosAudioInitialized = true;
             
-            set_volume(128, 0);
+            set_volume(255, 255);
             
             int freq = Configuration::getAudioFrequency();
             int samples = freq / Configuration::getFrameRate();
@@ -1682,13 +1682,40 @@ void AllegroMainWindow::handleGameInputNoEsc()
         rPressed = false;
     }
     
+    // FIXED: Check for audio mode toggle (M key) - use SMBEngine methods instead of getAPU()
+    static bool mPressed = false;
+    if (key[KEY_M] && !mPressed) {
+        if (smbEngine) {
+            smbEngine->toggleAudioMode();
+            setStatusMessage(smbEngine->isUsingMIDIAudio() ? "MIDI Audio Mode" : "APU Audio Mode");
+        }
+        mPressed = true;
+        return;
+    }
+    if (!key[KEY_M]) {
+        mPressed = false;
+    }
+    
+    // FIXED: Check for audio debug (N key) - use SMBEngine methods instead of getAPU()
+    static bool nPressed = false;
+    if (key[KEY_N] && !nPressed) {
+        if (smbEngine) {
+            smbEngine->debugAudioChannels();
+            setStatusMessage("Audio debug info printed to console");
+        }
+        nPressed = true;
+        return;
+    }
+    if (!key[KEY_N]) {
+        nPressed = false;
+    }
+    
     // Process player input ONLY if game is not paused
     if (!gamePaused) {
         checkPlayerInput(PLAYER_1);
         checkPlayerInput(PLAYER_2);
     }
 }
-
 
 void AllegroMainWindow::handleMenuInput()
 {

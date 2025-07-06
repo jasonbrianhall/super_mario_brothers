@@ -11,9 +11,9 @@
 #include <pthread.h>
 #endif
 
-
 #include "../Configuration.hpp"
 #include "APU.hpp"
+#include "AllegroMidi.hpp"
 
     APU::MixCache APU::outputCache[256];
     int APU::cacheIndex = 0;
@@ -309,7 +309,7 @@ public:
         }
     }
 
-void Triangle::stepCounter()
+void stepCounter()
 {
     if (counterReload)
     {
@@ -505,6 +505,7 @@ APU::APU()
     pulse2 = nullptr;
     triangle = nullptr;
     noise = nullptr;
+    gameAudio = nullptr;
 
     // Clear audio buffer
     memset(audioBuffer, 0, AUDIO_BUFFER_LENGTH);
@@ -514,6 +515,9 @@ APU::APU()
         pulse2 = new Pulse(2);
         triangle = new Triangle;
         noise = new Noise;
+        
+        // Initialize the enhanced audio system
+        gameAudio = new AllegroMIDIAudioSystem(this);
         
         #ifdef __DJGPP__
         printf("APU initialized for DOS - all objects created successfully\n");
@@ -527,11 +531,17 @@ APU::APU()
         if (pulse2) { delete pulse2; pulse2 = nullptr; }
         if (triangle) { delete triangle; triangle = nullptr; }
         if (noise) { delete noise; noise = nullptr; }
+        if (gameAudio) { delete gameAudio; gameAudio = nullptr; }
     }
 }
 
 APU::~APU()
 {
+    if (gameAudio) {
+        delete gameAudio;
+        gameAudio = nullptr;
+    }
+    
     if (pulse1) {
         delete pulse1;
         pulse1 = nullptr;
@@ -596,18 +606,24 @@ APU::~APU()
 
 void APU::output(uint8_t* buffer, int len)
 {
-    len = (len > audioBufferLength) ? audioBufferLength : len;
-    memcpy(buffer, audioBuffer, len);
-    if (len > audioBufferLength)
-    {
-        memcpy(buffer, audioBuffer, audioBufferLength);
-        audioBufferLength = 0;
-    }
-    else
-    {
+    if (gameAudio && gameAudio->isMIDIMode()) {
+        // Use enhanced MIDI audio
+        gameAudio->generateAudio(buffer, len);
+    } else {
+        // Use original APU output
+        len = (len > audioBufferLength) ? audioBufferLength : len;
         memcpy(buffer, audioBuffer, len);
-        audioBufferLength -= len;
-        memcpy(audioBuffer, audioBuffer + len, audioBufferLength);
+        if (len > audioBufferLength)
+        {
+            memcpy(buffer, audioBuffer, audioBufferLength);
+            audioBufferLength = 0;
+        }
+        else
+        {
+            memcpy(buffer, audioBuffer, len);
+            audioBufferLength -= len;
+            memcpy(audioBuffer, audioBuffer + len, audioBufferLength);
+        }
     }
 }
 
@@ -727,6 +743,12 @@ void APU::writeControl(uint8_t value)
 
 void APU::writeRegister(uint16_t address, uint8_t value)
 {
+    // FIRST: Let the enhanced audio system intercept the register write
+    if (gameAudio) {
+        gameAudio->interceptAPURegister(address, value);
+    }
+    
+    // THEN: Process normally for APU emulation (in case we want to fall back)
     switch (address)
     {
     case 0x4000:
@@ -781,5 +803,27 @@ void APU::writeRegister(uint16_t address, uint8_t value)
         break;
     default:
         break;
+    }
+}
+
+void APU::toggleAudioMode() {
+    if (gameAudio) {
+        printf("Current audio mode: %s\n", gameAudio->isMIDIMode() ? "MIDI" : "APU");
+        gameAudio->toggleAudioMode();
+        printf("New audio mode: %s\n", gameAudio->isMIDIMode() ? "MIDI" : "APU");
+    } else {
+        printf("Enhanced audio system not available\n");
+    }
+}
+
+bool APU::isUsingMIDI() const {
+    return gameAudio && gameAudio->isMIDIMode();
+}
+
+void APU::debugAudio() {
+    if (gameAudio) {
+        gameAudio->debugPrintChannels();
+    } else {
+        printf("Enhanced audio system not available\n");
     }
 }
