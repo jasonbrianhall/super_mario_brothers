@@ -6,6 +6,16 @@
 #include "Video.hpp"
 #include "../SMBRom.hpp"
 
+struct TilePixelCache {
+    uint16_t pixels[64];  // 8x8 = 64 pixels, pre-converted to RGB565
+    uint32_t palette_used;
+    bool is_cached;
+};
+
+static TilePixelCache g_tileCache[512];  // Cache for all possible tiles
+static bool g_cacheInitialized = false;
+
+
 void drawBox(uint16_t* buffer, int xOffset, int yOffset, int width, int height, uint32_t palette)
 {
     for (int y = 0; y < height; y++)
@@ -77,59 +87,71 @@ inline uint16_t rgb32_to_rgb16(uint32_t rgb32)
 
 void drawCHRTile(uint16_t* buffer, int xOffset, int yOffset, int tile, uint32_t palette)
 {
+    // Initialize cache on first use
+    if (!g_cacheInitialized) {
+        memset(g_tileCache, 0, sizeof(g_tileCache));
+        g_cacheInitialized = true;
+    }
+    
     // Bounds check for the entire tile
-    if (xOffset >= 256 || yOffset >= 240 || xOffset + 8 <= 0 || yOffset + 8 <= 0)
-    {
+    if (xOffset >= 256 || yOffset >= 240 || xOffset + 8 <= 0 || yOffset + 8 <= 0) {
         return;
     }
     
-    // Pre-calculate ROM addresses for better performance
-    const uint8_t* plane1_base = &smbRomData[16 + 2 * 16384 + tile * 16];
-    const uint8_t* plane2_base = plane1_base + 8;
+    // Check if tile is cached for this palette
+    TilePixelCache& cache = g_tileCache[tile];
+    if (!cache.is_cached || cache.palette_used != palette) {
+        // Cache miss - convert tile once
+        const uint8_t* plane1_base = &smbRomData[16 + 2 * 16384 + tile * 16];
+        const uint8_t* plane2_base = plane1_base + 8;
+        
+        int pixelIndex = 0;
+        for (int row = 0; row < 8; row++) {
+            uint8_t plane1 = plane1_base[row];
+            uint8_t plane2 = plane2_base[row];
+            
+            for (int column = 0; column < 8; column++) {
+                uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + 
+                                       ((plane2 & (1 << column)) ? 2 : 0));
+                
+                if (paletteIndex == 0) {
+                    cache.pixels[pixelIndex] = 0;  // Transparent marker
+                } else if (palette == 0) {
+                    uint8_t gray = paletteIndex * 85;
+                    cache.pixels[pixelIndex] = rgb32_to_rgb16((gray << 16) | (gray << 8) | gray);
+                } else {
+                    uint32_t colorIndex = (palette >> (8 * (3 - paletteIndex))) & 0xff;
+                    uint32_t rgb32 = paletteRGB[colorIndex];
+                    cache.pixels[pixelIndex] = rgb32_to_rgb16(rgb32);
+                }
+                pixelIndex++;
+            }
+        }
+        
+        cache.is_cached = true;
+        cache.palette_used = palette;
+    }
     
-    // Read the pixels of the tile
-    for (int row = 0; row < 8; row++)
-    {
+    // Fast path: copy cached pixels
+    int pixelIndex = 0;
+    for (int row = 0; row < 8; row++) {
         int y = yOffset + row;
-        if (y < 0 || y >= 240) continue;  // Skip rows outside screen bounds
+        if (y < 0 || y >= 240) {
+            pixelIndex += 8;
+            continue;
+        }
         
-        uint8_t plane1 = plane1_base[row];
-        uint8_t plane2 = plane2_base[row];
-        
-        // Calculate the base address for this row
         uint16_t* row_buffer = &buffer[y * 256];
         
-        // Process 8 pixels in this row
-        for (int column = 0; column < 8; column++)
-        {
+        for (int column = 0; column < 8; column++) {
             int x = xOffset + (7 - column);
-            if (x < 0 || x >= 256) continue;  // Skip pixels outside screen bounds
-            
-            uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + 
-                                   ((plane2 & (1 << column)) ? 2 : 0));
-            
-            if (paletteIndex == 0)
-            {
-                // Skip transparent pixels
-                continue;
+            if (x >= 0 && x < 256) {
+                uint16_t pixel = cache.pixels[pixelIndex];
+                if (pixel != 0) {  // Skip transparent
+                    row_buffer[x] = pixel;
+                }
             }
-            
-            uint16_t pixel;
-            if (palette == 0)
-            {
-                // Grayscale - convert to 16-bit directly
-                uint8_t gray = paletteIndex * 85;  // 0, 85, 170, 255
-                pixel = rgb32_to_rgb16((gray << 16) | (gray << 8) | gray);
-            }
-            else
-            {
-                uint32_t colorIndex = (palette >> (8 * (3 - paletteIndex))) & 0xff;
-                uint32_t rgb32 = paletteRGB[colorIndex];
-                pixel = rgb32_to_rgb16(rgb32);
-            }
-            
-            // Direct memory write - much faster than putpixel
-            row_buffer[x] = pixel;
+            pixelIndex++;
         }
     }
 }
@@ -184,19 +206,33 @@ void drawText(uint16_t* buffer, int xOffset, int yOffset, const std::string& tex
 // Fast screen clear function
 void clearScreen(uint16_t* buffer, uint16_t color)
 {
-    // Use memset for single byte values, or a loop for 16-bit
-    if (color == 0)
-    {
-        memset(buffer, 0, 256 * 240 * sizeof(uint16_t));
+    const size_t pixels = 256 * 240;
+    
+    if (color == 0) {
+        // Fast memset for black
+        memset(buffer, 0, pixels * sizeof(uint16_t));
+        return;
     }
-    else
-    {
-        // For non-zero colors, we need to set each 16-bit value
-        uint16_t* end = buffer + (256 * 240);
-        while (buffer < end)
-        {
-            *buffer++ = color;
-        }
+    
+    // Optimized loop with unrolling for non-zero colors
+    uint16_t* end = buffer + pixels;
+    
+    // Process 8 pixels at a time
+    while (buffer + 8 <= end) {
+        buffer[0] = color;
+        buffer[1] = color;
+        buffer[2] = color;
+        buffer[3] = color;
+        buffer[4] = color;
+        buffer[5] = color;
+        buffer[6] = color;
+        buffer[7] = color;
+        buffer += 8;
+    }
+    
+    // Handle remaining pixels
+    while (buffer < end) {
+        *buffer++ = color;
     }
 }
 
@@ -213,17 +249,22 @@ void drawHLine(uint16_t* buffer, int x, int y, int width, uint16_t color)
     uint16_t* row_buffer = &buffer[y * 256 + startX];
     int pixels = endX - startX;
     
-    // Use memset for black lines, loop for others
-    if (color == 0)
-    {
+    if (color == 0) {
         memset(row_buffer, 0, pixels * sizeof(uint16_t));
+        return;
     }
-    else
-    {
-        for (int i = 0; i < pixels; i++)
-        {
-            row_buffer[i] = color;
-        }
+    
+    // Unrolled loop for better performance
+    uint16_t* end = row_buffer + pixels;
+    while (row_buffer + 4 <= end) {
+        row_buffer[0] = color;
+        row_buffer[1] = color;
+        row_buffer[2] = color;
+        row_buffer[3] = color;
+        row_buffer += 4;
+    }
+    while (row_buffer < end) {
+        *row_buffer++ = color;
     }
 }
 
@@ -372,3 +413,4 @@ const uint32_t* loadPalette(const std::string& fileName)
 
     return palette;
 }
+

@@ -195,7 +195,8 @@ private:
   void printControlMappings();
   void startKeyCapture(CaptureType captureType, const char* promptText);
   void debugJoystickInfo(int joyIndex);
-
+  void convertBuffer16ToBitmap16_2x(uint16_t* buffer16, BITMAP* bitmap, 
+                                                    int dest_x, int dest_y);
 };
 
 

@@ -315,11 +315,7 @@ void Triangle::stepCounter()
     {
         counterValue--;
     }
-    if (lengthEnabled)  // This condition is WRONG in both versions!
-    {
-        counterReload = false;
-    }
-    // Should be: counterReload = false; (always, not just when lengthEnabled)
+    counterReload = false;  // Move this outside the if block
 }
 
     uint8_t output()
@@ -552,17 +548,18 @@ APU::~APU()
 
 uint8_t APU::getOutput()
 {
-    // Safety check - if objects aren't created, return silence
     if (!pulse1 || !pulse2 || !triangle || !noise) {
-        return 128; // Silence for unsigned 8-bit (will be converted to signed)
+        return 128;
     }
 
-    // Use the exact same mixing as the working SDL/GTK version
-    double pulseOut = 0.00752 * (pulse1->output() + pulse2->output());
-    double tndOut = 0.00851 * triangle->output() + 0.00494 * noise->output();
-
-    // Return exactly the same as working version
-    return static_cast<uint8_t>(floor(255.0 * (pulseOut + tndOut)));
+    // Slightly better mixing (still portable)
+    double pulse_sum = pulse1->output() + pulse2->output();
+    double pulse_out = (pulse_sum > 0) ? 95.52 / (8128.0 / pulse_sum + 100.0) : 0.0;
+    
+    double tnd_sum = triangle->output() / 8227.0 + noise->output() / 12241.0;
+    double tnd_out = (tnd_sum > 0) ? 163.67 / (1.0 / tnd_sum + 100.0) : 0.0;
+    
+    return (uint8_t)((pulse_out + tnd_out) * 255.0 + 128.0);
 }
 
 

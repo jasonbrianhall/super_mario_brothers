@@ -127,27 +127,41 @@ END_OF_FUNCTION(timer_callback)
 // Audio callback for Allegro
 void audio_stream_callback(void* buffer, int len)
 {
+    static int underrunCount = 0;
+    
     if (!smbEngine || !Configuration::getAudioEnabled()) {
-        // CRITICAL: Use 0 for signed audio silence (not 128)
         memset(buffer, 0, len);
         return;
     }
     
-    // Use a properly sized buffer
     static uint8_t temp_buffer[4096];
     int actual_len = (len > 4096) ? 4096 : len;
     
-    // Get unsigned audio from engine (same as GTK version does)
+    // CHECK: Is the engine actually providing samples?
     smbEngine->audioCallback(temp_buffer, actual_len);
     
-    // Convert unsigned 8-bit to signed 8-bit (CRITICAL STEP)
-    int8_t* signed_buffer = (int8_t*)buffer;
-    for (int i = 0; i < actual_len; i++) {
-        // Convert range [0,255] to [-128,127] 
-        signed_buffer[i] = (int8_t)(temp_buffer[i] - 128);
+    // Debug: Check for silence (indicates buffer issues)
+    bool allSilence = true;
+    for (int i = 0; i < 10 && i < actual_len; i++) {
+        if (temp_buffer[i] != 128) { // 128 = unsigned silence
+            allSilence = false;
+            break;
+        }
     }
     
-    // Fill remaining buffer with silence if needed
+    if (allSilence) {
+        underrunCount++;
+        if (underrunCount % 60 == 0) { // Print every second
+            printf("Audio underrun detected (%d)\n", underrunCount);
+        }
+    }
+    
+    // Convert to signed
+    int8_t* signed_buffer = (int8_t*)buffer;
+    for (int i = 0; i < actual_len; i++) {
+        signed_buffer[i] = (int8_t)((int)temp_buffer[i] - 128);
+    }
+    
     if (len > actual_len) {
         memset(signed_buffer + actual_len, 0, len - actual_len);
     }
@@ -2023,36 +2037,39 @@ void AllegroMainWindow::drawGameBuffered(BITMAP* target)
     int dest_x = (SCREEN_W - dest_w) / 2;
     int dest_y = (SCREEN_H - dest_h) / 2;
     
-    // Clear target first
-    clear_to_color(target, makecol(0, 0, 0));
+    // Clear target first - optimized for 16-bit
+    if (bitmap_color_depth(target) == 16) {
+        uint16_t* buffer = (uint16_t*)target->line[0];
+        memset(buffer, 0, SCREEN_W * SCREEN_H * sizeof(uint16_t));
+    } else {
+        clear_to_color(target, makecol(0, 0, 0));
+    }
     
     #ifdef __DJGPP__
-    // DOS: Optimized paths for common resolutions
-    if (SCREEN_W == 512 && SCREEN_H == 480) {
-        // Perfect 2x scaling - fill the screen
-        convertBuffer16ToBitmap16(nesBuffer, target, 0, 0, 512, 480, 2);
-    } else if (SCREEN_W == 320 && SCREEN_H == 240) {
-        // Perfect 1.25x scaling - center it
-        convertBuffer16ToBitmap16(nesBuffer, target, 32, 0, 256, 240, 1);
-    } else if (SCREEN_W == 320 && SCREEN_H == 200) {
-        // VGA Mode 13h style - center and fit
-        convertBuffer16ToBitmap16(nesBuffer, target, 32, -20, 256, 240, 1);
-    } else {
-        // Generic scaling
-        if (bitmap_color_depth(target) == 16) {
-            convertBuffer16ToBitmap16(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
-        } else {
-            //convertBuffer16ToBitmapGeneric(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
-        }
+    // DOS-specific optimizations for common resolutions
+    if (SCREEN_W == 512 && SCREEN_H == 480 && bitmap_color_depth(target) == 16) {
+        // Perfect 2x scaling - use optimized path
+        convertBuffer16ToBitmap16_2x(nesBuffer, target, 0, 0);
+        return;
     }
-    #else
-    // Linux: Use generic scaling
+    
+    if (SCREEN_W == 320 && SCREEN_H == 240 && bitmap_color_depth(target) == 16) {
+        // Perfect fit with centering
+        for (int y = 0; y < 240; y++) {
+            uint16_t* src_row = &nesBuffer[y * 256];
+            uint16_t* dest_row = (uint16_t*)target->line[y] + 32;  // Center horizontally
+            memcpy(dest_row, src_row, 256 * sizeof(uint16_t));
+        }
+        return;
+    }
+    #endif
+    
+    // Generic path
     if (bitmap_color_depth(target) == 16) {
         convertBuffer16ToBitmap16(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
     } else {
-        //convertBuffer16ToBitmapGeneric(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
+        convertBuffer16ToBitmapGeneric(nesBuffer, target, dest_x, dest_y, dest_w, dest_h, scale);
     }
-    #endif
 }
 
 // Fast conversion from 16-bit buffer to Allegro bitmap with efficient scaling
@@ -2087,70 +2104,46 @@ void AllegroMainWindow::convertBuffer16ToBitmap16(uint16_t* buffer16, BITMAP* bi
                                                  int dest_x, int dest_y, int dest_w, int dest_h, int scale)
 {
     if (scale == 1) {
-        // 1:1 copy - fastest
-        for (int y = 0; y < 240; y++) {
+        // 1:1 copy - optimized
+        for (int y = 0; y < 240 && y + dest_y < bitmap->h; y++) {
+            if (y + dest_y < 0) continue;
+            
             uint16_t* src_row = &buffer16[y * 256];
-            uint16_t* dest_row = (uint16_t*)bitmap->line[y + dest_y];
-            memcpy(&dest_row[dest_x], src_row, 256 * sizeof(uint16_t));
+            uint16_t* dest_row = (uint16_t*)bitmap->line[y + dest_y] + dest_x;
+            
+            int copy_width = std::min(256, bitmap->w - dest_x);
+            if (copy_width > 0) {
+                memcpy(dest_row, src_row, copy_width * sizeof(uint16_t));
+            }
         }
-    } else if (scale == 2) {
-        // 2x scaling - optimized
-        for (int y = 0; y < 240; y++) {
-            uint16_t* src_row = &buffer16[y * 256];
-            uint16_t* dest_row1 = (uint16_t*)bitmap->line[y * 2 + dest_y];
-            uint16_t* dest_row2 = (uint16_t*)bitmap->line[y * 2 + 1 + dest_y];
+        return;
+    }
+    
+    if (scale == 2) {
+        // Use optimized 2x scaling
+        convertBuffer16ToBitmap16_2x(buffer16, bitmap, dest_x, dest_y);
+        return;
+    }
+    
+    // Generic scaling for other factors (keep your existing code for this part)
+    for (int y = 0; y < 240; y++) {
+        uint16_t* src_row = &buffer16[y * 256];
+        
+        for (int scale_y = 0; scale_y < scale; scale_y++) {
+            int dest_row_idx = y * scale + scale_y + dest_y;
+            if (dest_row_idx >= bitmap->h) break;
+            if (dest_row_idx < 0) continue;
+            
+            uint16_t* dest_row = (uint16_t*)bitmap->line[dest_row_idx];
             
             for (int x = 0; x < 256; x++) {
                 uint16_t pixel = src_row[x];
-                int dest_pos = (x * 2) + dest_x;
-                dest_row1[dest_pos] = pixel;
-                dest_row1[dest_pos + 1] = pixel;
-                dest_row2[dest_pos] = pixel;
-                dest_row2[dest_pos + 1] = pixel;
-            }
-        }
-    } else if (scale == 3) {
-        // 3x scaling - optimized
-        for (int y = 0; y < 240; y++) {
-            uint16_t* src_row = &buffer16[y * 256];
-            uint16_t* dest_row1 = (uint16_t*)bitmap->line[y * 3 + dest_y];
-            uint16_t* dest_row2 = (uint16_t*)bitmap->line[y * 3 + 1 + dest_y];
-            uint16_t* dest_row3 = (uint16_t*)bitmap->line[y * 3 + 2 + dest_y];
-            
-            for (int x = 0; x < 256; x++) {
-                uint16_t pixel = src_row[x];
-                int dest_pos = (x * 3) + dest_x;
-                dest_row1[dest_pos] = pixel;
-                dest_row1[dest_pos + 1] = pixel;
-                dest_row1[dest_pos + 2] = pixel;
-                dest_row2[dest_pos] = pixel;
-                dest_row2[dest_pos + 1] = pixel;
-                dest_row2[dest_pos + 2] = pixel;
-                dest_row3[dest_pos] = pixel;
-                dest_row3[dest_pos + 1] = pixel;
-                dest_row3[dest_pos + 2] = pixel;
-            }
-        }
-    } else {
-        // Generic scaling for other factors
-        for (int y = 0; y < 240; y++) {
-            uint16_t* src_row = &buffer16[y * 256];
-            
-            for (int scale_y = 0; scale_y < scale; scale_y++) {
-                int dest_row_idx = y * scale + scale_y + dest_y;
-                if (dest_row_idx >= SCREEN_H) break;
+                int dest_start = x * scale + dest_x;
                 
-                uint16_t* dest_row = (uint16_t*)bitmap->line[dest_row_idx];
-                
-                for (int x = 0; x < 256; x++) {
-                    uint16_t pixel = src_row[x];
-                    int dest_start = x * scale + dest_x;
-                    
-                    for (int scale_x = 0; scale_x < scale; scale_x++) {
-                        int dest_pos = dest_start + scale_x;
-                        if (dest_pos < SCREEN_W) {
-                            dest_row[dest_pos] = pixel;
-                        }
+                for (int scale_x = 0; scale_x < scale; scale_x++) {
+                    int dest_pos = dest_start + scale_x;
+                    if (dest_pos < bitmap->w && dest_pos >= 0) {
+                        dest_row[dest_pos] = pixel;
                     }
                 }
             }
@@ -2655,6 +2648,54 @@ void AllegroMainWindow::assignCapturedJoyButton(int buttonNum)
     currentCaptureType = CAPTURE_NONE;
     strcpy(currentCaptureKey, "");
     saveControlConfig();
+}
+
+void AllegroMainWindow::convertBuffer16ToBitmap16_2x(uint16_t* buffer16, BITMAP* bitmap, 
+                                                    int dest_x, int dest_y) {
+    // Optimized 2x scaling - no arithmetic in inner loops
+    for (int y = 0; y < 240; y++) {
+        int dest_y1 = y * 2 + dest_y;
+        int dest_y2 = dest_y1 + 1;
+        
+        if (dest_y2 >= bitmap->h) break;
+        if (dest_y1 < 0) continue;
+        
+        uint16_t* src_row = &buffer16[y * 256];
+        uint16_t* dest_row1 = (uint16_t*)bitmap->line[dest_y1] + dest_x;
+        uint16_t* dest_row2 = (uint16_t*)bitmap->line[dest_y2] + dest_x;
+        
+        // Process 4 pixels at a time for better performance
+        for (int x = 0; x < 256; x += 4) {
+            if ((x * 2 + dest_x + 8) > bitmap->w) break;
+            
+            uint16_t p1 = src_row[x];
+            uint16_t p2 = src_row[x + 1];
+            uint16_t p3 = src_row[x + 2];
+            uint16_t p4 = src_row[x + 3];
+            
+            int dest_base = x * 2;
+            
+            // First row - unrolled
+            dest_row1[dest_base] = p1;
+            dest_row1[dest_base + 1] = p1;
+            dest_row1[dest_base + 2] = p2;
+            dest_row1[dest_base + 3] = p2;
+            dest_row1[dest_base + 4] = p3;
+            dest_row1[dest_base + 5] = p3;
+            dest_row1[dest_base + 6] = p4;
+            dest_row1[dest_base + 7] = p4;
+            
+            // Second row - duplicate
+            dest_row2[dest_base] = p1;
+            dest_row2[dest_base + 1] = p1;
+            dest_row2[dest_base + 2] = p2;
+            dest_row2[dest_base + 3] = p2;
+            dest_row2[dest_base + 4] = p3;
+            dest_row2[dest_base + 5] = p3;
+            dest_row2[dest_base + 6] = p4;
+            dest_row2[dest_base + 7] = p4;
+        }
+    }
 }
 
 // Main function for DOS
