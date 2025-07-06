@@ -63,6 +63,46 @@ Successfully converted ROM file to header and source:
   Variable: smbRomData[40976]
 ```
 
+### Notes about the Converter
+
+This converter translates 6502 assembly code directly to native C++ code for compilation with modern compilers (primarily g++, though it could theoretically work with others). The converter primarily targets the x816 assembly format but includes support for CA65 format as well.
+
+#### Why This ROM Works Well for Virtualization
+
+The Super Mario Bros. ROM is ideal for this conversion approach because it follows straightforward coding patterns:
+
+**✅ What Makes It Compatible:**
+- Code executes directly from ROM without self-modification
+- Functions have predictable, static jump targets
+- No dynamic code generation or execution from RAM
+- Uses documented 6502 instructions only
+
+#### Challenging Scenarios (Not Present in SMB)
+
+**🚫 Self-Modifying Code:**
+Some games copy code from ROM to RAM and execute it from multiple locations. Virtualizing this would require:
+- Dynamic assembly section creation
+- Runtime jump target translation
+- Complex memory mapping between execution and data access
+- Significant engineering effort to maintain proper memory semantics
+
+**🚫 Dynamic Jump Tables:**
+Games with computed jumps (like `JMP ($XXXX,X)`) are difficult to translate because:
+- Jump targets are calculated at runtime
+- Requires lookup tables and case statements in C++
+- All possible jump destinations must be pre-analyzed
+- Performance overhead from indirect jumps
+
+**🚫 Undocumented Instructions:**
+The 6502 has unofficial opcodes that some games exploit:
+- Basic implementations exist in the converter
+- Untested since SMB doesn't use them
+- Could cause compatibility issues with other ROMs
+
+#### Bottom Line
+
+Super Mario Bros. represents the "sweet spot" for 6502-to-C++ conversion - it's sophisticated enough to be interesting but straightforward enough to virtualize efficiently without the engineering complexity that more exotic coding techniques would require.
+
 ## Optional: Reconvert the Super Mario 6502 ASM
 
 This code builds the C++ code from smbdis.asm (maybe you found a bug or just want to see how it works):
