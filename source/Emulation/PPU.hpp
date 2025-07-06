@@ -3,6 +3,18 @@
 
 #include <cstdint>
 
+
+struct ComprehensiveTileCache {
+    uint16_t pixels[64];        
+    uint16_t pixels_flipX[64];  
+    uint16_t pixels_flipY[64];  
+    uint16_t pixels_flipXY[64]; 
+    uint16_t tile_id;
+    uint8_t palette_type;       
+    uint8_t attribute;
+    bool is_valid;
+};
+
 class SMBEngine;
 
 /**
@@ -23,6 +35,8 @@ public:
     void writeDMA(uint8_t page);
 
     void writeRegister(uint16_t address, uint8_t value);
+    void render16(uint16_t* buffer);
+
 
 private:
     SMBEngine& engine;
@@ -52,6 +66,17 @@ private:
     void writeAddressRegister(uint8_t value);
     void writeByte(uint16_t address, uint8_t value);
     void writeDataRegister(uint8_t value);
+    void renderTile16(uint16_t* buffer, int index, int xOffset, int yOffset);
+
+static ComprehensiveTileCache g_comprehensiveCache[512 * 8];  // 512 tiles × 8 palette combinations
+static bool g_comprehensiveCacheInit;
+
+int getTileCacheIndex(uint16_t tile, uint8_t palette_type, uint8_t attribute);
+void cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t attribute);
+void renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset, bool flipX, bool flipY);
+void renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t palette_idx, int xOffset, int yOffset, bool flipX, bool flipY);
+void renderCachedSpriteWithPriority(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, int xOffset, int yOffset, bool flipX, bool flipY, bool behindBackground);
+
 };
 
 #endif // PPU_HPP

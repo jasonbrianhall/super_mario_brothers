@@ -27,8 +27,8 @@ SMBEngine::SMBEngine(uint8_t* romImage) :
 {
     apu = new APU();
     ppu = new PPU(*this);
-    controller1 = new Controller();
-    controller2 = new Controller();
+    controller1 = new Controller();  // Remove player number parameter
+    controller2 = new Controller();  // Remove player number parameter
 
     // CHR Location in ROM: Header (16 bytes) + 2 PRG pages (16k each)
     chr = (romImage + 16 + (16384 * 2));
@@ -62,6 +62,157 @@ Controller& SMBEngine::getController2()
 void SMBEngine::render(uint32_t* buffer)
 {
     ppu->render(buffer);
+}
+
+void SMBEngine::render16(uint16_t* buffer)
+{
+    ppu->render16(buffer);  // Direct 16-bit, no conversion
+}
+
+/*void SMBEngine::render16(uint16_t* buffer)
+{
+    // Temporary 32-bit buffer for existing render method
+    static uint32_t tempBuffer[256 * 240];
+    
+    // Use existing 32-bit render
+    ppu->render(tempBuffer);
+    
+    // Convert to 16-bit RGB565 format
+    for (int i = 0; i < 256 * 240; i++) {
+        uint32_t pixel32 = tempBuffer[i];
+        
+        // Extract RGB components from 32-bit ARGB
+        uint8_t r = (pixel32 >> 16) & 0xFF;
+        uint8_t g = (pixel32 >> 8) & 0xFF;
+        uint8_t b = pixel32 & 0xFF;
+        
+        // Convert to 16-bit RGB565 format
+        buffer[i] = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+    }
+}*/
+
+void SMBEngine::renderDirect(uint16_t* buffer, int screenWidth, int screenHeight, int scale)
+{
+    // Get the base 16-bit NES frame
+    static uint16_t nesBuffer[256 * 240];
+    
+    // Use our render16 method instead of calling PPU directly
+    render16(nesBuffer);
+    
+    // Calculate scaling and centering
+    int nesWidth = 256;
+    int nesHeight = 240;
+    
+    // Determine the best scale that fits in the screen
+    int maxScaleX = screenWidth / nesWidth;
+    int maxScaleY = screenHeight / nesHeight;
+    int actualScale = (maxScaleX < maxScaleY) ? maxScaleX : maxScaleY;
+    
+    // Use the requested scale if it fits, otherwise use the maximum
+    if (scale > 0 && scale <= actualScale) {
+        actualScale = scale;
+    }
+    
+    // If no scaling fits, default to 1
+    if (actualScale < 1) actualScale = 1;
+    
+    // Calculate the final dimensions and centering offset
+    int finalWidth = nesWidth * actualScale;
+    int finalHeight = nesHeight * actualScale;
+    int offsetX = (screenWidth - finalWidth) / 2;
+    int offsetY = (screenHeight - finalHeight) / 2;
+    
+    // Clear the screen buffer
+    memset(buffer, 0, screenWidth * screenHeight * sizeof(uint16_t));
+    
+    // Copy and scale the NES buffer to the screen buffer
+    if (actualScale == 1) {
+        // No scaling - direct copy (fastest)
+        for (int y = 0; y < nesHeight && (y + offsetY) < screenHeight; y++) {
+            if (y + offsetY < 0) continue;
+            
+            uint16_t* srcRow = &nesBuffer[y * nesWidth];
+            uint16_t* destRow = &buffer[(y + offsetY) * screenWidth + offsetX];
+            
+            int copyWidth = nesWidth;
+            if (offsetX + copyWidth > screenWidth) {
+                copyWidth = screenWidth - offsetX;
+            }
+            if (offsetX < 0) {
+                srcRow -= offsetX;
+                destRow -= offsetX;
+                copyWidth += offsetX;
+            }
+            
+            if (copyWidth > 0) {
+                memcpy(destRow, srcRow, copyWidth * sizeof(uint16_t));
+            }
+        }
+    } else {
+        // Scaling required - pixel replication
+        for (int y = 0; y < nesHeight; y++) {
+            int destY = y * actualScale + offsetY;
+            if (destY < 0 || destY >= screenHeight) continue;
+            
+            uint16_t* srcRow = &nesBuffer[y * nesWidth];
+            
+            // Replicate this row actualScale times
+            for (int scaleY = 0; scaleY < actualScale; scaleY++) {
+                int currentDestY = destY + scaleY;
+                if (currentDestY >= screenHeight) break;
+                
+                uint16_t* destRow = &buffer[currentDestY * screenWidth + offsetX];
+                
+                // Replicate each pixel horizontally
+                for (int x = 0; x < nesWidth; x++) {
+                    int destX = x * actualScale;
+                    if (destX + offsetX >= screenWidth) break;
+                    
+                    uint16_t pixel = srcRow[x];
+                    
+                    // Replicate the pixel actualScale times horizontally
+                    for (int scaleX = 0; scaleX < actualScale; scaleX++) {
+                        int currentDestX = destX + scaleX;
+                        if (currentDestX < nesWidth * actualScale) {
+                            destRow[currentDestX] = pixel;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void SMBEngine::renderDirectFast(uint16_t* buffer, int screenWidth, int screenHeight)
+{
+    // Fast path: render directly to 256x240 area of the buffer
+    // Assumes buffer is at least 256x240 and we want to render at top-left
+    
+    const int nesWidth = 256;
+    const int nesHeight = 240;
+    
+    if (screenWidth >= nesWidth && screenHeight >= nesHeight) {
+        // Calculate centering offset
+        int offsetX = (screenWidth - nesWidth) / 2;
+        int offsetY = (screenHeight - nesHeight) / 2;
+        
+        // Create a temporary buffer for the NES frame
+        uint16_t nesBuffer[nesWidth * nesHeight];
+        render16(nesBuffer);
+        
+        // Clear screen
+        memset(buffer, 0, screenWidth * screenHeight * sizeof(uint16_t));
+        
+        // Copy NES buffer to center of screen buffer
+        for (int y = 0; y < nesHeight; y++) {
+            uint16_t* srcRow = &nesBuffer[y * nesWidth];
+            uint16_t* destRow = &buffer[(y + offsetY) * screenWidth + offsetX];
+            memcpy(destRow, srcRow, nesWidth * sizeof(uint16_t));
+        }
+    } else {
+        // Fallback to scaled rendering if screen is too small
+        renderDirect(buffer, screenWidth, screenHeight, 1);
+    }
 }
 
 void SMBEngine::reset()
@@ -185,7 +336,7 @@ uint8_t SMBEngine::readData(uint16_t address)
         case 0x4016:
             return controller1->readByte(PLAYER_1);
         case 0x4017:
-            return controller1->readByte(PLAYER_2);
+            return controller2->readByte(PLAYER_2);
         }
     }
 
@@ -253,6 +404,7 @@ void SMBEngine::writeData(uint16_t address, uint8_t value)
             break;
         case 0x4016:
             controller1->writeByte(value);
+            controller2->writeByte(value);  // Both controllers get the latch signal
             break;
         default:
             apu->writeRegister(address, value);
