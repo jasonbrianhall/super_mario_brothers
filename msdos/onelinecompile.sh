@@ -6,6 +6,7 @@ g++ -c /src/source/Emulation/Controller.cpp -I/src/build/dos/source-install/incl
 g++ -c /src/source/Emulation/MemoryAccess.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/MemoryAccess.o -O2 -fpermissive -w && \
 g++ -c /src/source/Emulation/PPU.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/PPU.o -O2 -fpermissive -w && \
 g++ -c /src/source/Emulation/AllegroMidi.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/AllegroMidi.o -O2 -fpermissive -w && \
+g++ -c /src/source/Emulation/instruments.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/instruments.o -O2 -fpermissive -w && \
 g++ -c /src/source/SMB/SMB.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/SMB.o -O2 -fpermissive -w && \
 g++ -c /src/source/SMB/SMBData.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/SMBData.o -O2 -fpermissive -w && \
 g++ -c /src/source/SMB/SMBEngine.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/SMBEngine.o -O2 -fpermissive -w && \
