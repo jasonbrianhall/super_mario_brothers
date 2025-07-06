@@ -99,6 +99,7 @@ case "${1:-dos}" in
             echo 'Compiling individual source files...' &&
             g++ -c /src/source/Configuration.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Configuration.o -O2 -fpermissive -w &&
             g++ -c /src/source/Emulation/APU.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/APU.o -O2 -fpermissive -w &&
+            g++ -c /src/source/Emulation/AllegroMidi.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/AllegroMidi.o -O2 -fpermissive -w &&
             g++ -c /src/source/Emulation/Controller.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Controller.o -O2 -fpermissive -w &&
             g++ -c /src/source/Emulation/MemoryAccess.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/MemoryAccess.o -O2 -fpermissive -w &&
             g++ -c /src/source/Emulation/PPU.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/PPU.o -O2 -fpermissive -w &&
@@ -163,6 +164,7 @@ case "${1:-dos}" in
             mkdir -p /src/$BUILD_DIR/obj && 
             g++ -c /src/source/Configuration.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Configuration.o -O2 -fpermissive -w && 
             g++ -c /src/source/Emulation/APU.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/APU.o -O2 -fpermissive -w && 
+            g++ -c /src/source/Emulation/AllegroMidi.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/AllegroMidi.o -O2 -fpermissive -w && 
             g++ -c /src/source/Emulation/Controller.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Controller.o -O2 -fpermissive -w && 
             g++ -c /src/source/Emulation/MemoryAccess.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/MemoryAccess.o -O2 -fpermissive -w && 
             g++ -c /src/source/Emulation/PPU.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/PPU.o -O2 -fpermissive -w && 

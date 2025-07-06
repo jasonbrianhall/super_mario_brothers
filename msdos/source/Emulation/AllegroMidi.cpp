@@ -21,7 +21,6 @@ AllegroMIDIAudioSystem::AllegroMIDIAudioSystem(APU* apu)
     }
     
     // CRITICAL: Don't auto-enable MIDI mode during construction
-    // This was preventing APU audio from working!
     printf("Enhanced audio system created (MIDI mode disabled by default)\n");
 }
 
@@ -34,13 +33,9 @@ AllegroMIDIAudioSystem::~AllegroMIDIAudioSystem() {
             }
         }
         
-        #ifdef __DJGPP__
-        // DOS version
-        remove_midi();
-        #else
-        // Linux version - no explicit cleanup needed
+        // Both DOS and Linux use the same cleanup approach
+        printf("MIDI cleanup completed\n");
         midiInitialized = false;
-        #endif
     }
 }
 
@@ -50,21 +45,12 @@ bool AllegroMIDIAudioSystem::initializeMIDI() {
         return true;
     }
     
+    // Both DOS and Linux Allegro versions assume MIDI is available 
+    // if sound system is properly initialized
     #ifdef __DJGPP__
-    // DOS version
-    if (install_midi() != 0) {
-        printf("Failed to install MIDI driver: %s\n", allegro_error);
-        return false;
-    }
-    printf("DOS MIDI driver installed successfully\n");
+    printf("DOS MIDI: Assuming available through sound system\n");
     #else
-    // Linux version - MIDI should be part of sound system
-    // Check if sound system is already initialized
-    printf("Checking Linux MIDI availability...\n");
-    
-    // For Linux, MIDI is usually initialized with the sound system
-    // We'll assume it's available if we get here
-    printf("Linux MIDI assumed available\n");
+    printf("Linux MIDI: Assuming available through sound system\n");
     #endif
     
     midiInitialized = true;
@@ -113,59 +99,51 @@ uint8_t AllegroMIDIAudioSystem::apuVolumeToVelocity(uint8_t apuVol) {
 void AllegroMIDIAudioSystem::sendMIDINoteOn(uint8_t channel, uint8_t note, uint8_t velocity) {
     if (!midiInitialized) return;
     
-    #ifdef __DJGPP__
-    // DOS version - raw MIDI messages
-    midi_out(0x90 | channel);
-    midi_out(note);
-    midi_out(velocity);
-    #else
-    // Linux version - use buffer
+    // Both DOS and Linux use the same buffer-based MIDI API
     unsigned char midiData[3];
     midiData[0] = 0x90 | channel;  // Note On
     midiData[1] = note;
     midiData[2] = velocity;
     midi_out(midiData, 3);
-    #endif
     
-    printf("MIDI Note On: Ch%d Note%d Vel%d\n", channel, note, velocity);
+    #ifdef __DJGPP__
+    printf("DOS MIDI Note On: Ch%d Note%d Vel%d\n", channel, note, velocity);
+    #else
+    printf("Linux MIDI Note On: Ch%d Note%d Vel%d\n", channel, note, velocity);
+    #endif
 }
 
 void AllegroMIDIAudioSystem::sendMIDINoteOff(uint8_t channel, uint8_t note) {
     if (!midiInitialized) return;
     
-    #ifdef __DJGPP__
-    // DOS version - raw MIDI messages
-    midi_out(0x80 | channel);
-    midi_out(note);
-    midi_out(0);
-    #else
-    // Linux version - use buffer
+    // Both DOS and Linux use the same buffer-based MIDI API
     unsigned char midiData[3];
     midiData[0] = 0x80 | channel;  // Note Off
     midiData[1] = note;
     midiData[2] = 0;
     midi_out(midiData, 3);
-    #endif
     
-    printf("MIDI Note Off: Ch%d Note%d\n", channel, note);
+    #ifdef __DJGPP__
+    printf("DOS MIDI Note Off: Ch%d Note%d\n", channel, note);
+    #else
+    printf("Linux MIDI Note Off: Ch%d Note%d\n", channel, note);
+    #endif
 }
 
 void AllegroMIDIAudioSystem::sendMIDIProgramChange(uint8_t channel, uint8_t instrument) {
     if (!midiInitialized) return;
     
-    #ifdef __DJGPP__
-    // DOS version - raw MIDI messages
-    midi_out(0xC0 | channel);
-    midi_out(instrument);
-    #else
-    // Linux version - use buffer
+    // Both DOS and Linux use the same buffer-based MIDI API
     unsigned char midiData[2];
     midiData[0] = 0xC0 | channel;  // Program Change
     midiData[1] = instrument;
     midi_out(midiData, 2);
-    #endif
     
-    printf("MIDI Program Change: Ch%d Instrument%d\n", channel, instrument);
+    #ifdef __DJGPP__
+    printf("DOS MIDI Program Change: Ch%d Instrument%d\n", channel, instrument);
+    #else
+    printf("Linux MIDI Program Change: Ch%d Instrument%d\n", channel, instrument);
+    #endif
 }
 
 void AllegroMIDIAudioSystem::updateMIDIChannel(int channelIndex) {
@@ -312,7 +290,11 @@ void AllegroMIDIAudioSystem::toggleAudioMode() {
     
     if (useMIDIMode) {
         setupGameInstruments();
-        printf("Switched to Allegro MIDI mode\n");
+        #ifdef __DJGPP__
+        printf("Switched to DOS MIDI mode\n");
+        #else
+        printf("Switched to Linux MIDI mode\n");
+        #endif
     } else {
         // Turn off all MIDI notes
         for (int i = 0; i < 4; i++) {
@@ -331,8 +313,8 @@ bool AllegroMIDIAudioSystem::isMIDIMode() const {
 
 void AllegroMIDIAudioSystem::generateAudio(uint8_t* buffer, int length) {
     if (useMIDIMode && midiInitialized) {
-        // MIDI audio is handled by Allegro's MIDI system
-        // Just clear the buffer since MIDI goes directly to sound card
+        // MIDI audio is handled by the MIDI subsystem
+        // Clear the buffer since MIDI goes directly to MIDI devices
         memset(buffer, 128, length); // 128 = silence for unsigned 8-bit
     } else {
         // Use original APU
@@ -346,8 +328,16 @@ void AllegroMIDIAudioSystem::generateAudio(uint8_t* buffer, int length) {
 }
 
 void AllegroMIDIAudioSystem::debugPrintChannels() {
-    printf("Allegro MIDI Audio Channels (Mode: %s):\n", 
-           (useMIDIMode && midiInitialized) ? "MIDI" : "APU");
+    printf("Enhanced Audio System Status:\n");
+    printf("Platform: %s\n", 
+    #ifdef __DJGPP__
+           "DOS"
+    #else
+           "Linux"
+    #endif
+    );
+    printf("Mode: %s\n", (useMIDIMode && midiInitialized) ? "MIDI" : "APU");
+    printf("MIDI Initialized: %s\n", midiInitialized ? "Yes" : "No");
     
     const char* channelNames[] = {"Pulse1", "Pulse2", "Triangle", "Noise"};
     
