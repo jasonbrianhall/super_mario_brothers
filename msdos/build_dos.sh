@@ -103,6 +103,7 @@ case "${1:-dos}" in
             g++ -c /src/source/Emulation/Controller.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Controller.o -O2 -fpermissive -w &&
             g++ -c /src/source/Emulation/MemoryAccess.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/MemoryAccess.o -O2 -fpermissive -w &&
             g++ -c /src/source/Emulation/PPU.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/PPU.o -O2 -fpermissive -w &&
+            g++ -c /src/source/Emulation/instruments.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/instruments.o -O2 -fpermissive -w && 
             g++ -c /src/source/SMB/SMB.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMB.o -O2 -fpermissive -w &&
             g++ -c /src/source/SMB/SMBData.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBData.o -O2 -fpermissive -w &&
             g++ -c /src/source/SMB/SMBEngine.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBEngine.o -O2 -fpermissive -w &&
@@ -168,6 +169,7 @@ case "${1:-dos}" in
             g++ -c /src/source/Emulation/Controller.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Controller.o -O2 -fpermissive -w && 
             g++ -c /src/source/Emulation/MemoryAccess.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/MemoryAccess.o -O2 -fpermissive -w && 
             g++ -c /src/source/Emulation/PPU.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/PPU.o -O2 -fpermissive -w && 
+            g++ -c /src/source/Emulation/instruments.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/instruments.o -O2 -fpermissive -w && 
             g++ -c /src/source/SMB/SMB.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMB.o -O2 -fpermissive -w && 
             g++ -c /src/source/SMB/SMBData.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBData.o -O2 -fpermissive -w && 
             g++ -c /src/source/SMB/SMBEngine.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBEngine.o -O2 -fpermissive -w && 
