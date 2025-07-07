@@ -111,7 +111,7 @@ case "${1:-dos}" in
             g++ -c /src/source/SMBRom.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBRom.o -O2 -fpermissive -w &&
             g++ -c /src/source/dos_main.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Main.o -O2 -fpermissive -w &&
             echo 'Linking executable...' &&
-            g++ /src/$BUILD_DIR/obj/*.o -lalleg -lm -L/src/$BUILD_DIR/source-install/lib -o /src/$BUILD_DIR/smb.exe &&
+            g++ /src/$BUILD_DIR/obj/*.o -lalleg -lm -s -O6 -L/src/$BUILD_DIR/source-install/lib -o /src/$BUILD_DIR/smb.exe &&
             echo 'Converting to COFF format...' &&
             exe2coff /src/$BUILD_DIR/smb.exe &&
             echo 'Creating final DOS executable with DPMI stub...' &&
@@ -175,7 +175,7 @@ case "${1:-dos}" in
             g++ -c /src/source/Util/VideoFilters.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/VideoFilters.o -O2 -fpermissive -w && 
             g++ -c /src/source/SMBRom.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/SMBRom.o -O2 -fpermissive -w && 
             g++ -c /src/source/dos_main.cpp -I/src/$BUILD_DIR/source-install/include -o /src/$BUILD_DIR/obj/Main.o -O2 -fpermissive -w && 
-            g++ /src/$BUILD_DIR/obj/*.o -lalleg -lm -L/src/$BUILD_DIR/source-install/lib -o /src/$BUILD_DIR/smb.exe && 
+            g++ /src/$BUILD_DIR/obj/*.o -lalleg -lm -s -O6 -L/src/$BUILD_DIR/source-install/lib -o /src/$BUILD_DIR/smb.exe && 
             exe2coff /src/$BUILD_DIR/smb.exe && 
             cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/smb.exe &&
             echo 'Quick compile complete!'

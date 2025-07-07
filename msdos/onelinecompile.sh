@@ -13,7 +13,7 @@ g++ -c /src/source/Util/Video.cpp -I/src/build/dos/source-install/include -o /sr
 g++ -c /src/source/Util/VideoFilters.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/VideoFilters.o -O2 -fpermissive -w && \
 g++ -c /src/source/SMBRom.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/SMBRom.o -O2 -fpermissive -w && \
 g++ -c /src/source/dos_main.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/Main.o -O2 -fpermissive -w && \
-g++ /src/build/dos/obj/*.o -lalleg -lm -L/src/build/dos/source-install/lib -o /src/build/dos/smb.exe && \
+g++ /src/build/dos/obj/*.o -lalleg -lm -s -O6 -L/src/build/dos/source-install/lib -o /src/build/dos/smb.exe && \
 exe2coff /src/build/dos/smb.exe && \
 cat /src/build/dos/csdpmi/bin/CWSDSTUB.EXE /src/build/dos/smb > /src/build/dos/smb.exe"
 
