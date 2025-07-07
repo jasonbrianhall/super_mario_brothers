@@ -1658,7 +1658,7 @@ void AllegroMainWindow::handleGameInputNoEsc()
 {
     // Check for pause (only when menu is not showing)
     static bool pPressed = false;
-    if (key[KEY_P] && !pPressed) {
+    if (key[KEY_P] && key[KEY_LCONTROL] && !pPressed) {
         gamePaused = !gamePaused;
         setStatusMessage(gamePaused ? "Game Paused" : "Game Resumed");
         pPressed = true;
@@ -1684,7 +1684,7 @@ void AllegroMainWindow::handleGameInputNoEsc()
     
     // FIXED: Check for audio mode toggle (M key) - use SMBEngine methods instead of getAPU()
     static bool mPressed = false;
-    if (key[KEY_M] && !mPressed) {
+    if (key[KEY_M] && key[KEY_LCONTROL] && !mPressed) {
         if (smbEngine) {
             smbEngine->toggleAudioMode();
             setStatusMessage(smbEngine->isUsingMIDIAudio() ? "MIDI Audio Mode" : "APU Audio Mode");
@@ -1698,7 +1698,7 @@ void AllegroMainWindow::handleGameInputNoEsc()
     
     // FIXED: Check for audio debug (N key) - use SMBEngine methods instead of getAPU()
     static bool nPressed = false;
-    if (key[KEY_N] && !nPressed) {
+    if (key[KEY_N] && key[KEY_LCONTROL] && !nPressed) {
         if (smbEngine) {
             smbEngine->debugAudioChannels();
             setStatusMessage("Audio debug info printed to console");
