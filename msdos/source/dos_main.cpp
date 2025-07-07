@@ -177,11 +177,11 @@ AllegroMainWindow::AllegroMainWindow()
       statusMessageTimer(0), currentFrameBuffer(NULL),
       screenBuffer16(NULL), useDirectRendering(true),
       currentCaptureType(CAPTURE_NONE), currentConfigPlayer(PLAYER_1),
-      lineStartOffsets(NULL), useOptimizedScaling(true)
+      lineStartOffsets(NULL), useOptimizedScaling(true),
+      selectedVideoOption(0), numAvailableModes(0)  // ADD THESE TWO
 #ifndef __DJGPP__
-      , isFullscreen(false), windowedWidth(640), windowedHeight(480)  // Only for non-DOS
+      , isFullscreen(false), windowedWidth(640), windowedHeight(480)
 #endif
-
 {
     strcpy(statusMessage, "Ready");
     strcpy(currentCaptureKey, "");
@@ -191,6 +191,14 @@ AllegroMainWindow::AllegroMainWindow()
     showingMenu = false;
     currentDialog = DIALOG_NONE;
     setupDefaultControls();
+    
+    // Initialize video settings - ADD THIS BLOCK
+    videoSettings.currentMode = 0;
+    videoSettings.scalingMode = 0;  // Nearest neighbor
+    videoSettings.maintainAspect = true;
+    videoSettings.centerImage = true;
+    videoSettings.brightness = 128;
+    videoSettings.contrast = 128;
 }
 
 void AllegroMainWindow::initializeScalingCache()
@@ -613,6 +621,28 @@ bool AllegroMainWindow::initialize()
         return false;
     }
     
+    // Setup available video modes AFTER graphics are initialized
+    setupVideoModes();
+    loadVideoConfig();
+    
+    // If no config exists or invalid mode, set a good default for both DOS and Linux
+    if (numAvailableModes > 0) {
+        // Look for 640x480 as the preferred default (good NES scaling on both platforms)
+        int defaultMode = 0;
+        for (int i = 0; i < numAvailableModes; i++) {
+            if (availableModes[i].width == 640 && availableModes[i].height == 480) {
+                defaultMode = i;
+                break;
+            }
+        }
+        
+        // Only change mode if current mode is invalid or we don't have a saved config
+        if (videoSettings.currentMode < 0 || videoSettings.currentMode >= numAvailableModes) {
+            printf("Setting default video mode to %s\n", availableModes[defaultMode].description);
+            setVideoMode(defaultMode);
+        }
+    }
+    
     if (!initializeInput()) {
         return false;
     }
@@ -625,6 +655,71 @@ bool AllegroMainWindow::initialize()
     return true;
 }
 
+void AllegroMainWindow::setupVideoModes()
+{
+    numAvailableModes = 0;
+    
+    // Define modes to test (in order of preference - larger modes first for better NES scaling)
+    struct { int w, h; const char* desc; } testModes[] = {
+        {640, 480, "640x480 (VGA)"},      // Best DOS default - 2.5x NES scaling
+        {800, 600, "800x600 (SVGA)"},     // Good scaling if available
+        {1024, 768, "1024x768 (XGA)"},    // Excellent scaling if available
+        {512, 384, "512x384 (Half VGA)"}, // Decent scaling
+        {400, 300, "400x300 (Quarter SVGA)"}, // Moderate scaling
+        {320, 240, "320x240 (QVGA)"},     // 1:1 NES scaling
+        {320, 200, "320x200 (Mode 13h)"}, // Last resort - cramped
+        {0, 0, NULL}
+    };
+    
+    printf("Testing available video modes...\n");
+    
+    // Remember current mode
+    int currentWidth = SCREEN_W;
+    int currentHeight = SCREEN_H;
+    
+    #ifndef __DJGPP__
+    // On Linux, determine graphics mode type based on fullscreen state
+    int gfxMode = isFullscreen ? GFX_AUTODETECT : GFX_AUTODETECT_WINDOWED;
+    printf("Testing %s modes...\n", isFullscreen ? "fullscreen" : "windowed");
+    #else
+    // On DOS, always use autodetect (fullscreen only)
+    int gfxMode = GFX_AUTODETECT;
+    printf("Testing DOS fullscreen modes...\n");
+    #endif
+    
+    for (int i = 0; testModes[i].w != 0 && numAvailableModes < 10; i++) {
+        printf("Testing %s...", testModes[i].desc);
+        
+        // Test if this mode is available with the appropriate graphics mode
+        if (set_gfx_mode(gfxMode, testModes[i].w, testModes[i].h, 0, 0) == 0) {
+            printf(" OK\n");
+            
+            availableModes[numAvailableModes].width = testModes[i].w;
+            availableModes[numAvailableModes].height = testModes[i].h;
+            strncpy(availableModes[numAvailableModes].description, testModes[i].desc, 31);
+            availableModes[numAvailableModes].description[31] = '\0';
+            availableModes[numAvailableModes].available = true;
+            
+            // Check if this is the current mode
+            if (testModes[i].w == currentWidth && testModes[i].h == currentHeight) {
+                videoSettings.currentMode = numAvailableModes;
+            }
+            
+            numAvailableModes++;
+        } else {
+            printf(" FAILED: %s\n", allegro_error);
+        }
+    }
+    
+    printf("Found %d available video modes\n", numAvailableModes);
+    
+    // Restore original mode with appropriate graphics type
+    #ifndef __DJGPP__
+    set_gfx_mode(gfxMode, currentWidth, currentHeight, 0, 0);
+    #else
+    set_gfx_mode(GFX_AUTODETECT, currentWidth, currentHeight, 0, 0);
+    #endif
+}
 // Complete DOS audio implementation with status bar removal
 
 bool AllegroMainWindow::initializeAllegro()
@@ -1179,6 +1274,11 @@ void AllegroMainWindow::setupMenu()
     mainMenu[menuCount].enabled = true;
     menuCount++;
     
+    strcpy(mainMenu[menuCount].text, "Video Options");  // NEW
+    mainMenu[menuCount].id = 9;
+    mainMenu[menuCount].enabled = true;
+    menuCount++;
+    
     strcpy(mainMenu[menuCount].text, "Player 1 Controls");
     mainMenu[menuCount].id = 3;
     mainMenu[menuCount].enabled = true;
@@ -1435,6 +1535,11 @@ void AllegroMainWindow::handleInput()
 
 void AllegroMainWindow::handleDialogInputNoEsc()
 {
+    if (currentDialog == DIALOG_VIDEO_OPTIONS) {
+        handleVideoOptionsInput();
+        return;
+    }
+    
     if (isCapturingInput) {
         // Handle joystick button capture
         if (num_joysticks > 0 && (currentCaptureType >= CAPTURE_JOY_A && currentCaptureType <= CAPTURE_JOY_SELECT)) {
@@ -1566,7 +1671,6 @@ void AllegroMainWindow::handleDialogInputNoEsc()
         }
     }
 }
-
 void AllegroMainWindow::resetPlayer1ControlsToDefault()
 {
     player1Keys.up = KEY_UP;
@@ -2713,7 +2817,6 @@ void AllegroMainWindow::drawDialog(BITMAP* target)
                 y_offset += 20;
                 
                 #ifndef __DJGPP__
-                // Only show F11 on Linux
                 drawText(target, dialog_x + 20, y_offset, "F11 - Toggle fullscreen", makecol(255, 255, 255));
                 y_offset += 20;
                 #endif
@@ -2742,8 +2845,301 @@ void AllegroMainWindow::drawDialog(BITMAP* target)
         case DIALOG_CONTROLS_P2:
             drawControlsDialog(target, PLAYER_2);
             break;
+            
+        case DIALOG_VIDEO_OPTIONS:  // NEW
+            drawVideoOptionsDialog(target);
+            break;
     }
 }
+
+void AllegroMainWindow::drawVideoOptionsDialog(BITMAP* target)
+{
+    clear_to_color(target, makecol(0, 0, 0));
+    
+    int y = 5;
+    int x = 5;
+    
+    // Title
+    drawText(target, x, y, "VIDEO OPTIONS", makecol(255, 255, 0));
+    y += 20;
+    
+    // Current mode
+    char currentModeText[64];
+    if (numAvailableModes > 0 && videoSettings.currentMode < numAvailableModes) {
+        sprintf(currentModeText, "Current: %s", availableModes[videoSettings.currentMode].description);
+    } else {
+        sprintf(currentModeText, "Current: %dx%d", SCREEN_W, SCREEN_H);
+    }
+    drawText(target, x, y, currentModeText, makecol(255, 255, 255));
+    y += 20;
+    
+    // Available modes
+    drawText(target, x, y, "AVAILABLE RESOLUTIONS:", makecol(255, 255, 0));
+    y += 15;
+    
+    for (int i = 0; i < numAvailableModes; i++) {
+        char modeText[64];
+        sprintf(modeText, "%d. %s", i + 1, availableModes[i].description);
+        
+        int color = (selectedVideoOption == i) ? makecol(255, 255, 0) : makecol(255, 255, 255);
+        if (selectedVideoOption == i) {
+            drawText(target, x - 5, y, ">", color);
+        }
+        drawText(target, x + 10, y, modeText, color);
+        
+        if (i == videoSettings.currentMode) {
+            drawText(target, x + 250, y, "(current)", makecol(128, 255, 128));
+        }
+        y += 12;
+    }
+    
+    y += 10;
+    
+    // Scaling options
+    drawText(target, x, y, "SCALING OPTIONS:", makecol(255, 255, 0));
+    y += 15;
+    
+    char scalingText[64];
+    const char* scalingNames[] = {"Nearest", "Smooth", "Scanlines"};
+    sprintf(scalingText, "S. Scaling: %s", scalingNames[videoSettings.scalingMode]);
+    int scalingColor = (selectedVideoOption == numAvailableModes) ? makecol(255, 255, 0) : makecol(255, 255, 255);
+    if (selectedVideoOption == numAvailableModes) {
+        drawText(target, x - 5, y, ">", scalingColor);
+    }
+    drawText(target, x + 10, y, scalingText, scalingColor);
+    y += 12;
+    
+    // Aspect ratio
+    char aspectText[64];
+    sprintf(aspectText, "A. Maintain Aspect: %s", videoSettings.maintainAspect ? "Yes" : "No");
+    int aspectColor = (selectedVideoOption == numAvailableModes + 1) ? makecol(255, 255, 0) : makecol(255, 255, 255);
+    if (selectedVideoOption == numAvailableModes + 1) {
+        drawText(target, x - 5, y, ">", aspectColor);
+    }
+    drawText(target, x + 10, y, aspectText, aspectColor);
+    y += 12;
+    
+    // Center image
+    char centerText[64];
+    sprintf(centerText, "C. Center Image: %s", videoSettings.centerImage ? "Yes" : "No");
+    int centerColor = (selectedVideoOption == numAvailableModes + 2) ? makecol(255, 255, 0) : makecol(255, 255, 255);
+    if (selectedVideoOption == numAvailableModes + 2) {
+        drawText(target, x - 5, y, ">", centerColor);
+    }
+    drawText(target, x + 10, y, centerText, centerColor);
+    y += 15;
+    
+    // Instructions
+    y += 10;
+    drawText(target, x, y, "1-9: Select resolution", makecol(255, 255, 255));
+    y += 12;
+    drawText(target, x, y, "UP/DOWN: Navigate", makecol(255, 255, 255));
+    y += 12;
+    drawText(target, x, y, "ENTER: Apply setting", makecol(255, 255, 255));
+    y += 12;
+    drawText(target, x, y, "T: Test mode", makecol(128, 255, 128));
+    y += 12;
+    drawText(target, x, y, "R: Reset defaults", makecol(128, 255, 128));
+    y += 12;
+    drawText(target, x, y, "ESC: Close", makecol(255, 255, 0));
+}
+
+void AllegroMainWindow::handleVideoOptionsInput()
+{
+    if (keypressed()) {
+        int k = readkey();
+        int scancode = k >> 8;
+        char ascii = k & 0xFF;
+        
+        // Convert to lowercase
+        if (ascii >= 'A' && ascii <= 'Z') {
+            ascii = ascii - 'A' + 'a';
+        }
+        
+        switch (scancode) {
+            case KEY_UP:
+                selectedVideoOption--;
+                if (selectedVideoOption < 0) {
+                    selectedVideoOption = numAvailableModes + 2; // Last option
+                }
+                break;
+                
+            case KEY_DOWN:
+                selectedVideoOption++;
+                if (selectedVideoOption > numAvailableModes + 2) {
+                    selectedVideoOption = 0;
+                }
+                break;
+                
+            case KEY_ENTER:
+                if (selectedVideoOption < numAvailableModes) {
+                    // Change resolution
+                    if (setVideoMode(selectedVideoOption)) {
+                        setStatusMessage("Video mode changed");
+                        saveVideoConfig();
+                    } else {
+                        setStatusMessage("Failed to change video mode");
+                    }
+                } else if (selectedVideoOption == numAvailableModes) {
+                    // Toggle scaling mode
+                    videoSettings.scalingMode = (videoSettings.scalingMode + 1) % 3;
+                    saveVideoConfig();
+                } else if (selectedVideoOption == numAvailableModes + 1) {
+                    // Toggle aspect ratio
+                    videoSettings.maintainAspect = !videoSettings.maintainAspect;
+                    saveVideoConfig();
+                } else if (selectedVideoOption == numAvailableModes + 2) {
+                    // Toggle center image
+                    videoSettings.centerImage = !videoSettings.centerImage;
+                    saveVideoConfig();
+                }
+                break;
+        }
+        
+        // Handle number keys for direct mode selection
+        if (ascii >= '1' && ascii <= '9') {
+            int modeIndex = ascii - '1';
+            if (modeIndex < numAvailableModes) {
+                selectedVideoOption = modeIndex;
+                if (setVideoMode(modeIndex)) {
+                    setStatusMessage("Video mode changed");
+                    saveVideoConfig();
+                } else {
+                    setStatusMessage("Failed to change video mode");
+                }
+            }
+        }
+        
+        // Handle letter commands
+        switch (ascii) {
+            case 't':
+                testVideoMode(videoSettings.currentMode);
+                break;
+                
+            case 'r':
+                resetVideoDefaults();
+                setStatusMessage("Video settings reset");
+                saveVideoConfig();
+                break;
+                
+            case 's':
+                videoSettings.scalingMode = (videoSettings.scalingMode + 1) % 3;
+                saveVideoConfig();
+                break;
+                
+            case 'a':
+                videoSettings.maintainAspect = !videoSettings.maintainAspect;
+                saveVideoConfig();
+                break;
+                
+            case 'c':
+                videoSettings.centerImage = !videoSettings.centerImage;
+                saveVideoConfig();
+                break;
+        }
+    }
+}
+
+bool AllegroMainWindow::setVideoMode(int index)
+{
+    if (index < 0 || index >= numAvailableModes) return false;
+    
+    int newWidth = availableModes[index].width;
+    int newHeight = availableModes[index].height;
+    
+    printf("Switching to %dx%d...\n", newWidth, newHeight);
+    
+    #ifndef __DJGPP__
+    // On Linux, use appropriate graphics mode based on fullscreen state
+    int gfxMode = isFullscreen ? GFX_AUTODETECT : GFX_AUTODETECT_WINDOWED;
+    #else
+    // On DOS, always use autodetect (fullscreen only)
+    int gfxMode = GFX_AUTODETECT;
+    #endif
+    
+    if (set_gfx_mode(gfxMode, newWidth, newHeight, 0, 0) != 0) {
+        printf("Failed to set %dx%d: %s\n", newWidth, newHeight, allegro_error);
+        
+        // Try to restore previous mode
+        if (videoSettings.currentMode >= 0 && videoSettings.currentMode < numAvailableModes) {
+            int oldWidth = availableModes[videoSettings.currentMode].width;
+            int oldHeight = availableModes[videoSettings.currentMode].height;
+            set_gfx_mode(gfxMode, oldWidth, oldHeight, 0, 0);
+        }
+        
+        return false;
+    }
+    
+    videoSettings.currentMode = index;
+    
+    // Recreate buffers for new screen size
+    if (!createBuffers()) {
+        printf("Failed to recreate buffers\n");
+        return false;
+    }
+    
+    printf("Successfully changed to %dx%d\n", SCREEN_W, SCREEN_H);
+    return true;
+}
+
+void AllegroMainWindow::testVideoMode(int index)
+{
+    if (index >= 0 && index < numAvailableModes) {
+        char testMsg[64];
+        sprintf(testMsg, "Testing %s...", availableModes[index].description);
+        setStatusMessage(testMsg);
+    }
+}
+
+void AllegroMainWindow::resetVideoDefaults()
+{
+    videoSettings.scalingMode = 0;
+    videoSettings.maintainAspect = true;
+    videoSettings.centerImage = true;
+    videoSettings.brightness = 128;
+    videoSettings.contrast = 128;
+}
+
+void AllegroMainWindow::saveVideoConfig()
+{
+    FILE* f = fopen("video.cfg", "w");
+    if (f) {
+        fprintf(f, "# Video Configuration\n");
+        fprintf(f, "VIDEO_MODE=%d\n", videoSettings.currentMode);
+        fprintf(f, "SCALING_MODE=%d\n", videoSettings.scalingMode);
+        fprintf(f, "MAINTAIN_ASPECT=%d\n", videoSettings.maintainAspect ? 1 : 0);
+        fprintf(f, "CENTER_IMAGE=%d\n", videoSettings.centerImage ? 1 : 0);
+        fclose(f);
+    }
+}
+
+void AllegroMainWindow::loadVideoConfig()
+{
+    FILE* f = fopen("video.cfg", "r");
+    if (f) {
+        char line[256];
+        char key[64];
+        int value;
+        
+        while (fgets(line, sizeof(line), f)) {
+            if (line[0] == '#' || line[0] == '\n') continue;
+            
+            if (sscanf(line, "%63[^=]=%d", key, &value) == 2) {
+                if (strcmp(key, "VIDEO_MODE") == 0 && value >= 0 && value < numAvailableModes) {
+                    videoSettings.currentMode = value;
+                } else if (strcmp(key, "SCALING_MODE") == 0 && value >= 0 && value <= 2) {
+                    videoSettings.scalingMode = value;
+                } else if (strcmp(key, "MAINTAIN_ASPECT") == 0) {
+                    videoSettings.maintainAspect = (value != 0);
+                } else if (strcmp(key, "CENTER_IMAGE") == 0) {
+                    videoSettings.centerImage = (value != 0);
+                }
+            }
+        }
+        fclose(f);
+    }
+}
+
 
 void AllegroMainWindow::drawStatusBar(BITMAP* target)
 {
@@ -2848,10 +3244,15 @@ void AllegroMainWindow::menuSelect()
         case 8: // Test Joystick
             if (num_joysticks > 0) {
                 showJoystickStatus();
-                // Keep menu open for joystick testing
             } else {
                 setStatusMessage("No joystick detected");
             }
+            break;
+            
+        case 9: // Video Options - NEW
+            currentDialog = DIALOG_VIDEO_OPTIONS;
+            selectedVideoOption = 0;
+            showingMenu = false;
             break;
     }
 }

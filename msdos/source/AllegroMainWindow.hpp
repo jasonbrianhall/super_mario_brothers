@@ -57,7 +57,7 @@ private:
   bool showingMenu;
   void testKeyboardBasic();
   // Simple menu system
-  MenuItem mainMenu[8];
+  MenuItem mainMenu[10];
   int menuCount;
   int selectedMenuItem;
   bool inMenu;
@@ -73,7 +73,8 @@ private:
     DIALOG_ABOUT,
     DIALOG_CONTROLS_P1,
     DIALOG_CONTROLS_P2,
-    DIALOG_HELP
+    DIALOG_HELP,
+    DIALOG_VIDEO_OPTIONS
   };
   DialogType currentDialog;
 
@@ -99,6 +100,35 @@ private:
     bool use_stick; // true for analog stick, false for digital
   };
   PlayerJoy player1Joy, player2Joy;
+
+struct VideoSettings {
+    int currentMode;        // Index into available modes
+    int scalingMode;        // 0=nearest, 1=smooth, 2=scanlines
+    bool maintainAspect;    // Keep 4:3 aspect ratio
+    bool centerImage;       // Center the game image
+    int brightness;         // 0-255
+    int contrast;          // 0-255
+};
+
+struct VideoMode {
+    int width, height;
+    char description[32];   // Fixed size for DOS compatibility
+    bool available;
+};
+
+VideoSettings videoSettings;
+VideoMode availableModes[10];
+int numAvailableModes;
+int selectedVideoOption;
+
+void setupVideoModes();
+void testVideoMode(int index);
+bool setVideoMode(int index);
+void drawVideoOptionsDialog(BITMAP* target);
+void handleVideoOptionsInput();
+void saveVideoConfig();
+void loadVideoConfig();
+void resetVideoDefaults();
 
   // Initialization
   bool initializeAllegro();
