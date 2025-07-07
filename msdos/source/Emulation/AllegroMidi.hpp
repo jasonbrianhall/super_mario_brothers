@@ -36,6 +36,29 @@ private:
         bool active;            // Whether this channel is currently playing
         double dutyFactor;      // Pulse wave duty cycle (0.125, 0.25, 0.5, 0.75)
         uint32_t noiseShift;    // Noise generator shift register
+        
+        // NES hardware emulation features
+        // Sweep unit
+        bool sweepEnabled;
+        bool sweepNegate;
+        uint8_t sweepShift;
+        uint8_t sweepPeriod;
+        uint8_t sweepCounter;
+        bool sweepReload;
+        
+        // Envelope unit
+        bool envelopeEnabled;
+        uint8_t envelopeVolume;
+        uint8_t envelopePeriod;
+        uint8_t envelopeCounter;
+        bool envelopeStart;
+        bool envelopeLoop;
+        uint8_t constantVolume;
+        
+        // Length counter
+        uint8_t lengthCounter;
+        bool lengthEnabled;
+        uint16_t timerPeriod;
     };
     
     GameChannel channels[4]; // P1, P2, Triangle, Noise

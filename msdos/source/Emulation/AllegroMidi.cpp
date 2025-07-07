@@ -22,6 +22,26 @@ AllegroMIDIAudioSystem::AllegroMIDIAudioSystem(APU* apu)
         fmChannels[i].active = false;
         fmChannels[i].dutyFactor = 0.5; // 50% duty cycle by default
         fmChannels[i].noiseShift = 1;   // For noise channel
+        
+        // Initialize real NES hardware features
+        fmChannels[i].sweepEnabled = false;
+        fmChannels[i].sweepNegate = false;
+        fmChannels[i].sweepShift = 0;
+        fmChannels[i].sweepPeriod = 0;
+        fmChannels[i].sweepCounter = 0;
+        fmChannels[i].sweepReload = false;
+        
+        fmChannels[i].envelopeEnabled = false;
+        fmChannels[i].envelopeVolume = 0;
+        fmChannels[i].envelopePeriod = 0;
+        fmChannels[i].envelopeCounter = 0;
+        fmChannels[i].envelopeStart = false;
+        fmChannels[i].envelopeLoop = false;
+        fmChannels[i].constantVolume = 0;
+        
+        fmChannels[i].lengthCounter = 0;
+        fmChannels[i].lengthEnabled = true;
+        fmChannels[i].timerPeriod = 0;
     }
     
     // Removed debugging output
@@ -79,10 +99,20 @@ double AllegroMIDIAudioSystem::apuVolumeToAmplitude(uint8_t apuVol) {
     return (apuVol / 15.0) * 0.4; // Moderate volume increase without distortion
 }
 
-// Generate clean NES-style waveforms (FIXED - reverted noise)
+// Generate NES waveforms with proper hardware emulation
 double AllegroMIDIAudioSystem::generateNESWave(int channelIndex, double sampleRate) {
     FMChannel& ch = fmChannels[channelIndex];
-    if (!ch.active || ch.frequency <= 0.0) return 0.0;
+    if (!ch.active || ch.lengthCounter == 0) return 0.0;
+    
+    // Get current volume from envelope or constant volume
+    double currentVolume = 0.0;
+    if (ch.envelopeEnabled) {
+        currentVolume = ch.envelopeVolume / 15.0;
+    } else {
+        currentVolume = ch.constantVolume / 15.0;
+    }
+    
+    if (currentVolume <= 0.0 || ch.frequency <= 0.0) return 0.0;
     
     double output = 0.0;
     
@@ -95,7 +125,7 @@ double AllegroMIDIAudioSystem::generateNESWave(int channelIndex, double sampleRa
             while (ch.phase1 >= 1.0) ch.phase1 -= 1.0;
             
             // Generate clean square wave
-            output = (ch.phase1 < ch.dutyFactor) ? ch.amplitude : -ch.amplitude;
+            output = (ch.phase1 < ch.dutyFactor) ? currentVolume : -currentVolume;
             break;
         }
         
@@ -107,16 +137,16 @@ double AllegroMIDIAudioSystem::generateNESWave(int channelIndex, double sampleRa
             
             // Generate clean triangle wave
             if (ch.phase1 < 0.25) {
-                output = ch.phase1 * 4.0 * ch.amplitude; // 0 to +amp
+                output = ch.phase1 * 4.0 * currentVolume; // 0 to +amp
             } else if (ch.phase1 < 0.75) {
-                output = (2.0 - ch.phase1 * 4.0) * ch.amplitude; // +amp to -amp
+                output = (2.0 - ch.phase1 * 4.0) * currentVolume; // +amp to -amp
             } else {
-                output = (ch.phase1 * 4.0 - 4.0) * ch.amplitude; // -amp to 0
+                output = (ch.phase1 * 4.0 - 4.0) * currentVolume; // -amp to 0
             }
             break;
         }
         
-        case 3: // Noise - Back to simple version that worked
+        case 3: // Noise
         {
             static double noisePhase = 0.0;
             static double noiseValue = 1.0;
@@ -124,16 +154,15 @@ double AllegroMIDIAudioSystem::generateNESWave(int channelIndex, double sampleRa
             noisePhase += ch.frequency / sampleRate;
             if (noisePhase >= 1.0) {
                 noisePhase -= 1.0;
-                // Simple pseudo-random (REVERTED to working version)
                 noiseValue = (fmod(noiseValue * 16807.0, 2147483647.0) > 1073741823.0) ? 1.0 : -1.0;
             }
             
-            output = noiseValue * ch.amplitude;
+            output = noiseValue * currentVolume;
             break;
         }
     }
     
-    return output;
+    return output * 0.4; // Scale to prevent clipping
 }
 
 void AllegroMIDIAudioSystem::setNESNote(int channelIndex, double frequency, double amplitude, uint8_t duty) {
@@ -153,11 +182,13 @@ void AllegroMIDIAudioSystem::setNESNote(int channelIndex, double frequency, doub
             default: ch.dutyFactor = 0.5;  break;
         }
         
-        // Removed debugging output
+        // Reset phases for clean start
+        ch.phase1 = 0.0;
+        ch.phase2 = 0.0;
+        
     } else {
         ch.active = false;
         ch.amplitude = 0.0;
-        // Removed debugging output
     }
 }
 
@@ -236,35 +267,81 @@ void AllegroMIDIAudioSystem::interceptAPURegister(uint16_t address, uint8_t valu
     uint32_t currentTime = getGameTicks();
     
     switch (address) {
-        case 0x4000:
+        case 0x4000: // Pulse 1 control
             channels[0].lastVolume = value & 0x0F;
             channels[0].lastDuty = (value >> 6) & 3;
             channels[0].lastUpdate = currentTime;
+            
+            // Set real NES hardware parameters
+            fmChannels[0].envelopeEnabled = ((value >> 4) & 1) == 0;
+            fmChannels[0].envelopeLoop = ((value >> 5) & 1) == 1;
+            fmChannels[0].lengthEnabled = ((value >> 5) & 1) == 0;
+            fmChannels[0].envelopePeriod = value & 0x0F;
+            fmChannels[0].constantVolume = value & 0x0F;
+            fmChannels[0].envelopeStart = true;
+            
             updateNESChannel(0);
             break;
+            
+        case 0x4001: // Pulse 1 sweep
+            fmChannels[0].sweepEnabled = ((value >> 7) & 1) == 1;
+            fmChannels[0].sweepPeriod = ((value >> 4) & 7) + 1;
+            fmChannels[0].sweepNegate = ((value >> 3) & 1) == 1;
+            fmChannels[0].sweepShift = value & 7;
+            fmChannels[0].sweepReload = true;
+            break;
+            
         case 0x4002:
             channels[0].lastTimerPeriod = (channels[0].lastTimerPeriod & 0xFF00) | value;
+            fmChannels[0].timerPeriod = channels[0].lastTimerPeriod;
             updateNESChannel(0);
             break;
         case 0x4003:
             channels[0].lastTimerPeriod = (channels[0].lastTimerPeriod & 0x00FF) | ((value & 0x07) << 8);
+            fmChannels[0].timerPeriod = channels[0].lastTimerPeriod;
+            fmChannels[0].lengthCounter = (value >> 3) & 0x1F; // Load length counter
+            fmChannels[0].envelopeStart = true;
             updateNESChannel(0);
             break;
-        case 0x4004:
+            
+        case 0x4004: // Pulse 2 control (similar to pulse 1)
             channels[1].lastVolume = value & 0x0F;
             channels[1].lastDuty = (value >> 6) & 3;
+            
+            fmChannels[1].envelopeEnabled = ((value >> 4) & 1) == 0;
+            fmChannels[1].envelopeLoop = ((value >> 5) & 1) == 1;
+            fmChannels[1].lengthEnabled = ((value >> 5) & 1) == 0;
+            fmChannels[1].envelopePeriod = value & 0x0F;
+            fmChannels[1].constantVolume = value & 0x0F;
+            fmChannels[1].envelopeStart = true;
+            
             updateNESChannel(1);
             break;
+            
+        case 0x4005: // Pulse 2 sweep
+            fmChannels[1].sweepEnabled = ((value >> 7) & 1) == 1;
+            fmChannels[1].sweepPeriod = ((value >> 4) & 7) + 1;
+            fmChannels[1].sweepNegate = ((value >> 3) & 1) == 1;
+            fmChannels[1].sweepShift = value & 7;
+            fmChannels[1].sweepReload = true;
+            break;
+            
         case 0x4006:
             channels[1].lastTimerPeriod = (channels[1].lastTimerPeriod & 0xFF00) | value;
+            fmChannels[1].timerPeriod = channels[1].lastTimerPeriod;
             updateNESChannel(1);
             break;
         case 0x4007:
             channels[1].lastTimerPeriod = (channels[1].lastTimerPeriod & 0x00FF) | ((value & 0x07) << 8);
+            fmChannels[1].timerPeriod = channels[1].lastTimerPeriod;
+            fmChannels[1].lengthCounter = (value >> 3) & 0x1F;
+            fmChannels[1].envelopeStart = true;
             updateNESChannel(1);
             break;
-        case 0x4008:
+            
+        case 0x4008: // Triangle control
             channels[2].lastVolume = (value & 0x80) ? 15 : 0;
+            fmChannels[2].lengthEnabled = ((value >> 7) & 1) == 0;
             updateNESChannel(2);
             break;
         case 0x400A:
@@ -273,21 +350,44 @@ void AllegroMIDIAudioSystem::interceptAPURegister(uint16_t address, uint8_t valu
             break;
         case 0x400B:
             channels[2].lastTimerPeriod = (channels[2].lastTimerPeriod & 0x00FF) | ((value & 0x07) << 8);
+            fmChannels[2].lengthCounter = (value >> 3) & 0x1F;
             updateNESChannel(2);
             break;
-        case 0x400C:
+            
+        case 0x400C: // Noise control
             channels[3].lastVolume = value & 0x0F;
+            
+            fmChannels[3].envelopeEnabled = ((value >> 4) & 1) == 0;
+            fmChannels[3].envelopeLoop = ((value >> 5) & 1) == 1;
+            fmChannels[3].lengthEnabled = ((value >> 5) & 1) == 0;
+            fmChannels[3].envelopePeriod = value & 0x0F;
+            fmChannels[3].constantVolume = value & 0x0F;
+            fmChannels[3].envelopeStart = true;
+            
             updateNESChannel(3);
             break;
         case 0x400E:
             channels[3].lastTimerPeriod = value & 0x0F;
             updateNESChannel(3);
             break;
+        case 0x400F:
+            fmChannels[3].lengthCounter = (value >> 3) & 0x1F;
+            fmChannels[3].envelopeStart = true;
+            updateNESChannel(3);
+            break;
+            
         case 0x4015:
             channels[0].enabled = (value & 0x01) != 0;
             channels[1].enabled = (value & 0x02) != 0;
             channels[2].enabled = (value & 0x04) != 0;
             channels[3].enabled = (value & 0x08) != 0;
+            
+            // If channel disabled, clear length counter
+            if (!channels[0].enabled) fmChannels[0].lengthCounter = 0;
+            if (!channels[1].enabled) fmChannels[1].lengthCounter = 0;
+            if (!channels[2].enabled) fmChannels[2].lengthCounter = 0;
+            if (!channels[3].enabled) fmChannels[3].lengthCounter = 0;
+            
             for (int i = 0; i < 4; i++) {
                 updateNESChannel(i);
             }
