@@ -148,6 +148,21 @@ def generate_cpp_source(categories, output_file):
 #include <iostream>
 #include <iomanip>
 
+// Forward declarations
+int getTotalConstantCount();
+void printAllConstants();
+void printConstantsByCategory(const std::string& category);
+void searchConstants(const std::string& searchTerm);
+
+int getTotalConstantCount() {
+    int total = 0;
+    auto constants = SMBCheatConstants::getConstants();
+    for (const auto& [category, constantList] : constants) {
+        total += constantList.size();
+    }
+    return total;
+}
+
 void printAllConstants() {
     auto constants = SMBCheatConstants::getConstants();
     
@@ -186,15 +201,6 @@ void printConstantsByCategory(const std::string& category) {
         }
         std::cout << "\\n";
     }
-}
-
-int getTotalConstantCount() {
-    int total = 0;
-    auto constants = SMBCheatConstants::getConstants();
-    for (const auto& [category, constantList] : constants) {
-        total += constantList.size();
-    }
-    return total;
 }
 
 void searchConstants(const std::string& searchTerm) {
