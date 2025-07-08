@@ -66,7 +66,7 @@ BASE_SOURCE_FILES = \
     source/WindowsAudio.cpp
 
 # GTK version source files
-GTK_SOURCE_FILES = $(BASE_SOURCE_FILES) source/GTKMainWindow.cpp
+GTK_SOURCE_FILES = $(BASE_SOURCE_FILES) source/GTKMainWindow.cpp source/SMB/SMBCheatConstants.cpp
 
 # SDL version source files
 SDL_SOURCE_FILES = $(BASE_SOURCE_FILES) source/SDLMain.cpp source/SDLCacheScaling.cpp
