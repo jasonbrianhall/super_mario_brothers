@@ -5,27 +5,48 @@ import os
 
 def parse_ini_file(filename):
     """Parse INI file and extract constants with categories"""
-    config = configparser.ConfigParser(inline_comment_prefixes=(';', '#'))
-    config.read(filename)
-    
     categories = {}
     
-    for section_name in config.sections():
-        constants = []
+    # Read file manually to preserve comments that configparser strips
+    with open(filename, 'r') as f:
+        lines = f.readlines()
+    
+    current_section = None
+    
+    for line in lines:
+        line = line.strip()
         
-        for key, value in config.items(section_name):
-            # Parse value and optional comment
-            parts = value.split(';', 1)
-            address = parts[0].strip()
-            description = parts[1].strip() if len(parts) > 1 else f"Memory address {key}"
+        # Skip empty lines and pure comments
+        if not line or line.startswith(';') or line.startswith('#'):
+            continue
+        
+        # Check for section headers
+        if line.startswith('[') and line.endswith(']'):
+            current_section = line[1:-1]
+            categories[current_section] = []
+            continue
+        
+        # Parse key-value pairs with comments
+        if current_section and '=' in line:
+            # Split on first = only
+            key, value_with_comment = line.split('=', 1)
+            key = key.strip()
+            value_with_comment = value_with_comment.strip()
             
-            constants.append({
-                'name': key,
+            # Split value and comment on semicolon
+            if ';' in value_with_comment:
+                address, description = value_with_comment.split(';', 1)
+                address = address.strip()
+                description = description.strip()
+            else:
+                address = value_with_comment.strip()
+                description = f"Memory address for {key.replace('_', ' ').lower()}"
+            
+            categories[current_section].append({
+                'name': key.lower().replace('_', ''),  # Normalize name for C++
                 'address': address,
                 'description': description
             })
-        
-        categories[section_name] = constants
     
     return categories
 
@@ -95,6 +116,22 @@ public:
         auto it = flatMap.find(name);
         return (it != flatMap.end()) ? it->second : 0;
     }
+    
+    // Get all constants in a category
+    static std::vector<CheatConstant> getConstantsByCategory(const std::string& category) {
+        auto constants = getConstants();
+        auto it = constants.find(category);
+        return (it != constants.end()) ? it->second : std::vector<CheatConstant>();
+    }
+    
+    // Get all category names
+    static std::vector<std::string> getCategoryNames() {
+        std::vector<std::string> categories;
+        for (const auto& [category, constants] : getConstants()) {
+            categories.push_back(category);
+        }
+        return categories;
+    }
 };
 
 #endif // SMB_CHEAT_CONSTANTS_HPP
@@ -109,38 +146,87 @@ def generate_cpp_source(categories, output_file):
 
 #include "SMBCheatConstants.hpp"
 #include <iostream>
+#include <iomanip>
 
 void printAllConstants() {
     auto constants = SMBCheatConstants::getConstants();
     
+    std::cout << "\\n=== Super Mario Bros Cheat Constants ===\\n";
+    
     for (const auto& [category, constantList] : constants) {
         std::cout << "\\n[" << category << "]\\n";
         for (const auto& constant : constantList) {
-            std::cout << "  " << constant.name << " = " << std::hex << constant.address 
-                      << " ; " << constant.description << "\\n";
+            std::cout << "  " << std::setw(20) << std::left << constant.name 
+                      << " = 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << constant.address 
+                      << std::dec << " ; " << constant.description << "\\n";
         }
     }
+    
+    std::cout << "\\nTotal: " << std::dec << getTotalConstantCount() << " constants in " 
+              << constants.size() << " categories\\n";
 }
 
 void printConstantsByCategory(const std::string& category) {
-    auto constants = SMBCheatConstants::getConstants();
-    auto it = constants.find(category);
+    auto constants = SMBCheatConstants::getConstantsByCategory(category);
     
-    if (it != constants.end()) {
-        std::cout << "[" << category << "]\\n";
-        for (const auto& constant : it->second) {
-            std::cout << "  " << constant.name << " = " << std::hex << constant.address 
-                      << " ; " << constant.description << "\\n";
+    if (!constants.empty()) {
+        std::cout << "\\n[" << category << "]\\n";
+        for (const auto& constant : constants) {
+            std::cout << "  " << std::setw(20) << std::left << constant.name 
+                      << " = 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << constant.address 
+                      << std::dec << " ; " << constant.description << "\\n";
         }
     } else {
         std::cout << "Category '" << category << "' not found.\\n";
+        std::cout << "Available categories: ";
+        auto categories = SMBCheatConstants::getCategoryNames();
+        for (size_t i = 0; i < categories.size(); ++i) {
+            std::cout << categories[i];
+            if (i < categories.size() - 1) std::cout << ", ";
+        }
+        std::cout << "\\n";
+    }
+}
+
+int getTotalConstantCount() {
+    int total = 0;
+    auto constants = SMBCheatConstants::getConstants();
+    for (const auto& [category, constantList] : constants) {
+        total += constantList.size();
+    }
+    return total;
+}
+
+void searchConstants(const std::string& searchTerm) {
+    auto constants = SMBCheatConstants::getConstants();
+    bool found = false;
+    
+    std::cout << "\\nSearching for: " << searchTerm << "\\n";
+    
+    for (const auto& [category, constantList] : constants) {
+        for (const auto& constant : constantList) {
+            if (constant.name.find(searchTerm) != std::string::npos ||
+                constant.description.find(searchTerm) != std::string::npos) {
+                if (!found) {
+                    std::cout << "Found matches:\\n";
+                    found = true;
+                }
+                std::cout << "  [" << category << "] " << constant.name 
+                          << " = 0x" << std::hex << std::uppercase << std::setfill('0') << std::setw(4) << constant.address 
+                          << std::dec << " ; " << constant.description << "\\n";
+            }
+        }
+    }
+    
+    if (!found) {
+        std::cout << "No matches found.\\n";
     }
 }
 """)
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python generate_cheats.py cheats.ini")
+        print("Usage: python createcheats.py cheats.ini")
         sys.exit(1)
     
     input_file = sys.argv[1]
@@ -161,16 +247,19 @@ def main():
     for category, const_list in categories.items():
         print(f"  {category}: {len(const_list)} constants")
     
-    print(f"Generating {output_header}...")
+    print(f"\nGenerating {output_header}...")
     generate_cpp_header(categories, output_header)
     
     print(f"Generating {output_source}...")
     generate_cpp_source(categories, output_source)
     
-    print("Done! Include SMBCheatConstants.hpp in your project.")
+    print("\nDone! Include SMBCheatConstants.hpp in your project.")
     print("\nExample usage in C++:")
     print("  auto constants = SMBCheatConstants::getConstants();")
-    print("  uint16_t lives_addr = SMBCheatConstants::getAddress(\"NumberofLives\");")
+    print("  uint16_t lives_addr = SMBCheatConstants::getAddress(\"numberoflives\");")
+    print("  printAllConstants();")
+    print("  printConstantsByCategory(\"Player Stats\");")
+    print("  searchConstants(\"mario\");")
 
 if __name__ == "__main__":
     main()
