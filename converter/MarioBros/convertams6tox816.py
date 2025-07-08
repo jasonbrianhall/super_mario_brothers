@@ -64,7 +64,19 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
     
     # Pattern to match expressions like: = OAM_Y+(4*FreezeEffect_OAM_Slot)
     # Captures the base address, multiplier, and variable name
-    pattern = r'(\w+)\s*=\s*(\w+)\+\((\d+)\*(\w+)\)'
+    multiplication_pattern = r'(\w+)\s*=\s*(\w+)\+\((\d+)\*(\w+)\)'
+    
+    # Pattern to match bitwise OR expressions like: = Entity_MovementBits_MovingRight|Entity_MovementBits_MovingLeft
+    bitwise_or_pattern = r'(\w+)\s*=\s*(\w+)\|(\w+)'
+    
+    # Pattern to match complex bitwise expressions in DB statements like: DB MAPPER<<4&$F0|MIRRORING
+    complex_bitwise_pattern = r'(DB|\.byte)\s+(\w+)<<(\d+)&\$([0-9A-Fa-f]+)\|(\w+)'
+    
+    # Pattern to match simple bitwise AND expressions like: DB MAPPER&$F0
+    simple_bitwise_and_pattern = r'(DB|\.byte)\s+(\w+)&\$([0-9A-Fa-f]+)'
+    
+    # Pattern to match bitwise XOR in instructions like: AND #$FF^Entity_MovementBits_MovingHorz
+    instruction_xor_pattern = r'(\w+)\s+#\$([0-9A-Fa-f]+)\^(\w+)'
     
     def replace_multiplication(match):
         var_name = match.group(1)
@@ -84,8 +96,180 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
             # If we can't find the slot value, leave a comment for manual fix
             return f'{var_name} = {base_addr}+{multiplier}*{slot_var} ; TODO: Calculate manually - slot value not found'
     
+    def replace_bitwise_or(match):
+        var_name = match.group(1)
+        left_var = match.group(2)
+        right_var = match.group(3)
+        
+        # Look for both variable values in the content
+        left_pattern = rf'{left_var}\s*=\s*\$([0-9A-Fa-f]+)'
+        right_pattern = rf'{right_var}\s*=\s*\$([0-9A-Fa-f]+)'
+        
+        left_match = re.search(left_pattern, all_content)
+        right_match = re.search(right_pattern, all_content)
+        
+        # Also try decimal patterns
+        if not left_match:
+            left_pattern = rf'{left_var}\s*=\s*(\d+)'
+            left_match = re.search(left_pattern, all_content)
+            
+        if not right_match:
+            right_pattern = rf'{right_var}\s*=\s*(\d+)'
+            right_match = re.search(right_pattern, all_content)
+        
+        if left_match and right_match:
+            # Parse values (handle both hex and decimal)
+            left_val_str = left_match.group(1)
+            right_val_str = right_match.group(1)
+            
+            # Check if hex or decimal
+            if left_val_str.upper().startswith('0X') or any(c in left_val_str.upper() for c in 'ABCDEF'):
+                left_val = int(left_val_str, 16)
+            else:
+                left_val = int(left_val_str)
+                
+            if right_val_str.upper().startswith('0X') or any(c in right_val_str.upper() for c in 'ABCDEF'):
+                right_val = int(right_val_str, 16)
+            else:
+                right_val = int(right_val_str)
+            
+            # Calculate bitwise OR
+            result = left_val | right_val
+            return f'{var_name} = ${result:02X}'
+        else:
+            # If we can't find the values, leave a comment for manual fix
+            return f'{var_name} = {left_var}|{right_var} ; TODO: Calculate manually - variable values not found'
+    
+    def replace_complex_bitwise(match):
+        directive = match.group(1)
+        left_var = match.group(2)      # MAPPER
+        shift_amount = int(match.group(3))  # 4
+        mask_value = int(match.group(4), 16)  # $F0
+        right_var = match.group(5)     # MIRRORING
+        
+        # Look for variable values in the content
+        left_pattern = rf'{left_var}\s*=\s*\$([0-9A-Fa-f]+)'
+        right_pattern = rf'{right_var}\s*=\s*\$([0-9A-Fa-f]+)'
+        
+        left_match = re.search(left_pattern, all_content)
+        right_match = re.search(right_pattern, all_content)
+        
+        # Also try decimal patterns
+        if not left_match:
+            left_pattern = rf'{left_var}\s*=\s*(\d+)'
+            left_match = re.search(left_pattern, all_content)
+            
+        if not right_match:
+            right_pattern = rf'{right_var}\s*=\s*(\d+)'
+            right_match = re.search(right_pattern, all_content)
+        
+        if left_match and right_match:
+            # Parse values (handle both hex and decimal)
+            left_val_str = left_match.group(1)
+            right_val_str = right_match.group(1)
+            
+            # Check if hex or decimal
+            if left_val_str.upper().startswith('0X') or any(c in left_val_str.upper() for c in 'ABCDEF'):
+                left_val = int(left_val_str, 16)
+            else:
+                left_val = int(left_val_str)
+                
+            if right_val_str.upper().startswith('0X') or any(c in right_val_str.upper() for c in 'ABCDEF'):
+                right_val = int(right_val_str, 16)
+            else:
+                right_val = int(right_val_str)
+            
+            # Calculate: MAPPER<<4&$F0|MIRRORING
+            # Step 1: left_val << shift_amount
+            shifted = left_val << shift_amount
+            # Step 2: shifted & mask_value
+            masked = shifted & mask_value
+            # Step 3: masked | right_val
+            result = masked | right_val
+            
+            return f'DB ${result:02X}'
+        else:
+            # If we can't find the values, leave a comment for manual fix
+            return f'DB {left_var}<<{shift_amount}&${mask_value:02X}|{right_var} ; TODO: Calculate manually - variable values not found'
+    
+    def replace_simple_bitwise_and(match):
+        directive = match.group(1)
+        var_name = match.group(2)      # MAPPER
+        mask_value = int(match.group(3), 16)  # $F0
+        
+        # Look for variable value in the content
+        var_pattern = rf'{var_name}\s*=\s*\$([0-9A-Fa-f]+)'
+        var_match = re.search(var_pattern, all_content)
+        
+        # Also try decimal pattern
+        if not var_match:
+            var_pattern = rf'{var_name}\s*=\s*(\d+)'
+            var_match = re.search(var_pattern, all_content)
+        
+        if var_match:
+            # Parse value (handle both hex and decimal)
+            var_val_str = var_match.group(1)
+            
+            # Check if hex or decimal
+            if var_val_str.upper().startswith('0X') or any(c in var_val_str.upper() for c in 'ABCDEF'):
+                var_val = int(var_val_str, 16)
+            else:
+                var_val = int(var_val_str)
+            
+            # Calculate: MAPPER & $F0
+            result = var_val & mask_value
+            
+            return f'DB ${result:02X}'
+        else:
+            # If we can't find the value, leave a comment for manual fix
+            return f'DB {var_name}&${mask_value:02X} ; TODO: Calculate manually - variable value not found'
+    
+    def replace_instruction_xor(match):
+        instruction = match.group(1)   # AND
+        hex_value = int(match.group(2), 16)  # $FF
+        var_name = match.group(3)      # Entity_MovementBits_MovingHorz
+        
+        # Look for variable value in the content
+        var_pattern = rf'{var_name}\s*=\s*\$([0-9A-Fa-f]+)'
+        var_match = re.search(var_pattern, all_content)
+        
+        # Also try decimal pattern
+        if not var_match:
+            var_pattern = rf'{var_name}\s*=\s*(\d+)'
+            var_match = re.search(var_pattern, all_content)
+        
+        if var_match:
+            # Parse value (handle both hex and decimal)
+            var_val_str = var_match.group(1)
+            
+            # Check if hex or decimal
+            if var_val_str.upper().startswith('0X') or any(c in var_val_str.upper() for c in 'ABCDEF'):
+                var_val = int(var_val_str, 16)
+            else:
+                var_val = int(var_val_str)
+            
+            # Calculate: $FF ^ var_val
+            result = hex_value ^ var_val
+            
+            return f'{instruction} #${result:02X}'
+        else:
+            # If we can't find the value, leave a comment for manual fix
+            return f'{instruction} #${hex_value:02X}^{var_name} ; TODO: Calculate manually - variable value not found'
+    
     # Apply the multiplication conversion
-    converted_content = re.sub(pattern, replace_multiplication, all_content)
+    converted_content = re.sub(multiplication_pattern, replace_multiplication, all_content)
+    
+    # Apply the bitwise OR conversion
+    converted_content = re.sub(bitwise_or_pattern, replace_bitwise_or, converted_content)
+    
+    # Apply the complex bitwise conversion
+    converted_content = re.sub(complex_bitwise_pattern, replace_complex_bitwise, converted_content)
+    
+    # Apply the simple bitwise AND conversion
+    converted_content = re.sub(simple_bitwise_and_pattern, replace_simple_bitwise_and, converted_content)
+    
+    # Apply the instruction XOR conversion
+    converted_content = re.sub(instruction_xor_pattern, replace_instruction_xor, converted_content)
     
     # Additional ASM6 to x816 syntax conversions
     conversions = [
