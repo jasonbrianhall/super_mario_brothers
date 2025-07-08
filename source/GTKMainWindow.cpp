@@ -8,6 +8,7 @@
 #include "Util/Video.hpp"
 #include "Util/VideoFilters.hpp"
 #include "SMBRom.hpp"
+#include "SMB/SMBCheatConstants.hpp"
 
 #ifdef _WIN32
 #include "WindowsAudio.hpp"
@@ -297,6 +298,10 @@ void GTKMainWindow::createMenuBar()
     gtk_menu_shell_append(GTK_MENU_SHELL(settingsMenu), controlsItem);
     
     gtk_menu_shell_append(GTK_MENU_SHELL(menubar), settingsMenuItem);
+
+    GtkWidget* cheatItem = gtk_menu_item_new_with_label("Memory Editor / Cheats");
+    g_signal_connect(cheatItem, "activate", G_CALLBACK(onSettingsCheat), this);
+    gtk_menu_shell_append(GTK_MENU_SHELL(settingsMenu), cheatItem);
     
     // Help menu
     GtkWidget* helpMenu = gtk_menu_new();
@@ -2058,6 +2063,177 @@ void GTKMainWindow::drawGameGenericScale(uint32_t* nesBuffer, cairo_t* cr, int w
     cairo_restore(cr);
     
     cairo_surface_destroy(surface);
+}
+
+void GTKMainWindow::onSettingsCheat(GtkMenuItem* item, gpointer user_data) 
+{
+    GTKMainWindow* window = static_cast<GTKMainWindow*>(user_data);
+    window->showCheatMenu();
+}
+
+void GTKMainWindow::showCheatMenu() 
+{
+    updateStatusBar("Opening memory editor...");
+    
+    // Create the dialog
+    cheatDialog = gtk_dialog_new_with_buttons(
+        "Memory Editor / Cheats",
+        GTK_WINDOW(window),
+        GTK_DIALOG_MODAL,
+        "Close", GTK_RESPONSE_CLOSE,
+        "Apply", GTK_RESPONSE_APPLY,
+        "Refresh", GTK_RESPONSE_HELP,
+        NULL
+    );
+    
+    gtk_window_set_default_size(GTK_WINDOW(cheatDialog), 900, 800);
+    
+    // Get the content area
+    GtkWidget* content_area = gtk_dialog_get_content_area(GTK_DIALOG(cheatDialog));
+    
+    // Create scrolled window with proper scrollbars
+    GtkWidget* scrolled = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scrolled), 
+                                   GTK_POLICY_AUTOMATIC, GTK_POLICY_ALWAYS);
+    gtk_widget_set_size_request(scrolled, 880, 700);
+    gtk_container_add(GTK_CONTAINER(content_area), scrolled);
+    
+    // Create viewport for proper scrolling
+    GtkWidget* viewport = gtk_viewport_new(NULL, NULL);
+    gtk_container_add(GTK_CONTAINER(scrolled), viewport);
+    
+    // Create main vbox
+    GtkWidget* main_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 15);
+    gtk_container_set_border_width(GTK_CONTAINER(main_vbox), 15);
+    gtk_container_add(GTK_CONTAINER(viewport), main_vbox);
+    
+    // Add warning label
+    GtkWidget* warning_label = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(warning_label), 
+        "<b>WARNING:</b> Modifying memory values can affect game behavior.\n"
+        "Changes take effect immediately when you click Apply.");
+    gtk_label_set_line_wrap(GTK_LABEL(warning_label), TRUE);
+    gtk_box_pack_start(GTK_BOX(main_vbox), warning_label, FALSE, FALSE, 0);
+    
+    // Add separator
+    GtkWidget* separator = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_box_pack_start(GTK_BOX(main_vbox), separator, FALSE, FALSE, 0);
+    
+    // Create sections for each category
+    auto constants = SMBCheatConstants::getConstants();
+    std::cout << "Creating cheat menu with " << constants.size() << " categories" << std::endl;
+    
+    for (const auto& [category, constantList] : constants) {
+        std::cout << "Processing category: " << category << " with " << constantList.size() << " constants" << std::endl;
+        
+        // Create frame for category
+        GtkWidget* frame = gtk_frame_new(NULL);
+        GtkWidget* frame_label = gtk_label_new(NULL);
+        std::string frame_markup = "<b>" + category + "</b>";
+        gtk_label_set_markup(GTK_LABEL(frame_label), frame_markup.c_str());
+        gtk_frame_set_label_widget(GTK_FRAME(frame), frame_label);
+        
+        GtkWidget* grid = gtk_grid_new();
+        gtk_grid_set_row_spacing(GTK_GRID(grid), 8);
+        gtk_grid_set_column_spacing(GTK_GRID(grid), 15);
+        gtk_container_set_border_width(GTK_CONTAINER(grid), 15);
+        gtk_container_add(GTK_CONTAINER(frame), grid);
+        
+        int row = 0;
+        for (const auto& constant : constantList) {
+            // Create label with just the name
+            GtkWidget* label = gtk_label_new((constant.name + ":").c_str());
+            gtk_widget_set_halign(label, GTK_ALIGN_START);
+            gtk_widget_set_tooltip_text(label, constant.description.c_str());
+            
+            // Create spin button for value (0-255 for 8-bit values)
+            GtkWidget* spin = gtk_spin_button_new_with_range(0, 255, 1);
+            gtk_widget_set_size_request(spin, 80, -1);
+            
+            // Get current value from memory
+            uint8_t currentValue = 0;
+            if (smbEngine) {
+                currentValue = smbEngine->readData(constant.address);
+            }
+            gtk_spin_button_set_value(GTK_SPIN_BUTTON(spin), currentValue);
+            
+            // Store widget for later access
+            cheatWidgets[constant.name] = spin;
+            
+            // Create description label
+            GtkWidget* desc_label = gtk_label_new(constant.description.c_str());
+            gtk_widget_set_halign(desc_label, GTK_ALIGN_START);
+            gtk_label_set_line_wrap(GTK_LABEL(desc_label), TRUE);
+            gtk_widget_set_size_request(desc_label, 300, -1);
+            
+            // Add to grid
+            gtk_grid_attach(GTK_GRID(grid), label, 0, row, 1, 1);
+            gtk_grid_attach(GTK_GRID(grid), spin, 1, row, 1, 1);
+            gtk_grid_attach(GTK_GRID(grid), desc_label, 2, row, 1, 1);
+            
+            row++;
+        }
+        
+        gtk_box_pack_start(GTK_BOX(main_vbox), frame, FALSE, FALSE, 5);
+    }
+    
+    std::cout << "Created " << constants.size() << " categories with total widgets: " << cheatWidgets.size() << std::endl;
+    
+    gtk_widget_show_all(cheatDialog);
+    
+    // Run the dialog
+    gint response = gtk_dialog_run(GTK_DIALOG(cheatDialog));
+    
+    switch (response) {
+        case GTK_RESPONSE_APPLY:
+            applyCheatChanges();
+            updateStatusBar("Memory values applied");
+            break;
+        case GTK_RESPONSE_HELP: // Refresh
+            refreshCheatValues();
+            updateStatusBar("Memory values refreshed");
+            break;
+        default:
+            updateStatusBar("Memory editor closed");
+            break;
+    }
+    
+    gtk_widget_destroy(cheatDialog);
+    cheatDialog = nullptr;
+    cheatWidgets.clear();
+}
+
+
+void GTKMainWindow::refreshCheatValues() 
+{
+    if (!smbEngine) return;
+    
+    auto constants = SMBCheatConstants::getConstants();
+    for (const auto& [category, constantList] : constants) {
+        for (const auto& constant : constantList) {
+            auto it = cheatWidgets.find(constant.name);
+            if (it != cheatWidgets.end()) {
+                uint8_t currentValue = smbEngine->readData(constant.address);
+                gtk_spin_button_set_value(GTK_SPIN_BUTTON(it->second), currentValue);
+            }
+        }
+    }
+}
+
+void GTKMainWindow::applyCheatChanges() 
+{
+    if (!smbEngine) return;
+    
+    auto constants = SMBCheatConstants::getConstants();
+    for (const auto& [category, constantList] : constants) {
+        for (const auto& constant : constantList) {
+            auto it = cheatWidgets.find(constant.name);
+            if (it != cheatWidgets.end()) {
+                int value = gtk_spin_button_get_value_as_int(GTK_SPIN_BUTTON(it->second));
+                smbEngine->writeData(constant.address, static_cast<uint8_t>(value));
+            }
+        }
+    }
 }
 
 // Main function to use GTK version

@@ -89,6 +89,22 @@ public:
      */
     void update();
 
+    /**
+     * Read data from an address in the NES address space.
+     */
+    uint8_t readData(uint16_t address);
+
+    /**
+     * Write data to an address in the NES address space.
+     */
+    void writeData(uint16_t address, uint8_t value);
+
+    /**
+     * Map constant data to the address space. The address must be at least 0x8000.
+     */
+    void writeData(uint16_t address, const uint8_t* data, std::size_t length);
+
+
 private:
     // NES Emulation subsystems:
     APU* apu;
@@ -189,25 +205,12 @@ private:
      */
     void pushReturnIndex(int index);
 
-    /**
-     * Read data from an address in the NES address space.
-     */
-    uint8_t readData(uint16_t address);
 
     /**
      * Set the zero and negative flags based on a result value.
      */
     void setZN(uint8_t value);
 
-    /**
-     * Write data to an address in the NES address space.
-     */
-    void writeData(uint16_t address, uint8_t value);
-
-    /**
-     * Map constant data to the address space. The address must be at least 0x8000.
-     */
-    void writeData(uint16_t address, const uint8_t* data, std::size_t length);
 
 };
 

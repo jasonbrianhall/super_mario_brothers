@@ -138,6 +138,15 @@ private:
   bool backBufferInitialized;
   void initializeBackBuffer();
   static void onSettingsFullscreen(GtkMenuItem* item, gpointer user_data);
+  GtkWidget* cheatDialog;
+  std::map<std::string, GtkWidget*> cheatWidgets;
+  void showCheatMenu();
+  static void onSettingsCheat(GtkMenuItem* item, gpointer user_data);
+  static void onCheatApply(GtkButton* button, gpointer user_data);
+  static void onCheatRefresh(GtkButton* button, gpointer user_data);
+  static void onCheatReset(GtkButton* button, gpointer user_data);
+  void refreshCheatValues();
+  void applyCheatChanges();
 
 class ScalingCache {
 public:
