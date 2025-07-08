@@ -33,6 +33,11 @@ Both versions include core performance optimizations:
 - Palette lookup optimization for faster color conversion
 - 16-bit direct rendering paths for maximum performance
 
+### 🖥️  **GTK Additional Features**
+- File Menus
+- Software Rendering (tearing on MS Windows)
+- Rudimentary Cheat Menu
+
 ## Allegro DOS/Linux Version - Additional Optimizations
 
 The Allegro version (DOS: Allegro 4, Linux: Allegro 4 or 5) includes all the above optimizations plus:
