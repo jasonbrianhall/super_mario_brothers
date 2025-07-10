@@ -129,6 +129,9 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
         # Pattern to match bitwise XOR in instructions like: AND #$FF^Entity_MovementBits_MovingHorz
         instruction_xor_pattern = r'(\w+)\s+#\$([0-9A-Fa-f]+)\^(\w+)'
         
+        # Pattern to match string length calculations like: DB @StringEnd-@StringStart|$10
+        string_length_pattern = r'(DB|\.byte)\s+@StringEnd-@StringStart\|\$([0-9A-Fa-f]+)'
+        
         def replace_multiplication(match):
             var_name = match.group(1)
             base_addr = match.group(2) 
@@ -303,6 +306,40 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
                     # Leave unchanged for next pass
                     return match.group(0)
         
+        def replace_string_length(match):
+            directive = match.group(1)     # DB
+            or_value = int(match.group(2), 16)  # $10
+            
+            # This is a complex replacement that needs to look ahead in the content
+            # We need to find the string content between @StringStart: and @StringEnd:
+            full_match = match.group(0)
+            
+            # Look for the pattern in context to find the actual string
+            # Pattern: DB @StringEnd-@StringStart|$10\n@StringStart:\n\tDB "actual string"\n@StringEnd:
+            context_pattern = r'DB\s+@StringEnd-@StringStart\|\$([0-9A-Fa-f]+)\s*\n\s*@StringStart:\s*\n\s*DB\s+"([^"]+)"\s*.*?\n\s*@StringEnd:'
+            
+            # Search for this pattern in the content around our match
+            lines = content.split('\n')
+            for i, line in enumerate(lines):
+                if full_match.strip() in line:
+                    # Look at the next few lines to find the string
+                    context_lines = lines[i:i+4] if i+4 < len(lines) else lines[i:]
+                    context_text = '\n'.join(context_lines)
+                    
+                    context_match = re.search(context_pattern, context_text, re.MULTILINE | re.DOTALL)
+                    if context_match:
+                        string_content = context_match.group(2)
+                        string_length = len(string_content)
+                        result = string_length | or_value
+                        return f'DB ${result:02X}'
+            
+            # If we can't find the string context, add TODO only on final pass
+            if is_final_pass:
+                return f'DB @StringEnd-@StringStart|${or_value:02X} ; TODO: Calculate manually - string length not found'
+            else:
+                # Leave unchanged for next pass
+                return match.group(0)
+        
         # Apply all conversions
         new_content = content
         
@@ -329,6 +366,9 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
         
         # Apply the instruction XOR conversion
         new_content = re.sub(instruction_xor_pattern, replace_instruction_xor, new_content)
+        
+        # Apply the string length conversion
+        new_content = re.sub(string_length_pattern, replace_string_length, new_content)
         
         return new_content
     
