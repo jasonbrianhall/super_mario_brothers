@@ -108,8 +108,17 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
         # Pattern to match expressions like: = OAM_Y+(4*FreezeEffect_OAM_Slot)
         multiplication_pattern = r'(\w+)\s*=\s*(\w+)\+\((\d+)\*(\w+)\)'
         
+        # Pattern to match multiplication in instructions like: LDY #Lives_Mario_OAM_Slot*4
+        instruction_multiplication_pattern = r'(\w+)\s+#(\w+)\*(\d+)'
+        
+        # Pattern to match address arithmetic in instructions like: STA BufferAddr2+8 or STA BufferAddr2+$0F
+        instruction_address_arithmetic_pattern = r'(\w+)\s+(\w+)\+(\$?[0-9A-Fa-f]+)'
+        
         # Pattern to match bitwise OR expressions like: = Entity_MovementBits_MovingRight|Entity_MovementBits_MovingLeft
         bitwise_or_pattern = r'(\w+)\s*=\s*(\w+)\|(\w+)'
+        
+        # Pattern to match bitwise OR in instructions like: LDX #Entity_MovementBits_Skidding|Entity_MovementBits_MovingLeft
+        instruction_bitwise_or_pattern = r'(\w+)\s+#(\w+)\|(\w+)'
         
         # Pattern to match complex bitwise expressions in DB statements like: DB MAPPER<<4&$F0|MIRRORING
         complex_bitwise_pattern = r'(DB|\.byte)\s+(\w+)<<(\d+)&\$([0-9A-Fa-f]+)\|(\w+)'
@@ -140,6 +149,52 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
                     # Leave unchanged for next pass
                     return match.group(0)
         
+        def replace_instruction_multiplication(match):
+            instruction = match.group(1)   # LDY
+            var_name = match.group(2)      # Lives_Mario_OAM_Slot
+            multiplier = int(match.group(3))  # 4
+            
+            # Look for the variable value in the content
+            var_val = find_variable_value(var_name, content)
+            
+            if var_val is not None:
+                # Calculate: var_val * multiplier
+                result = var_val * multiplier
+                return f'{instruction} #${result:02X}'
+            else:
+                # If we can't find the value, add TODO only on final pass
+                if is_final_pass:
+                    return f'{instruction} #{var_name}*{multiplier} ; TODO: Calculate manually - variable value not found'
+                else:
+                    # Leave unchanged for next pass
+                    return match.group(0)
+        
+        def replace_instruction_address_arithmetic(match):
+            instruction = match.group(1)   # STA
+            base_addr = match.group(2)     # BufferAddr2
+            offset_str = match.group(3)    # 8 or $0F
+            
+            # Parse the offset value (could be hex or decimal)
+            if offset_str.startswith('$'):
+                offset_val = int(offset_str[1:], 16)
+            else:
+                offset_val = int(offset_str)
+            
+            # Look for the base address value in the content
+            base_val = find_variable_value(base_addr, content)
+            
+            if base_val is not None:
+                # Calculate: base_val + offset_val
+                result = base_val + offset_val
+                return f'{instruction} ${result:04X}'
+            else:
+                # If we can't find the base value, add TODO only on final pass
+                if is_final_pass:
+                    return f'{instruction} {base_addr}+{offset_str} ; TODO: Calculate manually - base address not found'
+                else:
+                    # Leave unchanged for next pass
+                    return match.group(0)
+        
         def replace_bitwise_or(match):
             var_name = match.group(1)
             left_var = match.group(2)
@@ -157,6 +212,27 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
                 # If we can't find the values, add TODO only on final pass
                 if is_final_pass:
                     return f'{var_name} = {left_var}|{right_var} ; TODO: Calculate manually - variable values not found'
+                else:
+                    # Leave unchanged for next pass
+                    return match.group(0)
+        
+        def replace_instruction_bitwise_or(match):
+            instruction = match.group(1)   # LDX
+            left_var = match.group(2)      # Entity_MovementBits_Skidding
+            right_var = match.group(3)     # Entity_MovementBits_MovingLeft
+            
+            # Look for both variable values in the content
+            left_val = find_variable_value(left_var, content)
+            right_val = find_variable_value(right_var, content)
+            
+            if left_val is not None and right_val is not None:
+                # Calculate bitwise OR
+                result = left_val | right_val
+                return f'{instruction} #${result:02X}'
+            else:
+                # If we can't find the values, add TODO only on final pass
+                if is_final_pass:
+                    return f'{instruction} #{left_var}|{right_var} ; TODO: Calculate manually - variable values not found'
                 else:
                     # Leave unchanged for next pass
                     return match.group(0)
@@ -233,8 +309,17 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
         # Apply the multiplication conversion
         new_content = re.sub(multiplication_pattern, replace_multiplication, new_content)
         
-        # Apply the bitwise OR conversion
+        # Apply the instruction multiplication conversion
+        new_content = re.sub(instruction_multiplication_pattern, replace_instruction_multiplication, new_content)
+        
+        # Apply the instruction address arithmetic conversion
+        new_content = re.sub(instruction_address_arithmetic_pattern, replace_instruction_address_arithmetic, new_content)
+        
+        # Apply the bitwise OR conversion (variable assignments)
         new_content = re.sub(bitwise_or_pattern, replace_bitwise_or, new_content)
+        
+        # Apply the instruction bitwise OR conversion
+        new_content = re.sub(instruction_bitwise_or_pattern, replace_instruction_bitwise_or, new_content)
         
         # Apply the complex bitwise conversion
         new_content = re.sub(complex_bitwise_pattern, replace_complex_bitwise, new_content)
