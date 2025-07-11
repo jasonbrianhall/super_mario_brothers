@@ -3,10 +3,64 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <fstream>
+#include <iostream>
 
 #include "../Emulation/MemoryAccess.hpp"
 
 #include "SMBDataPointers.hpp"
+
+// Save state structure for binary file format
+struct SaveState {
+    // Header for validation
+    char header[8];
+    uint32_t version;
+    
+    // CPU Registers
+    uint8_t registerA;
+    uint8_t registerX;
+    uint8_t registerY;
+    uint8_t registerS;
+    
+    // CPU Flags
+    bool c;  // Carry flag
+    bool z;  // Zero flag
+    bool n;  // Negative flag
+    
+    // Global flags (declared as extern in your code)
+    uint8_t i;  // Interrupt disable
+    uint8_t d;  // Decimal mode
+    uint8_t b;  // Break command
+    uint8_t v;  // Overflow flag
+    
+    // Call stack state
+    int returnIndexStack[100];
+    int returnIndexStackTop;
+    
+    // 2KB RAM data
+    uint8_t ram[0x800];
+    
+    // PPU State - matching your PPU class exactly
+    uint8_t nametable[2048];        // Your nametable array
+    uint8_t oam[256];               // Your sprite memory
+    uint8_t palette[32];            // Your palette data
+    
+    // PPU Registers - matching your PPU class
+    uint8_t ppuCtrl;                // $2000
+    uint8_t ppuMask;                // $2001
+    uint8_t ppuStatus;              // $2002
+    uint8_t oamAddress;             // $2003
+    uint8_t ppuScrollX;             // $2005
+    uint8_t ppuScrollY;             // $2005
+    
+    // PPU Internal State - matching your PPU class
+    uint16_t currentAddress;        // Your currentAddress
+    bool writeToggle;               // Your writeToggle
+    uint8_t vramBuffer;             // Your vramBuffer
+    
+    // Additional state for future expansion
+    uint8_t reserved[64];
+};
 
 class APU;
 class Controller;
@@ -103,6 +157,10 @@ public:
      * Map constant data to the address space. The address must be at least 0x8000.
      */
     void writeData(uint16_t address, const uint8_t* data, std::size_t length);
+
+    void saveState(const std::string& filename);
+    bool loadState(const std::string& filename);
+
 
 
 private:

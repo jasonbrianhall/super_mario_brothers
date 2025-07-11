@@ -485,6 +485,99 @@ gboolean GTKMainWindow::onKeyPress(GtkWidget* widget, GdkEventKey* event, gpoint
             return TRUE;
         }
         
+        // Save/Load state handling (F5-F8 keys) - ADD THIS SECTION
+        static bool f5Pressed = false;
+        static bool f6Pressed = false;
+        static bool f7Pressed = false;
+        static bool f8Pressed = false;
+        
+        bool shiftPressed = (event->state & GDK_SHIFT_MASK) != 0;
+        
+        // F5 - Save/Load State 1
+        if (event->keyval == GDK_KEY_F5 && !f5Pressed) {
+            if (shiftPressed) {
+                // Shift+F5 - Load State 1
+                if (smbEngine->loadState("save1")) {
+                    window->updateStatusBar("State 1 loaded");
+                } else {
+                    window->updateStatusBar("Failed to load state 1");
+                }
+            } else {
+                // F5 - Save State 1
+                smbEngine->saveState("save1");
+                window->updateStatusBar("State 1 saved");
+            }
+            f5Pressed = true;
+            return TRUE;
+        }
+        if (event->keyval != GDK_KEY_F5) {
+            f5Pressed = false;
+        }
+
+        // F6 - Save/Load State 2
+        if (event->keyval == GDK_KEY_F6 && !f6Pressed) {
+            if (shiftPressed) {
+                // Shift+F6 - Load State 2
+                if (smbEngine->loadState("save2")) {
+                    window->updateStatusBar("State 2 loaded");
+                } else {
+                    window->updateStatusBar("Failed to load state 2");
+                }
+            } else {
+                // F6 - Save State 2
+                smbEngine->saveState("save2");
+                window->updateStatusBar("State 2 saved");
+            }
+            f6Pressed = true;
+            return TRUE;
+        }
+        if (event->keyval != GDK_KEY_F6) {
+            f6Pressed = false;
+        }
+
+        // F7 - Save/Load State 3
+        if (event->keyval == GDK_KEY_F7 && !f7Pressed) {
+            if (shiftPressed) {
+                // Shift+F7 - Load State 3
+                if (smbEngine->loadState("save3")) {
+                    window->updateStatusBar("State 3 loaded");
+                } else {
+                    window->updateStatusBar("Failed to load state 3");
+                }
+            } else {
+                // F7 - Save State 3
+                smbEngine->saveState("save3");
+                window->updateStatusBar("State 3 saved");
+            }
+            f7Pressed = true;
+            return TRUE;
+        }
+        if (event->keyval != GDK_KEY_F7) {
+            f7Pressed = false;
+        }
+
+        // F8 - Save/Load State 4
+        if (event->keyval == GDK_KEY_F8 && !f8Pressed) {
+            if (shiftPressed) {
+                // Shift+F8 - Load State 4
+                if (smbEngine->loadState("save4")) {
+                    window->updateStatusBar("State 4 loaded");
+                } else {
+                    window->updateStatusBar("Failed to load state 4");
+                }
+            } else {
+                // F8 - Save State 4
+                smbEngine->saveState("save4");
+                window->updateStatusBar("State 4 saved");
+            }
+            f8Pressed = true;
+            return TRUE;
+        }
+        if (event->keyval != GDK_KEY_F8) {
+            f8Pressed = false;
+        }
+        // END SAVE/LOAD STATE SECTION
+        
         // Convert GDK key to SDL scancode for comparison with configuration
         GTKMainWindow temp;
         SDL_Scancode scancode = temp.gdk_keyval_to_sdl_scancode(event->keyval);
@@ -532,6 +625,7 @@ gboolean GTKMainWindow::onKeyPress(GtkWidget* widget, GdkEventKey* event, gpoint
     
     return TRUE;
 }
+
 
 gboolean GTKMainWindow::onKeyRelease(GtkWidget* widget, GdkEventKey* event, gpointer user_data) 
 {

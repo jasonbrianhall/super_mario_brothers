@@ -419,3 +419,203 @@ void SMBEngine::writeData(uint16_t address, const uint8_t* data, size_t length)
 
     memcpy(dataStorage + (std::ptrdiff_t)address, data, length);
 }
+
+void SMBEngine::saveState(const std::string& filename) {
+    SaveState state;
+    
+    // Set header and version
+    strcpy(state.header, "SMBSAVE");
+    state.version = 2;  // Version 2 only - complete save state
+    
+    // Save CPU registers
+    state.registerA = this->registerA;
+    state.registerX = this->registerX;
+    state.registerY = this->registerY;
+    state.registerS = this->registerS;
+    
+    // Save CPU flags
+    state.c = this->c;
+    state.z = this->z;
+    state.n = this->n;
+    
+    // Save global flags
+    state.i = ::i;
+    state.d = ::d;
+    state.b = ::b;
+    state.v = ::v;
+    
+    // Save call stack
+    memcpy(state.returnIndexStack, this->returnIndexStack, sizeof(this->returnIndexStack));
+    state.returnIndexStackTop = this->returnIndexStackTop;
+    
+    // Save 2KB RAM
+    memcpy(state.ram, this->ram, sizeof(this->ram));
+    
+    // Save PPU state using the getter methods (uncomment after adding methods to PPU)
+    if (ppu) {
+        memcpy(state.nametable, ppu->getVRAM(), 2048);
+        memcpy(state.oam, ppu->getOAM(), 256);
+        memcpy(state.palette, ppu->getPaletteRAM(), 32);
+        
+        state.ppuCtrl = ppu->getControl();
+        state.ppuMask = ppu->getMask();
+        state.ppuStatus = ppu->getStatus();
+        state.oamAddress = ppu->getOAMAddr();
+        state.ppuScrollX = ppu->getScrollX();
+        state.ppuScrollY = ppu->getScrollY();
+        
+        state.currentAddress = ppu->getVRAMAddress();
+        state.writeToggle = ppu->getWriteToggle();
+        state.vramBuffer = ppu->getDataBuffer();
+    } else {
+        // Fallback if PPU is null
+        memset(state.nametable, 0, sizeof(state.nametable));
+        memset(state.oam, 0, sizeof(state.oam));
+        memset(state.palette, 0, sizeof(state.palette));
+        state.ppuCtrl = 0;
+        state.ppuMask = 0;
+        state.ppuStatus = 0;
+        state.oamAddress = 0;
+        state.ppuScrollX = 0;
+        state.ppuScrollY = 0;
+        state.currentAddress = 0;
+        state.writeToggle = false;
+        state.vramBuffer = 0;
+    }
+    
+    // Clear reserved space
+    memset(state.reserved, 0, sizeof(state.reserved));
+    
+    // Create appropriate filename based on platform
+    std::string actualFilename;
+    #ifdef __DJGPP__
+        // DOS 8.3 format - convert filename
+        std::string baseName = filename;
+        size_t dotPos = baseName.find_last_of('.');
+        if (dotPos != std::string::npos) {
+            baseName = baseName.substr(0, dotPos);
+        }
+        // Truncate to 8 characters max
+        if (baseName.length() > 8) {
+            baseName = baseName.substr(0, 8);
+        }
+        actualFilename = baseName + ".SAV";
+    #else
+        // Linux/Windows - use filename as-is
+        actualFilename = filename;
+    #endif
+    
+    // Write to file
+    std::ofstream file(actualFilename, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file for saving: " << actualFilename << std::endl;
+        return;
+    }
+    
+    file.write(reinterpret_cast<const char*>(&state), sizeof(SaveState));
+    file.close();
+    
+    if (file.good()) {
+        std::cout << "Complete save state written to: " << actualFilename << std::endl;
+    } else {
+        std::cerr << "Error: Failed to write save state to: " << actualFilename << std::endl;
+    }
+}
+
+bool SMBEngine::loadState(const std::string& filename) {
+    // Create appropriate filename based on platform
+    std::string actualFilename;
+    #ifdef __DJGPP__
+        // DOS 8.3 format - convert filename
+        std::string baseName = filename;
+        size_t dotPos = baseName.find_last_of('.');
+        if (dotPos != std::string::npos) {
+            baseName = baseName.substr(0, dotPos);
+        }
+        // Truncate to 8 characters max
+        if (baseName.length() > 8) {
+            baseName = baseName.substr(0, 8);
+        }
+        actualFilename = baseName + ".SAV";
+    #else
+        // Linux/Windows - use filename as-is
+        actualFilename = filename;
+    #endif
+
+    std::ifstream file(actualFilename, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file for loading: " << actualFilename << std::endl;
+        return false;
+    }
+    
+    SaveState state;
+    file.read(reinterpret_cast<char*>(&state), sizeof(SaveState));
+    
+    if (!file.good()) {
+        std::cerr << "Error: Failed to read save state from: " << actualFilename << std::endl;
+        file.close();
+        return false;
+    }
+    
+    file.close();
+    
+    // Validate header
+    if (strcmp(state.header, "SMBSAVE") != 0) {
+        std::cerr << "Error: Invalid save state file (bad header): " << actualFilename << std::endl;
+        return false;
+    }
+    
+    // Check version - only support version 2
+    if (state.version != 2) {
+        std::cerr << "Error: Unsupported save state version: " << state.version << std::endl;
+        return false;
+    }
+    
+    // Restore CPU registers
+    this->registerA = state.registerA;
+    this->registerX = state.registerX;
+    this->registerY = state.registerY;
+    this->registerS = state.registerS;
+    
+    // Restore CPU flags
+    this->c = state.c;
+    this->z = state.z;
+    this->n = state.n;
+    
+    // Restore global flags
+    ::i = state.i;
+    ::d = state.d;
+    ::b = state.b;
+    ::v = state.v;
+    
+    // Restore call stack
+    memcpy(this->returnIndexStack, state.returnIndexStack, sizeof(this->returnIndexStack));
+    this->returnIndexStackTop = state.returnIndexStackTop;
+    
+    // Restore 2KB RAM
+    memcpy(this->ram, state.ram, sizeof(this->ram));
+    
+    // Restore PPU state
+    if (ppu) {
+        ppu->setVRAM(state.nametable);
+        ppu->setOAM(state.oam);
+        ppu->setPaletteRAM(state.palette);  // This will invalidate the tile cache
+        
+        ppu->setControl(state.ppuCtrl);
+        ppu->setMask(state.ppuMask);
+        ppu->setStatus(state.ppuStatus);
+        ppu->setOAMAddr(state.oamAddress);
+        ppu->setScrollX(state.ppuScrollX);
+        ppu->setScrollY(state.ppuScrollY);
+        
+        ppu->setVRAMAddress(state.currentAddress);
+        ppu->setWriteToggle(state.writeToggle);
+        ppu->setDataBuffer(state.vramBuffer);
+        
+        std::cout << "Complete save state loaded from: " << actualFilename << std::endl;
+    } else {
+        std::cout << "Warning: PPU not available, partial state loaded from: " << actualFilename << std::endl;
+    }
+    
+    return true;
+}
