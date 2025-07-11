@@ -17,6 +17,30 @@ You do have to provide your own NES ROM (md5sum 811b027eaf99c2def7b933c5208636de
 * 🖥️ Cross-platform GUI interface for launching, configuration, and state feedback
 * 🧩 Modular design for hacking, debugging, or embedding
 * 🚀 Performance optimizations: APU and PPU caching in both versions, plus scaling cache in Allegro version
+* 💾 **Save States**: Complete game state preservation with F5-F8 hotkeys
+
+## Save State System
+
+All versions include a complete save state system that preserves the entire game state:
+
+### 💾 **Complete State Preservation**
+- CPU registers and flags
+- 2KB system RAM
+- Complete PPU state (VRAM, sprite memory, palettes)
+- PPU internal registers and scroll positions
+- No visual glitches on load - perfect restoration
+
+### 🎮 **Easy Controls**
+- **F5-F8**: Save to slots 1-4
+- **Shift+F5-F8**: Load from slots 1-4
+- Instant save/load with visual feedback
+- Cross-platform compatible save files
+
+### 📁 **File Formats**
+- **DOS Version**: SAVE1.SAV, SAVE2.SAV, SAVE3.SAV, SAVE4.SAV (8.3 format)
+- **GTK/SDL Versions**: save1.dat, save2.dat, save3.dat, save4.dat
+- ~5.5KB per save file (includes complete game state)
+- Version checking and corruption detection
 
 ## Performance Optimizations
 
@@ -49,8 +73,8 @@ The Allegro version (DOS: Allegro 4, Linux: Allegro 4 or 5) includes all the abo
 - Memory-efficient caching reduces CPU overhead by 2-5x
 
 ### 🖥️ **Platform-Specific Features**
-- **DOS**: Classic VGA Mode 13h (320x200) support, direct hardware access, keyboard-only input, Allegro 4
-- **Linux**: F11 fullscreen toggle, multiple resolution support, full joystick/gamepad support, Allegro 4 or 5
+- **DOS**: Classic VGA Mode 13h (320x200) support, direct hardware access, keyboard-only input, Allegro 4, unique FM Synthesis audio mode
+- **Linux**: F11 fullscreen toggle, multiple resolution support, full joystick/gamepad support, Allegro 4 or 5, FM Synthesis audio mode
 - **Both**: Configurable keyboard controls, save/load configurations
 
 ## Convert your legally owned NES ROM (YOU MUST LEGALLY OWN THE GAME AND RIP IT YOURSELF)
@@ -167,6 +191,13 @@ The DOS version builds in `msdos/build/dos/` and the Linux version builds in `ms
 - **Player 2**: WASD, F/G (A/B), O/P (Select/Start)
 - **System**: ESC (menu), P (pause), Ctrl+R (reset)
 - **Linux only**: F11 (fullscreen toggle)
+- **Allegro/DOS only**: Ctrl+M (toggle FM Synthesis/MIDI-style audio mode)
+
+### Save States
+- **F5-F8**: Save to slots 1-4
+- **Shift+F5-F8**: Load from slots 1-4
+- Works across all versions (DOS, GTK, SDL)
+- Instant save/load with complete game state preservation
 
 ### Configurable Controls
 Keyboard controls are fully configurable through the in-game menu system:
@@ -185,6 +216,14 @@ The Allegro version is specifically optimized for older hardware:
 
 ## Technical Details
 
+### Save State System
+- **CPU State**: All registers, flags, and call stack preserved
+- **Memory**: Complete 2KB RAM snapshot
+- **PPU State**: VRAM, sprite memory, palettes, scroll registers
+- **File Format**: Binary with header validation and version checking
+- **Compatibility**: Files work across different versions on same platform
+- **Size**: ~5.5KB per save file
+
 ### Input System
 - **Linux**: Full keyboard and joystick/gamepad support via Allegro 4 or 5
 - **DOS**: Keyboard-only input via Allegro 4 (joystick disabled due to DOSBox modern controller incompatibility)
@@ -194,6 +233,7 @@ The Allegro version is specifically optimized for older hardware:
 ### Audio System
 - **DOS**: 8-bit unsigned PCM, optimized for Sound Blaster compatibility
 - **Linux**: 16-bit signed PCM with fallback support
+- **Allegro/DOS Exclusive**: FM Synthesis mode (Ctrl+M) - converts NES audio to MIDI-style synthesis for unique retro sound experience
 - Configurable sample rates (11025Hz to 44100Hz)
 - Real-time audio streaming with underrun detection
 
