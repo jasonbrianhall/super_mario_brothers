@@ -96,7 +96,7 @@ uint8_t AllegroMIDIAudioSystem::frequencyToMIDI(double freq) {
 
 double AllegroMIDIAudioSystem::apuVolumeToAmplitude(uint8_t apuVol) {
     if (apuVol == 0) return 0.0;
-    return (apuVol / 15.0) * 0.4; // Moderate volume increase without distortion
+    return (apuVol / 15.0) * 0.7; // Moderate volume increase without distortion
 }
 
 // Generate NES waveforms with proper hardware emulation
@@ -162,7 +162,7 @@ double AllegroMIDIAudioSystem::generateNESWave(int channelIndex, double sampleRa
         }
     }
     
-    return output * 0.4; // Scale to prevent clipping
+    return output * 0.7; // Scale to prevent clipping
 }
 
 void AllegroMIDIAudioSystem::setNESNote(int channelIndex, double frequency, double amplitude, uint8_t duty) {
@@ -207,13 +207,13 @@ void AllegroMIDIAudioSystem::generateNESAudio(uint8_t* buffer, int length) {
         // Generate and mix each channel cleanly
         for (int ch = 0; ch < 4; ch++) {
             if (fmChannels[ch].active) {
-                mixedSample += generateNESWave(ch, sampleRate) * 0.25; // Back to conservative mixing
+                mixedSample += generateNESWave(ch, sampleRate) * 0.4; // Back to conservative mixing
             }
         }
         
         // Conservative mixing to avoid static
         // Convert to 8-bit unsigned (128 = silence)
-        int sample = (int)(mixedSample * 80.0) + 128; // Moderate gain increase
+        int sample = (int)(mixedSample * 120.0) + 128; // Moderate gain increase
         
         // Clamp to valid range
         if (sample < 0) sample = 0;
