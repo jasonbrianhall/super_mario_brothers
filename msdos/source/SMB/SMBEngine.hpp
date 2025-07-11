@@ -12,6 +12,10 @@
 
 // Save state structure for binary file format
 struct SaveState {
+    // Header for validation
+    char header[8];
+    uint32_t version;
+    
     // CPU Registers
     uint8_t registerA;
     uint8_t registerX;
@@ -36,9 +40,26 @@ struct SaveState {
     // 2KB RAM data
     uint8_t ram[0x800];
     
-    // Simple header for validation
-    char header[8];
-    uint32_t version;
+    // PPU State - matching your PPU class exactly
+    uint8_t nametable[2048];        // Your nametable array
+    uint8_t oam[256];               // Your sprite memory
+    uint8_t palette[32];            // Your palette data
+    
+    // PPU Registers - matching your PPU class
+    uint8_t ppuCtrl;                // $2000
+    uint8_t ppuMask;                // $2001
+    uint8_t ppuStatus;              // $2002
+    uint8_t oamAddress;             // $2003
+    uint8_t ppuScrollX;             // $2005
+    uint8_t ppuScrollY;             // $2005
+    
+    // PPU Internal State - matching your PPU class
+    uint16_t currentAddress;        // Your currentAddress
+    bool writeToggle;               // Your writeToggle
+    uint8_t vramBuffer;             // Your vramBuffer
+    
+    // Additional state for future expansion
+    uint8_t reserved[64];
 };
 
 class APU;

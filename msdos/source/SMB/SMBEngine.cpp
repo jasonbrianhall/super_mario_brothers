@@ -444,7 +444,7 @@ void SMBEngine::saveState(const std::string& filename) {
     
     // Set header and version
     strcpy(state.header, "SMBSAVE");
-    state.version = 1;
+    state.version = 2;  // Version 2 only - complete save state
     
     // Save CPU registers
     state.registerA = this->registerA;
@@ -469,6 +469,41 @@ void SMBEngine::saveState(const std::string& filename) {
     
     // Save 2KB RAM
     memcpy(state.ram, this->ram, sizeof(this->ram));
+    
+    // Save PPU state using the getter methods (uncomment after adding methods to PPU)
+    if (ppu) {
+        memcpy(state.nametable, ppu->getVRAM(), 2048);
+        memcpy(state.oam, ppu->getOAM(), 256);
+        memcpy(state.palette, ppu->getPaletteRAM(), 32);
+        
+        state.ppuCtrl = ppu->getControl();
+        state.ppuMask = ppu->getMask();
+        state.ppuStatus = ppu->getStatus();
+        state.oamAddress = ppu->getOAMAddr();
+        state.ppuScrollX = ppu->getScrollX();
+        state.ppuScrollY = ppu->getScrollY();
+        
+        state.currentAddress = ppu->getVRAMAddress();
+        state.writeToggle = ppu->getWriteToggle();
+        state.vramBuffer = ppu->getDataBuffer();
+    } else {
+        // Fallback if PPU is null
+        memset(state.nametable, 0, sizeof(state.nametable));
+        memset(state.oam, 0, sizeof(state.oam));
+        memset(state.palette, 0, sizeof(state.palette));
+        state.ppuCtrl = 0;
+        state.ppuMask = 0;
+        state.ppuStatus = 0;
+        state.oamAddress = 0;
+        state.ppuScrollX = 0;
+        state.ppuScrollY = 0;
+        state.currentAddress = 0;
+        state.writeToggle = false;
+        state.vramBuffer = 0;
+    }
+    
+    // Clear reserved space
+    memset(state.reserved, 0, sizeof(state.reserved));
     
     // Create appropriate filename based on platform
     std::string actualFilename;
@@ -500,7 +535,7 @@ void SMBEngine::saveState(const std::string& filename) {
     file.close();
     
     if (file.good()) {
-        std::cout << "Save state written to: " << actualFilename << std::endl;
+        std::cout << "Complete save state written to: " << actualFilename << std::endl;
     } else {
         std::cerr << "Error: Failed to write save state to: " << actualFilename << std::endl;
     }
@@ -549,8 +584,8 @@ bool SMBEngine::loadState(const std::string& filename) {
         return false;
     }
     
-    // Check version compatibility
-    if (state.version != 1) {
+    // Check version - only support version 2
+    if (state.version != 2) {
         std::cerr << "Error: Unsupported save state version: " << state.version << std::endl;
         return false;
     }
@@ -579,6 +614,27 @@ bool SMBEngine::loadState(const std::string& filename) {
     // Restore 2KB RAM
     memcpy(this->ram, state.ram, sizeof(this->ram));
     
-    std::cout << "Save state loaded from: " << actualFilename << std::endl;
+    // Restore PPU state
+    if (ppu) {
+        ppu->setVRAM(state.nametable);
+        ppu->setOAM(state.oam);
+        ppu->setPaletteRAM(state.palette);  // This will invalidate the tile cache
+        
+        ppu->setControl(state.ppuCtrl);
+        ppu->setMask(state.ppuMask);
+        ppu->setStatus(state.ppuStatus);
+        ppu->setOAMAddr(state.oamAddress);
+        ppu->setScrollX(state.ppuScrollX);
+        ppu->setScrollY(state.ppuScrollY);
+        
+        ppu->setVRAMAddress(state.currentAddress);
+        ppu->setWriteToggle(state.writeToggle);
+        ppu->setDataBuffer(state.vramBuffer);
+        
+        std::cout << "Complete save state loaded from: " << actualFilename << std::endl;
+    } else {
+        std::cout << "Warning: PPU not available, partial state loaded from: " << actualFilename << std::endl;
+    }
+    
     return true;
 }

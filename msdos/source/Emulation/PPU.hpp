@@ -36,7 +36,45 @@ public:
 
     void writeRegister(uint16_t address, uint8_t value);
     void render16(uint16_t* buffer);
+uint8_t* getVRAM() { return nametable; }
+uint8_t* getOAM() { return oam; }
+uint8_t* getPaletteRAM() { return palette; }
 
+uint8_t getControl() { return ppuCtrl; }
+uint8_t getMask() { return ppuMask; }
+uint8_t getStatus() { return ppuStatus; }
+uint8_t getOAMAddr() { return oamAddress; }
+uint8_t getScrollX() { return ppuScrollX; }
+uint8_t getScrollY() { return ppuScrollY; }
+
+uint16_t getVRAMAddress() { return currentAddress; }
+bool getWriteToggle() { return writeToggle; }
+uint8_t getDataBuffer() { return vramBuffer; }
+
+// Setter methods for load state
+void setVRAM(uint8_t* data) { memcpy(nametable, data, 2048); }
+void setOAM(uint8_t* data) { memcpy(oam, data, 256); }
+void setPaletteRAM(uint8_t* data) { 
+    memcpy(palette, data, 32); 
+    // Invalidate tile cache when palette changes
+    if (g_comprehensiveCacheInit) {
+        memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
+        for (int i = 0; i < 512 * 8; i++) {
+            g_comprehensiveCache[i].is_valid = false;
+        }
+    }
+}
+
+void setControl(uint8_t val) { ppuCtrl = val; }
+void setMask(uint8_t val) { ppuMask = val; }
+void setStatus(uint8_t val) { ppuStatus = val; }
+void setOAMAddr(uint8_t val) { oamAddress = val; }
+void setScrollX(uint8_t val) { ppuScrollX = val; }
+void setScrollY(uint8_t val) { ppuScrollY = val; }
+
+void setVRAMAddress(uint16_t val) { currentAddress = val; }
+void setWriteToggle(bool val) { writeToggle = val; }
+void setDataBuffer(uint8_t val) { vramBuffer = val; }
 
 private:
     SMBEngine& engine;
