@@ -1,6 +1,6 @@
 # Super Mario Brothers Virtualized
 
-This is not a remake. This is the original Super Mario Bros. running on a virtualized 6502 CPU with emulated PPU and APU behavior. Unlike cycle-accurate emulators, this virtualizer translates 6502 instructions to native code for maximum performance and won't slow down like a real NES when overwhelmed. Available in two versions:
+This is not a remake. This is the original Super Mario Bros. running on a virtualized 6502 CPU with emulated PPU and APU behavior. Unlike cycle-accurate emulators, this virtualizer translates 6502 instructions to native code for maximum performance and won't slow down like a real NES when overwhelmed. Available in three versions:
 
 1. **GTK3+/SDL Version**: Built with GTK3+ for configuration and controls and SDL for input and audio, includes Scaling, APU, and PPU caching optimizations
 2. **Allegro DOS/Linux Version**: DOS (Allegro 4 only) and Linux (Allegro 4 or 5) with extensive performance caching systems including scaling optimization
