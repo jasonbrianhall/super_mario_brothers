@@ -189,6 +189,13 @@ static void mainLoop()
     
     // Key state tracking for toggle functions
     static bool optimizedScalingKeyPressed = false;
+    static bool f11KeyPressed = false;
+    static bool fKeyPressed = false;
+    // Save/Load state key tracking - ADD THESE
+    static bool f5KeyPressed = false;
+    static bool f6KeyPressed = false;
+    static bool f7KeyPressed = false;
+    static bool f8KeyPressed = false;
     
     while (running)
     {
@@ -261,8 +268,87 @@ static void mainLoop()
             break;
         }
         
+        // Save/Load state handling (F5-F8 keys) - ADD THIS SECTION
+        bool shiftPressed = (keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]);
+        
+        // F5 - Save/Load State 1
+        if (keys[SDL_SCANCODE_F5] && !f5KeyPressed) {
+            if (shiftPressed) {
+                // Shift+F5 - Load State 1
+                if (engine.loadState("save1")) {
+                    printf("State 1 loaded\n");
+                } else {
+                    printf("Failed to load state 1\n");
+                }
+            } else {
+                // F5 - Save State 1
+                engine.saveState("save1");
+                printf("State 1 saved\n");
+            }
+            f5KeyPressed = true;
+        } else if (!keys[SDL_SCANCODE_F5]) {
+            f5KeyPressed = false;
+        }
+
+        // F6 - Save/Load State 2
+        if (keys[SDL_SCANCODE_F6] && !f6KeyPressed) {
+            if (shiftPressed) {
+                // Shift+F6 - Load State 2
+                if (engine.loadState("save2")) {
+                    printf("State 2 loaded\n");
+                } else {
+                    printf("Failed to load state 2\n");
+                }
+            } else {
+                // F6 - Save State 2
+                engine.saveState("save2");
+                printf("State 2 saved\n");
+            }
+            f6KeyPressed = true;
+        } else if (!keys[SDL_SCANCODE_F6]) {
+            f6KeyPressed = false;
+        }
+
+        // F7 - Save/Load State 3
+        if (keys[SDL_SCANCODE_F7] && !f7KeyPressed) {
+            if (shiftPressed) {
+                // Shift+F7 - Load State 3
+                if (engine.loadState("save3")) {
+                    printf("State 3 loaded\n");
+                } else {
+                    printf("Failed to load state 3\n");
+                }
+            } else {
+                // F7 - Save State 3
+                engine.saveState("save3");
+                printf("State 3 saved\n");
+            }
+            f7KeyPressed = true;
+        } else if (!keys[SDL_SCANCODE_F7]) {
+            f7KeyPressed = false;
+        }
+
+        // F8 - Save/Load State 4
+        if (keys[SDL_SCANCODE_F8] && !f8KeyPressed) {
+            if (shiftPressed) {
+                // Shift+F8 - Load State 4
+                if (engine.loadState("save4")) {
+                    printf("State 4 loaded\n");
+                } else {
+                    printf("Failed to load state 4\n");
+                }
+            } else {
+                // F8 - Save State 4
+                engine.saveState("save4");
+                printf("State 4 saved\n");
+            }
+            f8KeyPressed = true;
+        } else if (!keys[SDL_SCANCODE_F8]) {
+            f8KeyPressed = false;
+        }
+        // END SAVE/LOAD STATE SECTION
+        
         // Toggle fullscreen with F11 (with proper key state tracking)
-        static bool f11KeyPressed = false;
         if (keys[SDL_SCANCODE_F11] && !f11KeyPressed) {
             // Get current fullscreen state
             Uint32 windowFlags = SDL_GetWindowFlags(window);
@@ -281,7 +367,6 @@ static void mainLoop()
         }
         
         // Keep F key for legacy fullscreen (always switches to fullscreen)
-        static bool fKeyPressed = false;
         if (keys[SDL_SCANCODE_F] && !fKeyPressed) {
             SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
             printf("F key: Switched to fullscreen mode\n");
