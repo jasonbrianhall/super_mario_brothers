@@ -1,11 +1,8 @@
 #include <cstring>
-
 #include "../Configuration.hpp"
-
 #include "../Emulation/APU.hpp"
 #include "../Emulation/Controller.hpp"
 #include "../Emulation/PPU.hpp"
-
 #include "SMBEngine.hpp"
 
 #define DATA_STORAGE_OFFSET 0x8000 // Starting address for storing constant data
@@ -440,4 +437,148 @@ void SMBEngine::debugAudioChannels()
     if (apu) {
         apu->debugAudio();
     }
+}
+
+void SMBEngine::saveState(const std::string& filename) {
+    SaveState state;
+    
+    // Set header and version
+    strcpy(state.header, "SMBSAVE");
+    state.version = 1;
+    
+    // Save CPU registers
+    state.registerA = this->registerA;
+    state.registerX = this->registerX;
+    state.registerY = this->registerY;
+    state.registerS = this->registerS;
+    
+    // Save CPU flags
+    state.c = this->c;
+    state.z = this->z;
+    state.n = this->n;
+    
+    // Save global flags
+    state.i = ::i;
+    state.d = ::d;
+    state.b = ::b;
+    state.v = ::v;
+    
+    // Save call stack
+    memcpy(state.returnIndexStack, this->returnIndexStack, sizeof(this->returnIndexStack));
+    state.returnIndexStackTop = this->returnIndexStackTop;
+    
+    // Save 2KB RAM
+    memcpy(state.ram, this->ram, sizeof(this->ram));
+    
+    // Create appropriate filename based on platform
+    std::string actualFilename;
+    #ifdef __DJGPP__
+        // DOS 8.3 format - convert filename
+        std::string baseName = filename;
+        size_t dotPos = baseName.find_last_of('.');
+        if (dotPos != std::string::npos) {
+            baseName = baseName.substr(0, dotPos);
+        }
+        // Truncate to 8 characters max
+        if (baseName.length() > 8) {
+            baseName = baseName.substr(0, 8);
+        }
+        actualFilename = baseName + ".SAV";
+    #else
+        // Linux/Windows - use filename as-is
+        actualFilename = filename;
+    #endif
+    
+    // Write to file
+    std::ofstream file(actualFilename, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file for saving: " << actualFilename << std::endl;
+        return;
+    }
+    
+    file.write(reinterpret_cast<const char*>(&state), sizeof(SaveState));
+    file.close();
+    
+    if (file.good()) {
+        std::cout << "Save state written to: " << actualFilename << std::endl;
+    } else {
+        std::cerr << "Error: Failed to write save state to: " << actualFilename << std::endl;
+    }
+}
+
+bool SMBEngine::loadState(const std::string& filename) {
+    // Create appropriate filename based on platform
+    std::string actualFilename;
+    #ifdef __DJGPP__
+        // DOS 8.3 format - convert filename
+        std::string baseName = filename;
+        size_t dotPos = baseName.find_last_of('.');
+        if (dotPos != std::string::npos) {
+            baseName = baseName.substr(0, dotPos);
+        }
+        // Truncate to 8 characters max
+        if (baseName.length() > 8) {
+            baseName = baseName.substr(0, 8);
+        }
+        actualFilename = baseName + ".SAV";
+    #else
+        // Linux/Windows - use filename as-is
+        actualFilename = filename;
+    #endif
+
+    std::ifstream file(actualFilename, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Error: Could not open file for loading: " << actualFilename << std::endl;
+        return false;
+    }
+    
+    SaveState state;
+    file.read(reinterpret_cast<char*>(&state), sizeof(SaveState));
+    
+    if (!file.good()) {
+        std::cerr << "Error: Failed to read save state from: " << actualFilename << std::endl;
+        file.close();
+        return false;
+    }
+    
+    file.close();
+    
+    // Validate header
+    if (strcmp(state.header, "SMBSAVE") != 0) {
+        std::cerr << "Error: Invalid save state file (bad header): " << actualFilename << std::endl;
+        return false;
+    }
+    
+    // Check version compatibility
+    if (state.version != 1) {
+        std::cerr << "Error: Unsupported save state version: " << state.version << std::endl;
+        return false;
+    }
+    
+    // Restore CPU registers
+    this->registerA = state.registerA;
+    this->registerX = state.registerX;
+    this->registerY = state.registerY;
+    this->registerS = state.registerS;
+    
+    // Restore CPU flags
+    this->c = state.c;
+    this->z = state.z;
+    this->n = state.n;
+    
+    // Restore global flags
+    ::i = state.i;
+    ::d = state.d;
+    ::b = state.b;
+    ::v = state.v;
+    
+    // Restore call stack
+    memcpy(this->returnIndexStack, state.returnIndexStack, sizeof(this->returnIndexStack));
+    this->returnIndexStackTop = state.returnIndexStackTop;
+    
+    // Restore 2KB RAM
+    memcpy(this->ram, state.ram, sizeof(this->ram));
+    
+    std::cout << "Save state loaded from: " << actualFilename << std::endl;
+    return true;
 }

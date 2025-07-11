@@ -1864,6 +1864,102 @@ void AllegroMainWindow::handleGameInputNoEsc()
     if (!key[KEY_M]) {
         mPressed = false;
     }
+
+static bool f5Pressed = false;
+static bool f6Pressed = false;
+static bool f7Pressed = false;
+static bool f8Pressed = false;
+
+if (key[KEY_F5] && !f5Pressed) {
+    if (smbEngine) {
+        if (key[KEY_LCONTROL] || key[KEY_RCONTROL]) {
+            // Ctrl+F5 - Load State 1
+            if (smbEngine->loadState("save1")) {
+                setStatusMessage("State 1 loaded");
+            } else {
+                setStatusMessage("Failed to load state 1");
+            }
+        } else {
+            // F5 - Save State 1
+            smbEngine->saveState("save1");
+            setStatusMessage("State 1 saved");
+        }
+    }
+    f5Pressed = true;
+    return;
+}
+if (!key[KEY_F5]) {
+    f5Pressed = false;
+}
+
+// F6 - Save/Load State 2
+if (key[KEY_F6] && !f6Pressed) {
+    if (smbEngine) {
+        if (key[KEY_LCONTROL] || key[KEY_RCONTROL]) {
+            // Ctrl+F6 - Load State 2
+            if (smbEngine->loadState("save2")) {
+                setStatusMessage("State 2 loaded");
+            } else {
+                setStatusMessage("Failed to load state 2");
+            }
+        } else {
+            // F6 - Save State 2
+            smbEngine->saveState("save2");
+            setStatusMessage("State 2 saved");
+        }
+    }
+    f6Pressed = true;
+    return;
+}
+if (!key[KEY_F6]) {
+    f6Pressed = false;
+}
+
+// F7 - Save/Load State 3
+if (key[KEY_F7] && !f7Pressed) {
+    if (smbEngine) {
+        if (key[KEY_LCONTROL] || key[KEY_RCONTROL]) {
+            // Ctrl+F7 - Load State 3
+            if (smbEngine->loadState("save3")) {
+                setStatusMessage("State 3 loaded");
+            } else {
+                setStatusMessage("Failed to load state 3");
+            }
+        } else {
+            // F7 - Save State 3
+            smbEngine->saveState("save3");
+            setStatusMessage("State 3 saved");
+        }
+    }
+    f7Pressed = true;
+    return;
+}
+if (!key[KEY_F7]) {
+    f7Pressed = false;
+}
+
+// F8 - Save/Load State 4
+if (key[KEY_F8] && !f8Pressed) {
+    if (smbEngine) {
+        if (key[KEY_LCONTROL] || key[KEY_RCONTROL]) {
+            // Ctrl+F8 - Load State 4
+            if (smbEngine->loadState("save4")) {
+                setStatusMessage("State 4 loaded");
+            } else {
+                setStatusMessage("Failed to load state 4");
+            }
+        } else {
+            // F8 - Save State 4
+            smbEngine->saveState("save4");
+            setStatusMessage("State 4 saved");
+        }
+    }
+    f8Pressed = true;
+    return;
+}
+if (!key[KEY_F8]) {
+    f8Pressed = false;
+}
     
     // FIXED: Check for audio debug (N key) - use SMBEngine methods instead of getAPU()
     static bool nPressed = false;

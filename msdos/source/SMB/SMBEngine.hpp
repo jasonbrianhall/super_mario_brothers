@@ -3,10 +3,43 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <fstream>
+#include <iostream>
 
 #include "../Emulation/MemoryAccess.hpp"
-
 #include "SMBDataPointers.hpp"
+
+
+// Save state structure for binary file format
+struct SaveState {
+    // CPU Registers
+    uint8_t registerA;
+    uint8_t registerX;
+    uint8_t registerY;
+    uint8_t registerS;
+    
+    // CPU Flags
+    bool c;  // Carry flag
+    bool z;  // Zero flag
+    bool n;  // Negative flag
+    
+    // Global flags (declared as extern in your code)
+    uint8_t i;  // Interrupt disable
+    uint8_t d;  // Decimal mode
+    uint8_t b;  // Break command
+    uint8_t v;  // Overflow flag
+    
+    // Call stack state
+    int returnIndexStack[100];
+    int returnIndexStackTop;
+    
+    // 2KB RAM data
+    uint8_t ram[0x800];
+    
+    // Simple header for validation
+    char header[8];
+    uint32_t version;
+};
 
 class APU;
 class Controller;
@@ -103,6 +136,10 @@ public:
      * Print debug information about audio channels.
      */
     void debugAudioChannels();
+
+    void saveState(const std::string& filename);
+    bool loadState(const std::string& filename);
+
 
 private:
     // NES Emulation subsystems:
