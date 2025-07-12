@@ -7644,7 +7644,7 @@ CODE_E077:
 
 ;MARIO GAME OVER
 MarioGameOverString_E078:
-DB @StringEnd-@StringStart|$10		;really wish I could use a macro, but alas, the macro labels are global
+DB $1F		;really wish I could use a macro, but alas, the macro labels are global
 @StringStart:
 	DB "MARIO GAME OVER"			;but hey, you can now directly edit the text without referencing game's character mapping. pretty cool, huh?
 @StringEnd:
@@ -7652,21 +7652,21 @@ DB @StringEnd-@StringStart|$10		;really wish I could use a macro, but alas, the 
 ;if both players are dead in 2P mode or 1 player in 1P
 ;   GAME OVER   
 GameOverString_E088:
-DB @StringEnd-@StringStart|$10
+DB $1F
 @StringStart:
 	DB "   GAME OVER   "
 @StringEnd:
 
 ;LUIGI GAME OVER
 LuigiGameOverString_E098:
-DB @StringEnd-@StringStart|$10
+DB $1F
 @StringStart:
 	DB "LUIGI GAME OVER"
 @StringEnd:
 
 ;Empty string
 EmptyString_E0A8:
-DB @StringEnd-@StringStart|$10
+DB $1F
 @StringStart:
 	DB "               "
 @StringEnd:
@@ -8546,13 +8546,13 @@ CODE_E554:
 
 ;various strings for coin counting after TEST YOUR SKILL!
 MarioString_E568:
-DB @StringEnd-@StringStart|$10
+DB $1F
 @StringStart:
 	DB "MARIO"
 @StringEnd:
 
 LuigiString_E56E:
-DB @StringEnd-@StringStart|$10
+DB $1F
 @StringStart:
 	DB "LUIGI"
 @StringEnd:
@@ -8577,28 +8577,28 @@ DB $88,GFX_Player_Standing+4,OAMProp_XFlip|OAMProp_Palette1,$28
 
 ;PERFECT!! (!! is a single character)
 PerfectString_E5A4:
-DB @StringEnd-@StringStart|$10
+DB $1F
 @StringStart:
 	DB "PERFECT",TwoExclamationMarks
 @StringEnd:
 
 ;5000PTS'
 DATA_E5AD:
-DB @StringEnd-@StringStart|$10
+DB $1F
 @StringStart:
 	DB "5000PTS'"
 @StringEnd:
 
 ;3000PTS'
 DATA_E5B6:
-DB @StringEnd-@StringStart|$10
+DB $1F
 @StringStart:
 	DB "3000PTS'"
 @StringEnd:
 
 ;     NO BONUS.
 DATA_E5BF:
-DB @StringEnd-@StringStart|$10
+DB $1F
 @StringStart:
 	DB "     NO BONUS."
 @StringEnd:
@@ -8827,7 +8827,7 @@ DB $D8,$BA,CoinSpinningAnimCycle_Start+4
 
 ;X 800 string
 DATA_E703:
-DB @StringEnd-@StringStart|$10
+DB $1F
 @StringStart:
 	DB "X 800"
 @StringEnd:
@@ -13241,3 +13241,4 @@ DB $84,$84,$84,$84,$44,$44,$44,$05
    DW NMI_C07D
    DW RESET_C000
    DW RESET_C000
+
