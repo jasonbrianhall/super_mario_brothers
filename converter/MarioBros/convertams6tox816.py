@@ -132,6 +132,9 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
         # Pattern to match string length calculations like: DB @StringEnd-@StringStart|$10
         string_length_pattern = r'(DB|\.byte)\s+@StringEnd-@StringStart\|\$([0-9A-Fa-f]+)'
         
+        # Pattern to match DB statements with expressions
+        db_expressions_pattern = r'(DB|\.byte)\s+([^;\n]+)'
+        
         def replace_multiplication(match):
             var_name = match.group(1)
             base_addr = match.group(2) 
@@ -340,6 +343,105 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
                 # Leave unchanged for next pass
                 return match.group(0)
         
+        def replace_db_expressions(match):
+            """Replace expressions within DB statements"""
+            directive = match.group(1)  # DB
+            values_str = match.group(2)  # Everything after DB
+            
+            # Split by commas and process each value
+            values = [v.strip() for v in values_str.split(',')]
+            processed_values = []
+            
+            for value in values:
+                original_value = value
+                
+                # Skip if it's already a hex value, decimal, or simple string
+                if (value.startswith('$') and not any(op in value for op in ['+', '-', '|', '&', '^', '*'])) or \
+                   (value.isdigit()) or \
+                   (value.startswith('"') and value.endswith('"')):
+                    processed_values.append(value)
+                    continue
+                
+                # Handle variable+constant arithmetic like GFX_Player_Standing+1
+                var_plus_const_match = re.match(r'(\w+)\+(\$?[0-9A-Fa-f]+)', value)
+                if var_plus_const_match:
+                    var_name = var_plus_const_match.group(1)
+                    offset_str = var_plus_const_match.group(2)
+                    
+                    # Parse offset (could be hex or decimal)
+                    if offset_str.startswith('$'):
+                        offset = int(offset_str[1:], 16)
+                    else:
+                        offset = int(offset_str)
+                    
+                    var_val = find_variable_value(var_name, content)
+                    if var_val is not None:
+                        result = var_val + offset
+                        value = f'${result:02X}'
+                    else:
+                        if is_final_pass:
+                            value = f'{original_value} ; TODO: Calculate manually'
+                
+                # Handle bitwise OR like OAMProp_XFlip|OAMProp_Palette0
+                elif '|' in value and not value.startswith('$'):
+                    or_parts = value.split('|')
+                    if len(or_parts) == 2:
+                        left_var = or_parts[0].strip()
+                        right_var = or_parts[1].strip()
+                        
+                        left_val = find_variable_value(left_var, content)
+                        right_val = find_variable_value(right_var, content)
+                        
+                        if left_val is not None and right_val is not None:
+                            result = left_val | right_val
+                            value = f'${result:02X}'
+                        else:
+                            if is_final_pass:
+                                value = f'{original_value} ; TODO: Calculate manually'
+                
+                # Handle variable-constant arithmetic like GFX_Player_Standing-1
+                elif '-' in value and not value.startswith('$') and '@' not in value:
+                    var_minus_const_match = re.match(r'(\w+)-(\$?[0-9A-Fa-f]+)', value)
+                    if var_minus_const_match:
+                        var_name = var_minus_const_match.group(1)
+                        offset_str = var_minus_const_match.group(2)
+                        
+                        # Parse offset (could be hex or decimal)
+                        if offset_str.startswith('$'):
+                            offset = int(offset_str[1:], 16)
+                        else:
+                            offset = int(offset_str)
+                        
+                        var_val = find_variable_value(var_name, content)
+                        if var_val is not None:
+                            result = var_val - offset
+                            value = f'${result:02X}'
+                        else:
+                            if is_final_pass:
+                                value = f'{original_value} ; TODO: Calculate manually'
+                
+                # Handle bitwise AND like SomeVar&$0F
+                elif '&' in value and not value.startswith('$'):
+                    and_parts = value.split('&')
+                    if len(and_parts) == 2:
+                        var_name = and_parts[0].strip()
+                        mask_str = and_parts[1].strip()
+                        
+                        if mask_str.startswith('$'):
+                            mask_val = int(mask_str[1:], 16)
+                            var_val = find_variable_value(var_name, content)
+                            
+                            if var_val is not None:
+                                result = var_val & mask_val
+                                value = f'${result:02X}'
+                            else:
+                                if is_final_pass:
+                                    value = f'{original_value} ; TODO: Calculate manually'
+                
+                processed_values.append(value)
+            
+            return f'{directive} {",".join(processed_values)}'
+        
         # Apply all conversions
         new_content = content
         
@@ -369,6 +471,9 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
         
         # Apply the string length conversion
         new_content = re.sub(string_length_pattern, replace_string_length, new_content)
+        
+        # Apply the DB expressions conversion - this handles your specific case
+        new_content = re.sub(db_expressions_pattern, replace_db_expressions, new_content)
         
         return new_content
     

@@ -960,17 +960,17 @@ MIRRORING = 1					;vertical mirroring (supposedly)
 
   REGION = 0
 
-   DB "NES", $1A
+   DB "NES",$1A
 
-   DB $01					;16KB PRG space (for code) = 1
+   DB $01;16KB PRG space (for code) = 1
 
-   DB $01					;8KB CHR space (for GFX) = 1
-   DB $01		;Mapper = 0 and Mirroring is (supposedly) vertical
-   DB $00				;Mapper is still NROM, and the system is NES (not PlayChoice-10)
+   DB $01;8KB CHR space (for GFX) = 1
+   DB $01;Mapper = 0 and Mirroring is (supposedly) vertical
+   DB $00;Mapper is still NROM, and the system is NES (not PlayChoice-10)
 
-   DB $00					;PRG RAM-Size (useless)
-   DB REGION					;the only thing that matters - TV System (NTSC or PAL)
-   DB $00,$00,$00,$00,$00,$00		;the rest don't matter for this game
+   DB $00;PRG RAM-Size (useless)
+   DB REGION;the only thing that matters - TV System (NTSC or PAL)
+   DB $00,$00,$00,$00,$00,$00;the rest don't matter for this game
 ; ===== End of iNES_Header.asm =====
 
 
@@ -2138,7 +2138,7 @@ CODE_C5A3:
    JSR CODE_D56E				;spawn enemy entities if needed
    JSR CODE_D202				;handle bumping tiles
    JSR CODE_D301				;apply POW's screen shake if needed
-   JSR HandlePlayerEntities_C5DB		;run players coding
+   JSR HandlePlayerEntities_C5DB ;run players coding
    JSR CODE_C66A				;process entities (other than player)
    JSR CODE_E783				;transfer entities per-platform counters
    JSR CODE_EA31				;handle reflecting fireball
@@ -2964,7 +2964,7 @@ CODE_C9E6:
 CODE_C9F1:
    LDA CurrentEntity_TimerStorage		;
    STA CurrentEntity_UpdateTimer		;
-   JMP CODE_C9DB				;
+   JMP CODE_C9DB ;
 
 CODE_C9F8:
    CMP #Entity_ID_Fighterfly			;is it fighterfly?
@@ -7052,7 +7052,7 @@ CODE_DD9A:
    JMP CODE_DDB6				;
 
 ComboScoreValues_DDB0:
-DB $08,$16,$24,$32				;800, 1600, 2400 and 3200 respectively.
+DB $08,$16,$24,$32;800, 1600, 2400 and 3200 respectively.
 
    LDA #$08					;unused? would make it so only 800 score is awarded
 
@@ -7644,8 +7644,8 @@ CODE_E077:
 
 ;MARIO GAME OVER
 MarioGameOverString_E078:
-DB $1F		;really wish I could use a macro, but alas, the macro labels are global
-DB "MARIO GAME OVER"			;but hey, you can now directly edit the text without referencing game's character mapping. pretty cool, huh?
+DB $1F;really wish I could use a macro, but alas, the macro labels are global
+DB "MARIO GAME OVER";but hey, you can now directly edit the text without referencing game's character mapping. pretty cool, huh?
 
 ;if both players are dead in 2P mode or 1 player in 1P
 ;   GAME OVER   
@@ -7713,7 +7713,7 @@ DB $06,$03,$02,$01
 DB $07,$03,$02,$01
 DB $08,$03,$02,$02
 DB $09,$03,$02,$02
-DB $AA,$04,$15					;from this phase, timer is set to 15 sec (although it shows 20 for a few frames, before snapping to the intended value)
+DB $AA,$04,$15;from this phase, timer is set to 15 sec (although it shows 20 for a few frames, before snapping to the intended value)
 
 DB $0A,$03,$03,$02
 DB $07,$03,$03,$02
@@ -8548,20 +8548,6 @@ DB $1F
 ;init mario and luigi sprite tiles, for after TEST YOUR SKILL! screen
 DATA_E574:
 ;mario
-DB $40,GFX_Player_Standing+1,OAMProp_XFlip|OAMProp_Palette0,$20
-DB $40,GFX_Player_Standing,OAMProp_XFlip|OAMProp_Palette0,$28
-DB $48,GFX_Player_Standing+3,OAMProp_XFlip|OAMProp_Palette0,$20
-DB $48,GFX_Player_Standing+2,OAMProp_XFlip|OAMProp_Palette0,$28
-DB $50,GFX_Player_Standing+5,OAMProp_XFlip|OAMProp_Palette0,$20
-DB $50,GFX_Player_Standing+4,OAMProp_XFlip|OAMProp_Palette0,$28
-
-;luigi
-DB $78,GFX_Player_Standing+1,OAMProp_XFlip|OAMProp_Palette1,$20
-DB $78,GFX_Player_Standing,OAMProp_XFlip|OAMProp_Palette1,$28
-DB $80,GFX_Player_Standing+3,OAMProp_XFlip|OAMProp_Palette1,$20
-DB $80,GFX_Player_Standing+2,OAMProp_XFlip|OAMProp_Palette1,$28
-DB $88,GFX_Player_Standing+5,OAMProp_XFlip|OAMProp_Palette1,$20
-DB $88,GFX_Player_Standing+4,OAMProp_XFlip|OAMProp_Palette1,$28
 
 ;PERFECT!! (!! is a single character)
 PerfectString_E5A4:
@@ -8761,36 +8747,36 @@ CODE_E6B8:
 
 ;floating coin init values
 SpawnInitValues_FloatingCoin_E6C5:
-DB $01					;CurrentEntity_ActiveFlag (obviously active)
-DB Entity_MovementBits_MovingRight		;CurrentEntity_MovementBits
-DB $03					;CurrentEntity_TimerStorage
-DB $00					;CurrentEntity_UpdateTimer
-DB CoinSpinningAnimCycle_Start		;CurrentEntity_AnimationPointer
-DB Entity_Draw_8x16				;CurrentEntity_DrawMode
-DB GFX_Coin_Frame3				;CurrentEntity_DrawTile
-DB OAMProp_Palette2				;CurrentEntity_TileProps
-DB $00					;CurrentEntity_YPos (overwritten afterwards)
-DB $00					;CurrentEntity_XPos (overwritten afterwards)
-DB $00					;CurrentEntity_OAMOffset (overwritten afterwards)
-DB $00					;CurrentEntity_PaletteOffset (does not affect coin)
+DB $01;CurrentEntity_ActiveFlag (obviously active)
+DB Entity_MovementBits_MovingRight;CurrentEntity_MovementBits
+DB $03;CurrentEntity_TimerStorage
+DB $00;CurrentEntity_UpdateTimer
+DB CoinSpinningAnimCycle_Start;CurrentEntity_AnimationPointer
+DB Entity_Draw_8x16;CurrentEntity_DrawMode
+DB GFX_Coin_Frame3;CurrentEntity_DrawTile
+DB OAMProp_Palette2;CurrentEntity_TileProps
+DB $00;CurrentEntity_YPos (overwritten afterwards)
+DB $00;CurrentEntity_XPos (overwritten afterwards)
+DB $00;CurrentEntity_OAMOffset (overwritten afterwards)
+DB $00;CurrentEntity_PaletteOffset (does not affect coin)
 DW $0000					;CurrentEntity_UpdateDataPointer (null by default)
-DB $00					;CurrentEntity_CurrentPlatform
-DB Entity_ID_FloatingCoin			;CurrentEntity_ID
+DB $00;CurrentEntity_CurrentPlatform
+DB Entity_ID_FloatingCoin;CurrentEntity_ID
 
-DB $00					;CurrentEntity_BumpedStateAndBits
-DB $00 					;CurrentEntity_MiscRAM
-DB $00					;CurrentEntity_PipeDir
-DB $00					;CurrentEntity_XSpeedTableOffset (floating coin does not move)
-DB $00					;CurrentEntity_XSpeedTableEntry (floating coin does not move)
-DB $00					;CurrentEntity_XSpeed (floating coin does not move)
-DB $00					;CurrentEntity_XSpeedAlterTimer
-DB $00					;CurrentEntity_XSpeedModifier
-DB $00					;CurrentEntity_TurningCounter
-DB $00					;CurrentEntity_DefeatedState
-DB $00,$00					;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players)
-DB $00					;CurrentEntity_WhichPlayerInteracted
-DB $00					;CurrentEntity_TileAtBottomVRAMPos
-DB $0F,$0F					;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
+DB $00;CurrentEntity_BumpedStateAndBits
+DB $00;CurrentEntity_MiscRAM
+DB $00;CurrentEntity_PipeDir
+DB $00;CurrentEntity_XSpeedTableOffset (floating coin does not move)
+DB $00;CurrentEntity_XSpeedTableEntry (floating coin does not move)
+DB $00;CurrentEntity_XSpeed (floating coin does not move)
+DB $00;CurrentEntity_XSpeedAlterTimer
+DB $00;CurrentEntity_XSpeedModifier
+DB $00;CurrentEntity_TurningCounter
+DB $00;CurrentEntity_DefeatedState
+DB $00,$00;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players)
+DB $00;CurrentEntity_WhichPlayerInteracted
+DB $00;CurrentEntity_TileAtBottomVRAMPos
+DB $0F,$0F;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
 
 ;set each coin's coordinates and starting animation index (so they all look differently)
 FloatingCoinSpawnCoordinatesAndAnim_E6E5:
@@ -9022,8 +9008,8 @@ CODE_E830:
    STA Entity_WavyFireball_State		;
    JSR EnableFireballSound_E96D			;happy fireball noises
 
-   LDX #<DATA_EFDB				;start appearing in
-   LDY #>DATA_EFDB				;
+   LDX #<DATA_EFDB ;start appearing in
+   LDY #>DATA_EFDB ;
 
 CODE_E842:
    STX Entity_WavyFireball_UpdateDataPointer	;
@@ -9848,36 +9834,36 @@ CODE_ECBD:
 
 ;init entity values for freezie
 DATA_ECCC:
-DB $01					;CurrentEntity_ActiveFlag (obviously active)
-DB $00					;CurrentEntity_MovementBits
-DB $02					;CurrentEntity_TimerStorage
-DB $00					;CurrentEntity_UpdateTimer
-DB FreezieMovementAnimCycle_Start		;CurrentEntity_AnimationPointer
-DB Entity_Draw_8x16				;CurrentEntity_DrawMode
-DB GFX_Freezie_Move1				;CurrentEntity_DrawTile
-DB OAMProp_Palette3|OAMProp_BGPriority	;CurrentEntity_TileProps (since these enemies appear out of the pipe, they go behind the pipe)
-DB $00					;CurrentEntity_YPos (overwritten afterwards)
-DB $00					;CurrentEntity_XPos (overwritten afterwards)
-DB $00					;CurrentEntity_OAMOffset (overwritten afterwards)
-DB $00					;CurrentEntity_PaletteOffset (has no effect on freezie)
+DB $01;CurrentEntity_ActiveFlag (obviously active)
+DB $00;CurrentEntity_MovementBits
+DB $02;CurrentEntity_TimerStorage
+DB $00;CurrentEntity_UpdateTimer
+DB FreezieMovementAnimCycle_Start;CurrentEntity_AnimationPointer
+DB Entity_Draw_8x16;CurrentEntity_DrawMode
+DB GFX_Freezie_Move1;CurrentEntity_DrawTile
+DB $23;CurrentEntity_TileProps (since these enemies appear out of the pipe, they go behind the pipe)
+DB $00;CurrentEntity_YPos (overwritten afterwards)
+DB $00;CurrentEntity_XPos (overwritten afterwards)
+DB $00;CurrentEntity_OAMOffset (overwritten afterwards)
+DB $00;CurrentEntity_PaletteOffset (has no effect on freezie)
 DW DATA_F64C					;CurrentEntity_UpdateDataPointer
-DB $00					;CurrentEntity_CurrentPlatform
-DB Entity_ID_Freezie				;CurrentEntity_ID
+DB $00;CurrentEntity_CurrentPlatform
+DB Entity_ID_Freezie;CurrentEntity_ID
 
-DB $00					;CurrentEntity_BumpedStateAndBits
-DB $00 					;CurrentEntity_MiscRAM
-DB $01					;CurrentEntity_PipeDir
-DB FreezieXMovementData_Start		;CurrentEntity_XSpeedTableOffset
-DB $02					;CurrentEntity_XSpeedTableEntry
-DB $01					;CurrentEntity_XSpeed
-DB $00					;CurrentEntity_XSpeedAlterTimer
-DB $00					;CurrentEntity_XSpeedModifier
-DB $00					;CurrentEntity_TurningCounter
-DB $00					;CurrentEntity_DefeatedState
-DB $00,$00					;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players and reflecting fireballs)
-DB $00					;CurrentEntity_WhichPlayerInteracted
-DB $00					;CurrentEntity_TileAtBottomVRAMPos
-DB $04,$03					;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
+DB $00;CurrentEntity_BumpedStateAndBits
+DB $00;CurrentEntity_MiscRAM
+DB $01;CurrentEntity_PipeDir
+DB FreezieXMovementData_Start;CurrentEntity_XSpeedTableOffset
+DB $02;CurrentEntity_XSpeedTableEntry
+DB $01;CurrentEntity_XSpeed
+DB $00;CurrentEntity_XSpeedAlterTimer
+DB $00;CurrentEntity_XSpeedModifier
+DB $00;CurrentEntity_TurningCounter
+DB $00;CurrentEntity_DefeatedState
+DB $00,$00;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players and reflecting fireballs)
+DB $00;CurrentEntity_WhichPlayerInteracted
+DB $00;CurrentEntity_TileAtBottomVRAMPos
+DB $04,$03;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
 
 CODE_ECEC:
    LDA CurrentEntity_ID				;
@@ -10122,20 +10108,20 @@ CODE_EE4C:
 
 ;Freezie platform freeze pointers
 DATA_EE53:
-DB >DATA_F763,<DATA_F763			;$F7,$63
-DB >DATA_F76D,<DATA_F76D			;$F7,$6D
-DB >DATA_F77B,<DATA_F77B			;$F7,$7B
-DB >DATA_F78B,<DATA_F78B			;$F7,$8B
+DB >DATA_F763,<DATA_F763;$F7,$63
+DB >DATA_F76D,<DATA_F76D;$F7,$6D
+DB >DATA_F77B,<DATA_F77B;$F7,$7B
+DB >DATA_F78B,<DATA_F78B;$F7,$8B
 DB VRAMWriteCommand_Stop
 
-DB >DATA_F79B,<DATA_F79B			;$F7,$9B
-DB >DATA_F7A4,<DATA_F7A4			;$F7,$A4
-DB >DATA_F7B3,<DATA_F7B3			;$F7,$B3
+DB >DATA_F79B,<DATA_F79B;$F7,$9B
+DB >DATA_F7A4,<DATA_F7A4;$F7,$A4
+DB >DATA_F7B3,<DATA_F7B3;$F7,$B3
 DB VRAMWriteCommand_Stop
 
-DB >DATA_F7C2,<DATA_F7C2			;$F7,$C2
-DB >DATA_F7CB,<DATA_F7CB			;$F7,$CB
-DB >DATA_F7DA,<DATA_F7DA			;$F7,$DA
+DB >DATA_F7C2,<DATA_F7C2;$F7,$C2
+DB >DATA_F7CB,<DATA_F7CB;$F7,$CB
+DB >DATA_F7DA,<DATA_F7DA;$F7,$DA
 DB VRAMWriteCommand_Stop
 
 ;turn tiles into frozen ones (runs from NMI!)
@@ -10349,12 +10335,12 @@ DB $A7,FreezeEffect_Tile1,FreezeEffect_Property|OAMProp_XFlip,$D8
 
 ;Sprite tile values for each score value.
 DATA_EF97:
-DB Score_8_Tile				;8 for 800
-DB Score_16_Tile				;16 for 1600
-DB Score_24_Tile				;24 for 2400
-DB Score_32_Tile				;32 for 3200
-DB Score_2_Tile				;2 for 200 (unused)
-DB Score_5_Tile				;5 for 500
+DB Score_8_Tile;8 for 800
+DB Score_16_Tile;16 for 1600
+DB Score_24_Tile;24 for 2400
+DB Score_32_Tile;32 for 3200
+DB Score_2_Tile;2 for 200 (unused)
+DB Score_5_Tile;5 for 500
 
 ;reflecting fireball appearing effect animation table
 ;$00 - keep the same frame as before, used to prolong the frame of animation
@@ -10377,36 +10363,36 @@ DB $FF
 
 ;initial values for reflecting fireball
 SpawnInitValues_ReflectingFireball_EFBB:
-DB $01					;CurrentEntity_ActiveFlag (obviously active)
-DB Entity_MovementBits_MovingRight		;CurrentEntity_MovementBits
-DB $03					;CurrentEntity_TimerStorage
-DB $01					;CurrentEntity_UpdateTimer
-DB FireballMovementAnimCycle_Start		;CurrentEntity_AnimationPointer
-DB Entity_Draw_8x8				;CurrentEntity_DrawMode
-DB GFX_Fireball_Move1			;CurrentEntity_DrawTile
-DB ReflectingFireball_Property		;CurrentEntity_TileProps
-DB $F4					;CurrentEntity_YPos (overwritten afterwards)
-DB $00					;CurrentEntity_XPos (overwritten afterwards)
-DB ReflectingFireball_OAM_Slot*4		;CurrentEntity_OAMOffset
-DB $00					;Entity_ReflectingFireball_ObjCollisionDisableTimer
+DB $01;CurrentEntity_ActiveFlag (obviously active)
+DB Entity_MovementBits_MovingRight;CurrentEntity_MovementBits
+DB $03;CurrentEntity_TimerStorage
+DB $01;CurrentEntity_UpdateTimer
+DB FireballMovementAnimCycle_Start;CurrentEntity_AnimationPointer
+DB Entity_Draw_8x8;CurrentEntity_DrawMode
+DB GFX_Fireball_Move1;CurrentEntity_DrawTile
+DB ReflectingFireball_Property;CurrentEntity_TileProps
+DB $F4;CurrentEntity_YPos (overwritten afterwards)
+DB $00;CurrentEntity_XPos (overwritten afterwards)
+DB ReflectingFireball_OAM_Slot*4;CurrentEntity_OAMOffset
+DB $00;Entity_ReflectingFireball_ObjCollisionDisableTimer
 DW $0000					;CurrentEntity_UpdateDataPointer (null by default)
-DB $00					;CurrentEntity_CurrentPlatform
-DB Entity_ID_ReflectingFireball		;CurrentEntity_ID
+DB $00;CurrentEntity_CurrentPlatform
+DB Entity_ID_ReflectingFireball;CurrentEntity_ID
 
-DB $00					;Entity_ReflectingFireball_State
-DB $01 					;Entity_ReflectingFireball_VertDirection
-DB $00					;CurrentEntity_PipeDir (has no effect on fireball)
-DB $00					;CurrentEntity_XSpeedTableOffset (has no effect on fireball)
-DB $00					;CurrentEntity_XSpeedTableEntry (has no effect on fireball)
-DB $01					;Entity_ReflectingFireball_YSpeed
-DB $00					;CurrentEntity_XSpeedAlterTimer (has no effect on fireball)
+DB $00;Entity_ReflectingFireball_State
+DB $01;Entity_ReflectingFireball_VertDirection
+DB $00;CurrentEntity_PipeDir (has no effect on fireball)
+DB $00;CurrentEntity_XSpeedTableOffset (has no effect on fireball)
+DB $00;CurrentEntity_XSpeedTableEntry (has no effect on fireball)
+DB $01;Entity_ReflectingFireball_YSpeed
+DB $00;CurrentEntity_XSpeedAlterTimer (has no effect on fireball)
 DW $0000					;Entity_ReflectingFireball_VRAMPosLo/Entity_ReflectingFireball_VRAMPosHi
-DB $00					;CurrentEntity_DefeatedState
-DB $00					;unused
-DB $00					;Entity_ReflectingFireball_TileAtBottomVRAMPos
-DB $00					;CurrentEntity_WhichPlayerInteracted
-DB $00					;CurrentEntity_TileAtBottomVRAMPos
-DB $04,$04					;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
+DB $00;CurrentEntity_DefeatedState
+DB $00;unused
+DB $00;Entity_ReflectingFireball_TileAtBottomVRAMPos
+DB $00;CurrentEntity_WhichPlayerInteracted
+DB $00;CurrentEntity_TileAtBottomVRAMPos
+DB $04,$04;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
 
 ;wavy fireball appearing effect animation table
 DATA_EFDB:
@@ -10467,44 +10453,44 @@ DB $01,$02,$02,$01,$01,$CC,$01,$00
 DB $01,$00,$00,$BB,$00,$AA
 
 SpawnInitValues_WavyFireball_F061:
-DB $01					;CurrentEntity_ActiveFlag (obviously active)
-DB Entity_MovementBits_MovingRight		;CurrentEntity_MovementBits
-DB $00					;CurrentEntity_TimerStorage
-DB $01					;CurrentEntity_UpdateTimer
-DB FireballMovementAnimCycle_Start		;CurrentEntity_AnimationPointer
-DB Entity_Draw_8x8				;CurrentEntity_DrawMode
-DB GFX_Fireball_Move1			;CurrentEntity_DrawTile
-DB WavyFireball_Property			;CurrentEntity_TileProps
-DB $F4					;CurrentEntity_YPos (overwritten afterwards)
-DB $00					;CurrentEntity_XPos (overwritten afterwards)
-DB WavyFireball_OAM_Slot*4			;CurrentEntity_OAMOffset
-DB $00					;CurrentEntity_PaletteOffset (has no effect on fireball)
+DB $01;CurrentEntity_ActiveFlag (obviously active)
+DB Entity_MovementBits_MovingRight;CurrentEntity_MovementBits
+DB $00;CurrentEntity_TimerStorage
+DB $01;CurrentEntity_UpdateTimer
+DB FireballMovementAnimCycle_Start;CurrentEntity_AnimationPointer
+DB Entity_Draw_8x8;CurrentEntity_DrawMode
+DB GFX_Fireball_Move1;CurrentEntity_DrawTile
+DB WavyFireball_Property;CurrentEntity_TileProps
+DB $F4;CurrentEntity_YPos (overwritten afterwards)
+DB $00;CurrentEntity_XPos (overwritten afterwards)
+DB WavyFireball_OAM_Slot*4;CurrentEntity_OAMOffset
+DB $00;CurrentEntity_PaletteOffset (has no effect on fireball)
 DW $0000					;CurrentEntity_UpdateDataPointer (null by default)
-DB $00					;CurrentEntity_CurrentPlatform
-DB Entity_ID_WavyFireball			;CurrentEntity_ID
+DB $00;CurrentEntity_CurrentPlatform
+DB Entity_ID_WavyFireball;CurrentEntity_ID
 
-DB $00					;Entity_WavyFireball_State
-DB $80 					;Entity_WavyFireball_AppearTimer
-DB $00					;CurrentEntity_PipeDir (has no effect on fireball)
-DB $00					;CurrentEntity_XSpeedTableOffset (has no effect on fireball)
-DB $00					;CurrentEntity_XSpeedTableEntry (has no effect on fireball)
-DB $00					;CurrentEntity_XSpeed
-DB $00					;CurrentEntity_XSpeedAlterTimer (has no effect on fireball)
-DB $00					;CurrentEntity_XSpeedModifier (has no effect on fireball)
-DB $00					;CurrentEntity_TurningCounter (has no effect on fireball)
-DB $00					;CurrentEntity_DefeatedState
+DB $00;Entity_WavyFireball_State
+DB $80;Entity_WavyFireball_AppearTimer
+DB $00;CurrentEntity_PipeDir (has no effect on fireball)
+DB $00;CurrentEntity_XSpeedTableOffset (has no effect on fireball)
+DB $00;CurrentEntity_XSpeedTableEntry (has no effect on fireball)
+DB $00;CurrentEntity_XSpeed
+DB $00;CurrentEntity_XSpeedAlterTimer (has no effect on fireball)
+DB $00;CurrentEntity_XSpeedModifier (has no effect on fireball)
+DB $00;CurrentEntity_TurningCounter (has no effect on fireball)
+DB $00;CurrentEntity_DefeatedState
 DW $0000					;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect)
-DB $00					;CurrentEntity_WhichPlayerInteracted
-DB $00					;CurrentEntity_TileAtBottomVRAMPos
-DB $04,$04					;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
+DB $00;CurrentEntity_WhichPlayerInteracted
+DB $00;CurrentEntity_TileAtBottomVRAMPos
+DB $04,$04;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
 
 DATA_F081:
-  DB $28,$1E,$0A,$05,$0F,$0A,$07,$03		;NTSC
+  DB $28,$1E,$0A,$05,$0F,$0A,$07,$03;NTSC
 
 ;timer values for how long it should take for a reflecting fireball to appear
 ;progressively less and less time to spawn a fireball
 DATA_F089:
-  DB $32,$32,$28,$26,$1E,$1E,$1C,$12		;NTSC
+  DB $32,$32,$28,$26,$1E,$1E,$1C,$12;NTSC
   DB $28,$28,$1C,$12,$1C,$1C,$12,$0A
   DB $1E,$14,$14,$12,$14,$12,$0A,$08
 
@@ -10519,15 +10505,15 @@ DB $CC,$9C,$6C,$3C
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 DATA_F0A5:
-DB $20,$83				;location to write to
-DB $02				;amount of bytes to write in line
-DB $76,$7A				;tiles to write
+DB $20,$83;location to write to
+DB $02;amount of bytes to write in line
+DB $76,$7A;tiles to write
 
-DB $20,$A3				;next location
-DB $02				;amount of tiles
-DB $77,$79				;tiles
+DB $20,$A3;next location
+DB $02;amount of tiles
+DB $77,$79;tiles
 
-DB $20,$9A				;etc.
+DB $20,$9A;etc.
 DB $02
 DB $7C,$7E
 
@@ -10568,13 +10554,13 @@ DB VRAMWriteCommand_Repeat|$0A
 DB $89
 
 DB $20,$C3
-DB $19				;this time we write 25 tiles in a row
+DB $19;this time we write 25 tiles in a row
 DB $78,$24,$24,$68,$69,$69,$6B,$69,$68
 DB $69,$68,$6B,$69,$24,$68,$69,$68
 DB $69,$6B,$69,$6B,$69,$24,$24,$88
 
 DB $20,$E6
-DB $13				;this time 19 tiles
+DB $13;this time 19 tiles
 DB $68,$6A,$6A,$6E,$6A
 DB $68,$6A,$68,$6E,$6A,$24,$68,$6A
 DB $68,$6A,$6E,$6A,$6E,$71
@@ -10602,37 +10588,37 @@ DB $68,$6A,$6F,$70,$6F,$70,$73,$24,$88
 ;1 PLAYER GAME A
 OnePlayerGameAString:
 DB $22,$09
-DB $0F                  ; Length of "1 PLAYER GAME A" string
+DB $0F; Length of "1 PLAYER GAME A" string
 DB "1 PLAYER GAME A"
 
 ; 1 PLAYER GAME B
 OnePlayerGameBString:
 DB $22,$49
-DB $0F                  ; Length of "1 PLAYER GAME B" string
+DB $0F; Length of "1 PLAYER GAME B" string
 DB "1 PLAYER GAME B"
 
 ; 2 PLAYER GAME A
 TwoPlayerGameAString:
 DB $22,$89
-DB $0F                  ; Length of "2 PLAYER GAME A" string
+DB $0F; Length of "2 PLAYER GAME A" string
 DB "2 PLAYER GAME A"
 
 ; 2 PLAYER GAME B
 TwoPlayerGameBString:
 DB $22,$C9
-DB $0F                  ; Length of "2 PLAYER GAME B" string
+DB $0F; Length of "2 PLAYER GAME B" string
 DB "2 PLAYER GAME B"
 
 ; (c)1983 NINTENDO CO.,LTD.
 NintendoCOString:
 DB $23,$05
-DB $17                  ; Length of copyright string
+DB $17; Length of copyright string
 DB CopyrightSymbol,"1983 NINTENDO CO",DotAndComma,"LTD."
 
 ; MADE IN JAPAN
 MadeInJapanString:
 DB $23,$4B
-DB $0D                  ; Length of "MADE IN JAPAN" string
+DB $0D; Length of "MADE IN JAPAN" string
 DB "MADE IN JAPAN"
 
 ;DB $0D
@@ -10646,7 +10632,7 @@ DB $8A,$00,$FF,$30,$00,$00,$00,$00
 DB $C0
 
 DB $23,$D8
-DB VRAMWriteCommand_Repeat|$08		;repeat 8 times same attribute
+DB VRAMWriteCommand_Repeat|$08;repeat 8 times same attribute
 DB $FF
 
 DB $23,$E0
@@ -10657,7 +10643,7 @@ DB $23,$F0
 DB VRAMWriteCommand_Repeat|$08
 DB $AA
 
-DB VRAMWriteCommand_Stop			;end writing (finally)
+DB VRAMWriteCommand_Stop;end writing (finally)
 
 ;initialize platforms. do note that the tiles themselves aren't provided as they are stored from the address in RAM.
 DATA_F1E7:
@@ -10698,64 +10684,64 @@ DB VRAMWriteCommand_Repeat|$20
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 DATA_F203:
-DB $3F,$00					;PPU Address to write to
-DB $20					;How many bytes to write (32 in dec)
+DB $3F,$00;PPU Address to write to
+DB $20;How many bytes to write (32 in dec)
 
 ;Gameplay Palette, used during, well, gameplay, including demo.
-DB $0F,$30,$2C,$12				;>Background 0, used by Phase 1's platforms, frozen platforms, POW and player's roman number tiles
-DB $0F,$30,$29,$09				;>Background 1, used by pipes
-DB $0F,$30,$27,$18				;>Background 2, used by bonus phases' platforms, phase 4 platforms and phase 9 onward's platforms
-DB $0F,$30,$26,$06				;>Background 3, used by phase 6's platforms
+DB $0F,$30,$2C,$12;>Background 0, used by Phase 1's platforms, frozen platforms, POW and player's roman number tiles
+DB $0F,$30,$29,$09;>Background 1, used by pipes
+DB $0F,$30,$27,$18;>Background 2, used by bonus phases' platforms, phase 4 platforms and phase 9 onward's platforms
+DB $0F,$30,$26,$06;>Background 3, used by phase 6's platforms
 
-DB $0F,$16,$37,$12				;>Sprite 0, used by Mario and fighter fly
-DB $0F,$30,$27,$19				;>Sprite 1, used by Luigi shellcreepers and fireballs
-DB $0F,$30,$27,$16				;>Sprite 2, used by sidesteppers and fireballs
-DB $0F,$2C,$12,$25				;>Sprite 3, used last enemy and by freezies
+DB $0F,$16,$37,$12;>Sprite 0, used by Mario and fighter fly
+DB $0F,$30,$27,$19;>Sprite 1, used by Luigi shellcreepers and fireballs
+DB $0F,$30,$27,$16;>Sprite 2, used by sidesteppers and fireballs
+DB $0F,$2C,$12,$25;>Sprite 3, used last enemy and by freezies
 
-DB VRAMWriteCommand_Stop			;Command used to stop writing.
+DB VRAMWriteCommand_Stop;Command used to stop writing.
 
 DATA_F227:
-DB $3F,$00					;PPU Address
-DB $14					;Write 20 bytes to PPU. That means no Sprite Palette 2-4 overwrite.
+DB $3F,$00;PPU Address
+DB $14;Write 20 bytes to PPU. That means no Sprite Palette 2-4 overwrite.
 
 ;Palette used for title screen.
-DB $0F,$16,$16,$16				;>Background 0, used by MARIO BROS. logo
-DB $0F,$27,$27,$27				;>Background 1, used by option strings
-DB $0F,$30,$2C,$12				;>Background 2, used by logo's top border and copyright strings
-DB $0F,$30,$29,$19				;>Background 3, used by logo's bottom border
+DB $0F,$16,$16,$16;>Background 0, used by MARIO BROS. logo
+DB $0F,$27,$27,$27;>Background 1, used by option strings
+DB $0F,$30,$2C,$12;>Background 2, used by logo's top border and copyright strings
+DB $0F,$30,$29,$19;>Background 3, used by logo's bottom border
 
-DB $0F,$35,$35,$35				;>Sprite 1, used by select sprite
+DB $0F,$35,$35,$35;>Sprite 1, used by select sprite
 
-DB VRAMWriteCommand_Stop			;stop writing
+DB VRAMWriteCommand_Stop;stop writing
 
 ;General attribute setup table
 ;attributes that ar written for all phases. that being HUD and brick floor. just like before, uses generic PPU write format.
 
 DATA_F23F:
-DB $23,$C0					;PPU address
-DB $10					;16 bytes
+DB $23,$C0;PPU address
+DB $10;16 bytes
 DB $00,$00,$C0,$30,$00,$50,$00,$00
 DB $55,$55,$00,$00,$00,$00,$55,$55
 
-DB $23,$F0					;another PPU address, being at the bottom of the screen, aka brick flooring
-DB $10					;16 bytes
+DB $23,$F0;another PPU address, being at the bottom of the screen, aka brick flooring
+DB $10;16 bytes
 DB $F5,$FF,$FF,$FF,$FF,$FF,$FF,$F5
 DB $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
 
-DB VRAMWriteCommand_Stop			;stop write
+DB VRAMWriteCommand_Stop;stop write
 
 
 ;attributes used for ledge tiles 93 and 97
 DATA_F266:
 DB $23,$D0
-DB VRAMWriteCommand_Repeat|$18		;repeat one byte $18 times
-DB $00					;
+DB VRAMWriteCommand_Repeat|$18;repeat one byte $18 times
+DB $00;
 
 DB $23,$E8
-DB $08					;8 bytes
-DB $50,$00,$00,$00,$00,$00,$00,$50		;
+DB $08;8 bytes
+DB $50,$00,$00,$00,$00,$00,$00,$50;
 
-DB VRAMWriteCommand_Stop			;end
+DB VRAMWriteCommand_Stop;end
 
 ;attributes used for ledge tiles 94 and 96
 DATA_F276:
@@ -10767,7 +10753,7 @@ DB $23,$E8
 DB $08
 DB $5A,$AA,$AA,$00,$00,$AA,$AA,$5A
 
-DB VRAMWriteCommand_Stop		;stop write
+DB VRAMWriteCommand_Stop;stop write
 
 ;attributes used for ledge tile 95
 DATA_F286:
@@ -10821,68 +10807,68 @@ DB $00,$FC,$FC,$AA
 ;this table contains various initial props and such for Player entities
 SpawnInitValues_Players_F2EC:
 ;Mario
-DB $01					;CurrentEntity_ActiveFlag (obviously active)
-DB $00					;CurrentEntity_MovementBits
-DB $03					;CurrentEntity_TimerStorage
-DB $00					;CurrentEntity_UpdateTimer
-DB $00					;CurrentEntity_AnimationPointer (has no effect on player)
-DB Entity_Draw_16x24				;CurrentEntity_DrawMode
-DB GFX_Player_Standing			;CurrentEntity_DrawTile
-DB OAMProp_Palette0|OAMProp_XFlip		;CurrentEntity_TileProps
-DB $D0					;CurrentEntity_YPos
-DB $44					;CurrentEntity_XPos
-DB Mario_OAM_Slot*4				;CurrentEntity_OAMOffset
-DB $00					;CurrentEntity_PaletteOffset (has no effect on player)
+DB $01;CurrentEntity_ActiveFlag (obviously active)
+DB $00;CurrentEntity_MovementBits
+DB $03;CurrentEntity_TimerStorage
+DB $00;CurrentEntity_UpdateTimer
+DB $00;CurrentEntity_AnimationPointer (has no effect on player)
+DB Entity_Draw_16x24;CurrentEntity_DrawMode
+DB GFX_Player_Standing;CurrentEntity_DrawTile
+DB $40;CurrentEntity_TileProps
+DB $D0;CurrentEntity_YPos
+DB $44;CurrentEntity_XPos
+DB Mario_OAM_Slot*4;CurrentEntity_OAMOffset
+DB $00;CurrentEntity_PaletteOffset (has no effect on player)
 DW $0000					;CurrentEntity_UpdateDataPointer (null by default)
-DB $00					;CurrentEntity_CurrentPlatform
-DB Entity_ID_Mario				;CurrentEntity_ID
+DB $00;CurrentEntity_CurrentPlatform
+DB Entity_ID_Mario;CurrentEntity_ID
 
-DB $00					;CurrentEntity_Player_ControllerInputs
-DB $00 					;CurrentEntity_Player_BumpedBits
-DB $00					;CurrentEntity_Player_MovementTimer
-DB $00					;CurrentEntity_XSpeedTableOffset
-DB $00					;CurrentEntity_XSpeedTableEntry
-DB $01					;CurrentEntity_XSpeed
-DB $00					;CurrentEntity_Player_State
-DB $00					;CurrentEntity_XSpeedModifier
-DB $00					;CurrentEntity_TurningCounter
-DB $00					;CurrentEntity_DefeatedState
+DB $00;CurrentEntity_Player_ControllerInputs
+DB $00;CurrentEntity_Player_BumpedBits
+DB $00;CurrentEntity_Player_MovementTimer
+DB $00;CurrentEntity_XSpeedTableOffset
+DB $00;CurrentEntity_XSpeedTableEntry
+DB $01;CurrentEntity_XSpeed
+DB $00;CurrentEntity_Player_State
+DB $00;CurrentEntity_XSpeedModifier
+DB $00;CurrentEntity_TurningCounter
+DB $00;CurrentEntity_DefeatedState
 DW $0000					;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi
-DB $00					;CurrentEntity_WhichPlayerInteracted
-DB $00					;CurrentEntity_TileAtBottomVRAMPos
-DB $04,$04					;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
+DB $00;CurrentEntity_WhichPlayerInteracted
+DB $00;CurrentEntity_TileAtBottomVRAMPos
+DB $04,$04;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
 
 ;Luigi
-DB $01					;CurrentEntity_ActiveFlag (obviously active)
-DB $00					;CurrentEntity_MovementBits
-DB $03					;CurrentEntity_TimerStorage
-DB $00					;CurrentEntity_UpdateTimer
-DB $00					;CurrentEntity_AnimationPointer (has no effect on player)
-DB Entity_Draw_16x24				;CurrentEntity_DrawMode
-DB GFX_Player_Standing			;CurrentEntity_DrawTile
-DB OAMProp_Palette1				;CurrentEntity_TileProps
-DB $D0					;CurrentEntity_YPos
-DB $C4					;CurrentEntity_XPos
-DB Luigi_OAM_Slot*4				;CurrentEntity_OAMOffset
-DB $00					;CurrentEntity_PaletteOffset (has no effect on player)
+DB $01;CurrentEntity_ActiveFlag (obviously active)
+DB $00;CurrentEntity_MovementBits
+DB $03;CurrentEntity_TimerStorage
+DB $00;CurrentEntity_UpdateTimer
+DB $00;CurrentEntity_AnimationPointer (has no effect on player)
+DB Entity_Draw_16x24;CurrentEntity_DrawMode
+DB GFX_Player_Standing;CurrentEntity_DrawTile
+DB OAMProp_Palette1;CurrentEntity_TileProps
+DB $D0;CurrentEntity_YPos
+DB $C4;CurrentEntity_XPos
+DB Luigi_OAM_Slot*4;CurrentEntity_OAMOffset
+DB $00;CurrentEntity_PaletteOffset (has no effect on player)
 DW $0000					;CurrentEntity_UpdateDataPointer (null by default)
-DB $00					;CurrentEntity_CurrentPlatform
-DB Entity_ID_Luigi				;CurrentEntity_ID
+DB $00;CurrentEntity_CurrentPlatform
+DB Entity_ID_Luigi;CurrentEntity_ID
 
-DB $00					;CurrentEntity_Player_ControllerInputs
-DB $00 					;CurrentEntity_Player_BumpedBits
-DB $00					;CurrentEntity_Player_MovementTimer
-DB $00					;CurrentEntity_XSpeedTableOffset
-DB $00					;CurrentEntity_XSpeedTableEntry
-DB $01					;CurrentEntity_XSpeed
-DB $00					;CurrentEntity_Player_State
-DB $00					;CurrentEntity_XSpeedModifier
-DB $00					;CurrentEntity_TurningCounter
-DB $00					;CurrentEntity_DefeatedState
+DB $00;CurrentEntity_Player_ControllerInputs
+DB $00;CurrentEntity_Player_BumpedBits
+DB $00;CurrentEntity_Player_MovementTimer
+DB $00;CurrentEntity_XSpeedTableOffset
+DB $00;CurrentEntity_XSpeedTableEntry
+DB $01;CurrentEntity_XSpeed
+DB $00;CurrentEntity_Player_State
+DB $00;CurrentEntity_XSpeedModifier
+DB $00;CurrentEntity_TurningCounter
+DB $00;CurrentEntity_DefeatedState
 DW $0000					;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi
-DB $00					;CurrentEntity_WhichPlayerInteracted
-DB $00					;CurrentEntity_TileAtBottomVRAMPos
-DB $04,$04					;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
+DB $00;CurrentEntity_WhichPlayerInteracted
+DB $00;CurrentEntity_TileAtBottomVRAMPos
+DB $04,$04;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
 
 ;Speed values are altered for PAL version
 
@@ -10893,7 +10879,7 @@ DB $00,$00,$00,$00,$00,$00
 
 ;gravity y-speeds for entities (differs between PAL and NTSC versions)
 DATA_F33A:
-  DB $01,$00,$01,$00,$01,$01,$00,$01		;NTSC gravity
+  DB $01,$00,$01,$00,$01,$01,$00,$01;NTSC gravity
   DB $01,$02,$01,$02,$02,$02,$02,$02
   DB $02,$03,$03,$03,$03
 
@@ -10901,7 +10887,7 @@ DB $AA
 
 ;Vertical jump/bounce y-speeds for Mario & Luigi (when jumping or bouncing off another player)
 DATA_F350:
-  DB $FC,$FC,$FC,$FC,$FC,$FC,$FC,$FD		;NTSC
+  DB $FC,$FC,$FC,$FC,$FC,$FC,$FC,$FD;NTSC
   DB $FD,$FE,$FE,$FE,$FE,$FE,$FE,$FF
   DB $FE,$FF,$FF,$FF,$00,$FF,$FF,$00
   DB $FF,$00,$00,$00
@@ -10914,14 +10900,14 @@ DATA_F36D:
 
 ;vertical jump y-speeds for the Fighterfly, general
 DATA_F370:
-  DB $FF,$FF,$FF,$FF,$FF,$00,$FF,$00		;NTSC
+  DB $FF,$FF,$FF,$FF,$FF,$00,$FF,$00;NTSC
   DB $FF,$00
 
 DB $AA
 
 ;Sidestepper's something
 DATA_F37B:
-  DB $00,$01,$00,$01,$00,$01,$01,$01		;NTSC
+  DB $00,$01,$00,$01,$00,$01,$01,$01;NTSC
   DB $02,$01,$01,$02,$03,$03,$04,$04
   DB $CC,$04,$CC,$CC,$CC,$04,$CC
 
@@ -10947,7 +10933,7 @@ SidestepperXMovementData:
   DB $01,$01,$FF
   DB $01,$01,$00
   DB $01,$01,$00
-  DB $01,$01,$01			;third byte = actutally speed up instead of slowing down every now and then
+  DB $01,$01,$01;third byte = actutally speed up instead of slowing down every now and then
 DB $AA
 
 ;This set of data is enemy data to spawn from pipes per "Enemy level".
@@ -11081,100 +11067,100 @@ DB $AA
 DATA_F452:
 SpawnInitValues_Enemies_F452:
 ;shellcreeper values
-DB $01					;CurrentEntity_ActiveFlag (obviously active)
-DB $00					;CurrentEntity_MovementBits
-DB $03					;CurrentEntity_TimerStorage
-DB $00					;CurrentEntity_UpdateTimer
-DB ShellcreeperWalkAnimCycle_Start		;CurrentEntity_AnimationPointer
-DB Entity_Draw_8x16_Shift			;CurrentEntity_DrawMode
-DB GFX_Shellcreeper_Walk1			;CurrentEntity_DrawTile
-DB OAMProp_Palette1|OAMProp_BGPriority	;CurrentEntity_TileProps (since these enemies appear out of the pipe, they go behind the pipe)
-DB $28					;CurrentEntity_YPos
-DB $00					;CurrentEntity_XPos (overwritten afterwards)
-DB $00					;CurrentEntity_OAMOffset (overwritten afterwards)
-DB ShellcreeperPalettes_Start		;CurrentEntity_PaletteOffset
+DB $01;CurrentEntity_ActiveFlag (obviously active)
+DB $00;CurrentEntity_MovementBits
+DB $03;CurrentEntity_TimerStorage
+DB $00;CurrentEntity_UpdateTimer
+DB ShellcreeperWalkAnimCycle_Start;CurrentEntity_AnimationPointer
+DB Entity_Draw_8x16_Shift;CurrentEntity_DrawMode
+DB GFX_Shellcreeper_Walk1;CurrentEntity_DrawTile
+DB $21;CurrentEntity_TileProps (since these enemies appear out of the pipe, they go behind the pipe)
+DB $28;CurrentEntity_YPos
+DB $00;CurrentEntity_XPos (overwritten afterwards)
+DB $00;CurrentEntity_OAMOffset (overwritten afterwards)
+DB ShellcreeperPalettes_Start;CurrentEntity_PaletteOffset
 DW DATA_F64C					;CurrentEntity_UpdateDataPointer (null by default)
-DB $00					;CurrentEntity_CurrentPlatform
-DB Entity_ID_Shellcreeper			;CurrentEntity_ID
+DB $00;CurrentEntity_CurrentPlatform
+DB Entity_ID_Shellcreeper;CurrentEntity_ID
 
-DB $00					;CurrentEntity_BumpedStateAndBits
-DB $00 					;CurrentEntity_MiscRAM
-DB $00					;CurrentEntity_PipeDir
-DB ShellcreeperXMovementData_Start		;CurrentEntity_XSpeedTableOffset
-DB $00					;CurrentEntity_XSpeedTableEntry
-DB $01					;CurrentEntity_XSpeed
-DB $00					;CurrentEntity_XSpeedAlterTimer
-DB $00					;CurrentEntity_XSpeedModifier
-DB $00					;CurrentEntity_TurningCounter
-DB $00					;CurrentEntity_DefeatedState
-DB $00,$00					;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players and reflecting fireballs)
-DB $00					;CurrentEntity_WhichPlayerInteracted
-DB $00					;CurrentEntity_TileAtBottomVRAMPos
-DB $04,$06					;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
+DB $00;CurrentEntity_BumpedStateAndBits
+DB $00;CurrentEntity_MiscRAM
+DB $00;CurrentEntity_PipeDir
+DB ShellcreeperXMovementData_Start;CurrentEntity_XSpeedTableOffset
+DB $00;CurrentEntity_XSpeedTableEntry
+DB $01;CurrentEntity_XSpeed
+DB $00;CurrentEntity_XSpeedAlterTimer
+DB $00;CurrentEntity_XSpeedModifier
+DB $00;CurrentEntity_TurningCounter
+DB $00;CurrentEntity_DefeatedState
+DB $00,$00;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players and reflecting fireballs)
+DB $00;CurrentEntity_WhichPlayerInteracted
+DB $00;CurrentEntity_TileAtBottomVRAMPos
+DB $04,$06;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
 
 ;Sidestepper values
-DB $01					;CurrentEntity_ActiveFlag (obviously active)
-DB $00					;CurrentEntity_MovementBits
-DB $03					;CurrentEntity_TimerStorage
-DB $00					;CurrentEntity_UpdateTimer
-DB SidestepperWalkAnimCycle_Start		;CurrentEntity_AnimationPointer
-DB Entity_Draw_8x16_FlickerTop		;CurrentEntity_DrawMode
-DB GFX_Sidestepper_Move1			;CurrentEntity_DrawTile
-DB OAMProp_Palette2|OAMProp_BGPriority	;CurrentEntity_TileProps
-DB $28					;CurrentEntity_YPos
-DB $00					;CurrentEntity_XPos (overwritten afterwards)
-DB $00					;CurrentEntity_OAMOffset (overwritten afterwards)
-DB SidestepperPalettes_Start			;CurrentEntity_PaletteOffset
+DB $01;CurrentEntity_ActiveFlag (obviously active)
+DB $00;CurrentEntity_MovementBits
+DB $03;CurrentEntity_TimerStorage
+DB $00;CurrentEntity_UpdateTimer
+DB SidestepperWalkAnimCycle_Start;CurrentEntity_AnimationPointer
+DB Entity_Draw_8x16_FlickerTop;CurrentEntity_DrawMode
+DB GFX_Sidestepper_Move1;CurrentEntity_DrawTile
+DB $22;CurrentEntity_TileProps
+DB $28;CurrentEntity_YPos
+DB $00;CurrentEntity_XPos (overwritten afterwards)
+DB $00;CurrentEntity_OAMOffset (overwritten afterwards)
+DB SidestepperPalettes_Start;CurrentEntity_PaletteOffset
 DW DATA_F64C					;CurrentEntity_UpdateDataPointer (null by default)
-DB $00					;CurrentEntity_CurrentPlatform
-DB Entity_ID_Sidestepper			;CurrentEntity_ID
+DB $00;CurrentEntity_CurrentPlatform
+DB Entity_ID_Sidestepper;CurrentEntity_ID
 
-DB $00					;CurrentEntity_BumpedStateAndBits
-DB $00 					;CurrentEntity_MiscRAM
-DB $00					;CurrentEntity_PipeDir
-DB SidestepperXMovementData_Start		;CurrentEntity_XSpeedTableOffset
-DB $00					;CurrentEntity_XSpeedTableEntry
-DB $01					;CurrentEntity_XSpeed
-DB $00					;CurrentEntity_XSpeedAlterTimer
-DB $00					;CurrentEntity_XSpeedModifier
-DB $00					;CurrentEntity_TurningCounter
-DB $00					;CurrentEntity_DefeatedState
-DB $00,$00					;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players and reflecting fireballs)
-DB $00					;CurrentEntity_WhichPlayerInteracted
-DB $00					;CurrentEntity_TileAtBottomVRAMPos
-DB $05,$06					;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
+DB $00;CurrentEntity_BumpedStateAndBits
+DB $00;CurrentEntity_MiscRAM
+DB $00;CurrentEntity_PipeDir
+DB SidestepperXMovementData_Start;CurrentEntity_XSpeedTableOffset
+DB $00;CurrentEntity_XSpeedTableEntry
+DB $01;CurrentEntity_XSpeed
+DB $00;CurrentEntity_XSpeedAlterTimer
+DB $00;CurrentEntity_XSpeedModifier
+DB $00;CurrentEntity_TurningCounter
+DB $00;CurrentEntity_DefeatedState
+DB $00,$00;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players and reflecting fireballs)
+DB $00;CurrentEntity_WhichPlayerInteracted
+DB $00;CurrentEntity_TileAtBottomVRAMPos
+DB $05,$06;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
 
 ;fighterfly values
-DB $01					;CurrentEntity_ActiveFlag (obviously active)
-DB $00					;CurrentEntity_MovementBits
-DB $03					;CurrentEntity_TimerStorage
-DB $00					;CurrentEntity_UpdateTimer
-DB FighterflyMovementAnimCycle_Start		;CurrentEntity_AnimationPointer
-DB Entity_Draw_8x16_FlickerTop		;CurrentEntity_DrawMode
-DB GFX_Fighterfly_Move1			;CurrentEntity_DrawTile
-DB OAMProp_Palette0|OAMProp_BGPriority	;CurrentEntity_TileProps
-DB $28					;CurrentEntity_YPos
-DB $00					;CurrentEntity_XPos (overwritten afterwards)
-DB $00					;CurrentEntity_OAMOffset (overwritten afterwards)
-DB FighterflyPalettes_Start			;CurrentEntity_PaletteOffset
+DB $01;CurrentEntity_ActiveFlag (obviously active)
+DB $00;CurrentEntity_MovementBits
+DB $03;CurrentEntity_TimerStorage
+DB $00;CurrentEntity_UpdateTimer
+DB FighterflyMovementAnimCycle_Start;CurrentEntity_AnimationPointer
+DB Entity_Draw_8x16_FlickerTop;CurrentEntity_DrawMode
+DB GFX_Fighterfly_Move1;CurrentEntity_DrawTile
+DB $20;CurrentEntity_TileProps
+DB $28;CurrentEntity_YPos
+DB $00;CurrentEntity_XPos (overwritten afterwards)
+DB $00;CurrentEntity_OAMOffset (overwritten afterwards)
+DB FighterflyPalettes_Start;CurrentEntity_PaletteOffset
 DW DATA_F64C					;CurrentEntity_UpdateDataPointer (null by default)
-DB $00					;CurrentEntity_CurrentPlatform
-DB Entity_ID_Fighterfly			;CurrentEntity_ID
+DB $00;CurrentEntity_CurrentPlatform
+DB Entity_ID_Fighterfly;CurrentEntity_ID
 
-DB $00					;CurrentEntity_BumpedStateAndBits
-DB $00 					;CurrentEntity_MiscRAM
-DB $00					;CurrentEntity_PipeDir
-DB $00					;CurrentEntity_XSpeedTableOffset (Fighterfly does not use the same x-movement handling as others, so it has no effect)
-DB $00					;CurrentEntity_XSpeedTableEntry
-DB $01					;CurrentEntity_XSpeed
-DB $00					;CurrentEntity_XSpeedAlterTimer
-DB $00					;CurrentEntity_XSpeedModifier
-DB $00					;CurrentEntity_TurningCounter
-DB $00					;CurrentEntity_DefeatedState
-DB $00,$00					;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players)
-DB $00					;CurrentEntity_WhichPlayerInteracted
-DB $00					;CurrentEntity_TileAtBottomVRAMPos
-DB $05,$06					;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
+DB $00;CurrentEntity_BumpedStateAndBits
+DB $00;CurrentEntity_MiscRAM
+DB $00;CurrentEntity_PipeDir
+DB $00;CurrentEntity_XSpeedTableOffset (Fighterfly does not use the same x-movement handling as others, so it has no effect)
+DB $00;CurrentEntity_XSpeedTableEntry
+DB $01;CurrentEntity_XSpeed
+DB $00;CurrentEntity_XSpeedAlterTimer
+DB $00;CurrentEntity_XSpeedModifier
+DB $00;CurrentEntity_TurningCounter
+DB $00;CurrentEntity_DefeatedState
+DB $00,$00;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players)
+DB $00;CurrentEntity_WhichPlayerInteracted
+DB $00;CurrentEntity_TileAtBottomVRAMPos
+DB $05,$06;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
 
 ;Holds frames for various animations for various entities (CurrentEntity_DrawTile values)
 ;FF is used to loop back to specified index (the byte right next to it)
@@ -11221,7 +11207,7 @@ DB SidestepperWalkAnimCycle_Start
 
 ;Sidestepper Movement (hit once)
 SidestepperAngryWalkAnimCycle:
-DB GFX_Sidestepper_AngryMove1				;GFX_AnimationCycle_SidestepperAngry = $1A
+DB GFX_Sidestepper_AngryMove1;GFX_AnimationCycle_SidestepperAngry = $1A
 DB GFX_Sidestepper_AngryMove1
 DB GFX_Sidestepper_AngryMove2
 DB GFX_Sidestepper_AngryMove2
@@ -11365,19 +11351,19 @@ DB VRAMWriteCommand_Stop
 DATA_F560:
 DB $22
 DB $24,$24
-DB $24,$24					;No POW block
+DB $24,$24;No POW block
 
 DB $22
 DB $FE,$FF
-DB $90,$91					;hit twice
+DB $90,$91;hit twice
 
 DB $22
 DB $FC,$FD
-DB $8E,$8F					;hit once
+DB $8E,$8F;hit once
 
 DB $22
 DB $FA,$FB
-DB $8C,$8D					;full POW block
+DB $8C,$8D;full POW block
 
 ;VRAM locations for platform edges that can be bumped from below (so only 2x2 tiles instead of 3x2 are shown)
 DATA_F574:
@@ -11436,7 +11422,7 @@ DATA_F5AA:
 DATA_F5AD:
   DB $FE,$FE,$FF,$FF,$FF,$FE,$00,$FF
   DB $00,$FE,$00,$FF,$00,$00,$00
-DB $99					;stop
+DB $99;stop
 
 DATA_F5BD:
   DB $FE,$FE,$FE,$FF,$FF,$FF,$00,$FF
@@ -11446,7 +11432,7 @@ DB $99
 ;flipped animation table for shellcreeper, first byte is graphic frame and the second is how long it lasts
 ;$00 - cycle palette (to indicate that it's going to move faster)
 DATA_F5CA:
-  DB GFX_Shellcreeper_Flipped1,$40		;un-flipping animation timings are different between regions
+  DB GFX_Shellcreeper_Flipped1,$40;un-flipping animation timings are different between regions
   DB GFX_Shellcreeper_Flipped2,$40
   DB GFX_Shellcreeper_Flipped1,$40
   DB GFX_Shellcreeper_Flipped2,$30
@@ -11524,18 +11510,18 @@ DB $01
 DB GFX_Sidestepper_Turning
 DB GFX_Sidestepper_Turning
 DB GFX_Sidestepper_Turning
-DB $FF              
+DB $FF
 
 ;enemy palettes to indicate faster movement speed
 EnemyPalettes_F638:
 ShellcreeperPalettes:
-DB OAMProp_Palette1,OAMProp_Palette2,OAMProp_Palette3,$FF ;shellcreeper palettes
+DB OAMProp_Palette1,OAMProp_Palette2,OAMProp_Palette3,$FF;shellcreeper palettes
 
 SidestepperPalettes:
-DB OAMProp_Palette2,OAMProp_Palette1,OAMProp_Palette3,$FF ;sidestepper palettes
+DB OAMProp_Palette2,OAMProp_Palette1,OAMProp_Palette3,$FF;sidestepper palettes
 
 FighterflyPalettes:
-DB OAMProp_Palette0,OAMProp_Palette3,$FF ;fighterfly palettes
+DB OAMProp_Palette0,OAMProp_Palette3,$FF;fighterfly palettes
 
 DATA_F643:
 DB $FB,$FB,$FD,$FE,$FE,$FF,$FF,$FF
@@ -11553,19 +11539,19 @@ DB $00,$FF,$AA
 ;this is used for HUD (player 1 and TOP prefixes)
 DATA_F660:
 DB $20,$63
-DB $01				;1 tile
-DB $2A				;I- (first player score)
+DB $01;1 tile
+DB $2A;I- (first player score)
 
 DB $20,$6B
 DB $03
-DB $2B,$2C,$2D			;TOP-
-DB VRAMWriteCommand_Stop		;stop
+DB $2B,$2C,$2D;TOP-
+DB VRAMWriteCommand_Stop;stop
 
 ;this is also for HUD, for player 2, if applicable
 DATA_F66B:
 DB $20,$75
 DB $02
-DB $29,$2A				;II-
+DB $29,$2A;II-
 DB VRAMWriteCommand_Stop
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -11579,12 +11565,12 @@ DB VRAMWriteCommand_Stop
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 InitLivesData_F671:
-DB $F4,Lives_Tile,$00,$40				;\
-DB $F4,Lives_Tile,$00,$4C				;|mario lives
-DB $F4,Lives_Tile,$00,$58				;/
-DB $F4,Lives_Tile,$01,$A8				;\
-DB $F4,Lives_Tile,$01,$B4				;|luigi lives
-DB $F4,Lives_Tile,$01,$C0				;/
+DB $F4,Lives_Tile,$00,$40;\
+DB $F4,Lives_Tile,$00,$4C;|mario lives
+DB $F4,Lives_Tile,$00,$58;/
+DB $F4,Lives_Tile,$01,$A8;\
+DB $F4,Lives_Tile,$01,$B4;|luigi lives
+DB $F4,Lives_Tile,$01,$C0;/
 
 ;Title screen cursor OAM data, same format as above, Y-position is also overwritten.
 DATA_F689:
@@ -11593,7 +11579,7 @@ DB $F4,Cursor_Tile,$00,Cursor_XPos
 ;VRAM locations for score counters
 ScoreVRAMUpdData_F68D:
 DB >VRAMLoc_TOPScore,<VRAMLoc_TOPScore
-DB $06						;oh, and length ofc
+DB $06;oh, and length ofc
 DB $00
 
 DB >VRAMLoc_Player1Score,<VRAMLoc_Player1Score
@@ -11606,10 +11592,10 @@ DB $00
 
 ;initial values for respawn platforms
 DATA_F699:
-DB $10,RespawnPlatform_Tile1,$03,$6C			;\mario's platform
-DB $10,RespawnPlatform_Tile1,$43,$73			;/
-DB $10,RespawnPlatform_Tile1,$03,$84			;\luigi's platform
-DB $10,RespawnPlatform_Tile1,$43,$8B			;/
+DB $10,RespawnPlatform_Tile1,$03,$6C;\mario's platform
+DB $10,RespawnPlatform_Tile1,$43,$73;/
+DB $10,RespawnPlatform_Tile1,$03,$84;\luigi's platform
+DB $10,RespawnPlatform_Tile1,$43,$8B;/
 
 ;for bouncing upon death
 PlayerDeathYSpeeds_F6A9:
@@ -11619,36 +11605,36 @@ DB $00,$00,$01,$00,$01,$00,$01,$00
 DB $01,$01,$02,$02,$02,$03,$AA
 
 DATA_F6C8:
-DB $01					;CurrentEntity_ActiveFlag (obviously active)
-DB $00					;CurrentEntity_MovementBits
-DB $02					;CurrentEntity_TimerStorage
-DB $00					;CurrentEntity_UpdateTimer
-DB CoinSpinningAnimCycle_Start		;CurrentEntity_AnimationPointer
-DB Entity_Draw_8x16				;CurrentEntity_DrawMode
-DB GFX_Coin_Frame1				;CurrentEntity_DrawTile
-DB OAMProp_Palette2|OAMProp_BGPriority	;CurrentEntity_TileProps (the coin is coming out of the pipe... you know how it goes)
-DB $00					;CurrentEntity_YPos (overwritten afterwards)
-DB $00					;CurrentEntity_XPos (overwritten afterwards)
-DB $00					;CurrentEntity_OAMOffset (overwritten afterwards)
-DB $00					;CurrentEntity_PaletteOffset (does not affect coin)
+DB $01;CurrentEntity_ActiveFlag (obviously active)
+DB $00;CurrentEntity_MovementBits
+DB $02;CurrentEntity_TimerStorage
+DB $00;CurrentEntity_UpdateTimer
+DB CoinSpinningAnimCycle_Start;CurrentEntity_AnimationPointer
+DB Entity_Draw_8x16;CurrentEntity_DrawMode
+DB GFX_Coin_Frame1;CurrentEntity_DrawTile
+DB $22;CurrentEntity_TileProps (the coin is coming out of the pipe... you know how it goes)
+DB $00;CurrentEntity_YPos (overwritten afterwards)
+DB $00;CurrentEntity_XPos (overwritten afterwards)
+DB $00;CurrentEntity_OAMOffset (overwritten afterwards)
+DB $00;CurrentEntity_PaletteOffset (does not affect coin)
 DW DATA_F64C					;CurrentEntity_UpdateDataPointer (null by default)
-DB $00					;CurrentEntity_CurrentPlatform
-DB Entity_ID_Coin				;CurrentEntity_ID
+DB $00;CurrentEntity_CurrentPlatform
+DB Entity_ID_Coin;CurrentEntity_ID
 
-DB $00					;CurrentEntity_BumpedStateAndBits
-DB $01 					;CurrentEntity_MiscRAM
-DB $00					;CurrentEntity_PipeDir
-DB CoinXMovementData_Start			;CurrentEntity_XSpeedTableOffset
-DB $02					;CurrentEntity_XSpeedTableEntry
-DB $01					;CurrentEntity_XSpeed
-DB $00					;CurrentEntity_XSpeedAlterTimer
-DB $00					;CurrentEntity_XSpeedModifier
-DB $00					;CurrentEntity_TurningCounter
-DB $00					;CurrentEntity_DefeatedState
-DB $00,$00					;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players)
-DB $00					;CurrentEntity_WhichPlayerInteracted
-DB $00					;CurrentEntity_TileAtBottomVRAMPos
-DB $04,$03					;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
+DB $00;CurrentEntity_BumpedStateAndBits
+DB $01;CurrentEntity_MiscRAM
+DB $00;CurrentEntity_PipeDir
+DB CoinXMovementData_Start;CurrentEntity_XSpeedTableOffset
+DB $02;CurrentEntity_XSpeedTableEntry
+DB $01;CurrentEntity_XSpeed
+DB $00;CurrentEntity_XSpeedAlterTimer
+DB $00;CurrentEntity_XSpeedModifier
+DB $00;CurrentEntity_TurningCounter
+DB $00;CurrentEntity_DefeatedState
+DB $00,$00;CurrentEntity_Player_VRAMPosLo/CurrentEntity_Player_VRAMPosHi (has no effect on anything other than players)
+DB $00;CurrentEntity_WhichPlayerInteracted
+DB $00;CurrentEntity_TileAtBottomVRAMPos
+DB $04,$03;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
 
 ;used to animate unique defeats (coin & freezie)
 ;$CC - change CurrentEntity_DrawMode value with the next byte being input
@@ -11671,34 +11657,34 @@ DB $00,$00,$00,$00,$00,$00,$EE
 DATA_F722:
 PhaseString:
 DB $22,$4C
-DB $09                  ; Length of "PHASE   " string
-DB "PHASE   "          ; PHASE    (last 2 spaces are replaced with appropriate digits depending on phase number)
+DB $09; Length of "PHASE   " string
+DB "PHASE   "; PHASE    (last 2 spaces are replaced with appropriate digits depending on phase number)
 
 PEqualsString:
 DB $23,$41
-DB $04                  ; Length of "P=  " string
-DB "P=  "              ; P=   (same as above, spaces replaced with phase number digits)
+DB $04; Length of "P=  " string
+DB "P=  "; P=   (same as above, spaces replaced with phase number digits)
 DB VRAMWriteCommand_Stop
 
 ; TEST YOUR SKILL string used when loading TEST YOUR SKILL! phase
 DATA_F735:
 DB $21,$89
-DB $0F                  ; Length of "TEST YOUR SKILL" string
+DB $0F; Length of "TEST YOUR SKILL" string
 DB "TEST YOUR SKILL"
 
 ;maybe make the rest follow the same "first size then tiles" convention
 ;then timer initialization
 DB $20,$8D
 DB $06
-DB $30,$31,$31,$31,$31,$32				;top border
+DB $30,$31,$31,$31,$31,$32;top border
 
 DB $20,$AD
-DB $06						;|20.0| (changes to 15.0 afterwads if in later TEST YOUR SKILL phases)
+DB $06;|20.0| (changes to 15.0 afterwads if in later TEST YOUR SKILL phases)
 DB $33,"20",DecimalSeparator,"0",$34
 
 DB $20,$CD
 DB $06
-DB $35,$36,$36,$36,$36,$37				;bottom border
+DB $35,$36,$36,$36,$36,$37;bottom border
 DB VRAMWriteCommand_Stop
 
 ;data for Freezie's platform freezing (replacing tiles, attributes)
@@ -11862,7 +11848,7 @@ DB $04,$01
 DB $04,$00
 DB $04,$01
 DB $04,$01
-DB $AA    				;will just fall down from now on       
+DB $AA;will just fall down from now on       
 
 DATA_F81C:
 DB $00,$01,$02,$02,$01,$00,$AA
@@ -11873,7 +11859,7 @@ Player1DemoInputs_F823:
   DB Input_Right,$50
   DB $00,$10
   DB Input_Left,$14
-  DB Input_Left|Input_A,$40
+  DB $82,$40
   DB $00,$10
   DB Input_Right,$28
   DB $00,$50
@@ -11881,18 +11867,18 @@ Player1DemoInputs_F823:
   DB Input_Left,$28
   DB $00,$14
   DB Input_Right,$10
-  DB Input_Right|Input_A,$40
+  DB $81,$40
   DB $00,$48
   DB Input_Right,$30
-  DB Input_Right|Input_A,$30
+  DB $81,$30
   DB Input_Right,$10
   DB $00,$10
   DB Input_Left,$45
-  DB Input_Left|Input_A,$40
+  DB $82,$40
   DB Input_Left,$20
   DB $00,$08
   DB Input_Right,$40
-  DB Input_Right|Input_A,$40
+  DB $81,$40
 
 
 DB Demo_EndCommand
@@ -11903,18 +11889,18 @@ DATA_F854:
   DB Input_Left,$50
   DB $00,$10
   DB Input_Right,$18
-  DB Input_Right|Input_A,$30
-  DB Input_Right|Input_A,$18
+  DB $81,$30
+  DB $81,$18
   DB $00,$10
   DB Input_Left,$24
-  DB Input_Left|Input_A,$60
-  DB Input_Left|Input_A,$40
+  DB $82,$60
+  DB $82,$40
   DB $00,$08
   DB Input_Right,$24
-  DB Input_Right|Input_A,$40
+  DB $81,$40
   DB $00,$18
   DB Input_Left,$10
-  DB Input_Left|Input_A,$40
+  DB $82,$40
   DB $00,$40
   DB Input_Right,$60
   DB $00,$50
@@ -12324,7 +12310,7 @@ HandleSound_Effect2_FA91:
    BCS InitEnemyBumpedSFX_FA66			;init Sound_Effect2_EnemyBumped
 
    LSR A					;
-   BCS PlayJumpSFX_FADB				;continue playing Sound_Effect2_Jump
+   BCS PlayJumpSFX_FADB ;continue playing Sound_Effect2_Jump
 
    LSR Sound_Effect2				;
    BCS InitJumpSFX_FAD4				;init sound Sound_Effect2_Jump
@@ -13150,7 +13136,7 @@ DB $46,$46,$4E,$52,$42,$4E,$12,$14
 DB $16,$18,$1A,$05
 
 CoinCountSoundData_FF0B:
-DB $E6,$00					;yep, it's just one square channel tone that goes down in volume
+DB $E6,$00;yep, it's just one square channel tone that goes down in volume
 
 GameOverSoundData_FF0D:
 DB $2E,$46,$02,$AE,$6A,$67,$28,$6A
@@ -13201,4 +13187,5 @@ DB $84,$84,$84,$84,$44,$44,$44,$05
    DW NMI_C07D
    DW RESET_C000
    DW RESET_C000
+
 
