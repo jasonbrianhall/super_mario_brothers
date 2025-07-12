@@ -354,6 +354,7 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
             
             for value in values:
                 original_value = value
+                processed = False
                 
                 # Skip if it's already a hex value, decimal, or simple string
                 if (value.startswith('$') and not any(op in value for op in ['+', '-', '|', '&', '^', '*'])) or \
@@ -378,12 +379,14 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
                     if var_val is not None:
                         result = var_val + offset
                         value = f'${result:02X}'
+                        processed = True
                     else:
                         if is_final_pass:
                             value = f'{original_value} ; TODO: Calculate manually'
+                            processed = True
                 
-                # Handle bitwise OR like OAMProp_XFlip|OAMProp_Palette0
-                elif '|' in value and not value.startswith('$'):
+                # Handle bitwise OR like FreezeEffect_Property|OAMProp_XFlip
+                if not processed and '|' in value and not value.startswith('$'):
                     or_parts = value.split('|')
                     if len(or_parts) == 2:
                         left_var = or_parts[0].strip()
@@ -395,12 +398,14 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
                         if left_val is not None and right_val is not None:
                             result = left_val | right_val
                             value = f'${result:02X}'
+                            processed = True
                         else:
                             if is_final_pass:
                                 value = f'{original_value} ; TODO: Calculate manually'
+                                processed = True
                 
                 # Handle variable-constant arithmetic like GFX_Player_Standing-1
-                elif '-' in value and not value.startswith('$') and '@' not in value:
+                if not processed and '-' in value and not value.startswith('$') and '@' not in value:
                     var_minus_const_match = re.match(r'(\w+)-(\$?[0-9A-Fa-f]+)', value)
                     if var_minus_const_match:
                         var_name = var_minus_const_match.group(1)
@@ -416,12 +421,14 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
                         if var_val is not None:
                             result = var_val - offset
                             value = f'${result:02X}'
+                            processed = True
                         else:
                             if is_final_pass:
                                 value = f'{original_value} ; TODO: Calculate manually'
+                                processed = True
                 
                 # Handle bitwise AND like SomeVar&$0F
-                elif '&' in value and not value.startswith('$'):
+                if not processed and '&' in value and not value.startswith('$'):
                     and_parts = value.split('&')
                     if len(and_parts) == 2:
                         var_name = and_parts[0].strip()
@@ -434,9 +441,22 @@ def convert_asm6_to_x816(input_file, output_file, flatten_includes=True):
                             if var_val is not None:
                                 result = var_val & mask_val
                                 value = f'${result:02X}'
+                                processed = True
                             else:
                                 if is_final_pass:
                                     value = f'{original_value} ; TODO: Calculate manually'
+                                    processed = True
+                
+                # If it's just a variable name with no operators, leave it as-is
+                # This handles cases like FreezeEffect_Tile2 which should remain unchanged
+                if not processed:
+                    # Check if it's a simple variable name (letters, numbers, underscore)
+                    if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', value):
+                        # It's a simple variable name, leave it unchanged
+                        pass
+                    elif is_final_pass:
+                        # Unknown pattern, add TODO only on final pass
+                        value = f'{original_value} ; TODO: Check manually'
                 
                 processed_values.append(value)
             
