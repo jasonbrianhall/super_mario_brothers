@@ -7645,31 +7645,23 @@ CODE_E077:
 ;MARIO GAME OVER
 MarioGameOverString_E078:
 DB $1F		;really wish I could use a macro, but alas, the macro labels are global
-@StringStart:
-	DB "MARIO GAME OVER"			;but hey, you can now directly edit the text without referencing game's character mapping. pretty cool, huh?
-@StringEnd:
+DB "MARIO GAME OVER"			;but hey, you can now directly edit the text without referencing game's character mapping. pretty cool, huh?
 
 ;if both players are dead in 2P mode or 1 player in 1P
 ;   GAME OVER   
 GameOverString_E088:
 DB $1F
-@StringStart:
 	DB "   GAME OVER   "
-@StringEnd:
 
 ;LUIGI GAME OVER
 LuigiGameOverString_E098:
 DB $1F
-@StringStart:
 	DB "LUIGI GAME OVER"
-@StringEnd:
 
 ;Empty string
 EmptyString_E0A8:
 DB $1F
-@StringStart:
 	DB "               "
-@StringEnd:
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;This subroutine resets RAM addresses $0300-$0400 (entity-related).
@@ -8547,15 +8539,11 @@ CODE_E554:
 ;various strings for coin counting after TEST YOUR SKILL!
 MarioString_E568:
 DB $1F
-@StringStart:
 	DB "MARIO"
-@StringEnd:
 
 LuigiString_E56E:
 DB $1F
-@StringStart:
 	DB "LUIGI"
-@StringEnd:
 
 ;init mario and luigi sprite tiles, for after TEST YOUR SKILL! screen
 DATA_E574:
@@ -8578,30 +8566,22 @@ DB $88,GFX_Player_Standing+4,OAMProp_XFlip|OAMProp_Palette1,$28
 ;PERFECT!! (!! is a single character)
 PerfectString_E5A4:
 DB $1F
-@StringStart:
 	DB "PERFECT",TwoExclamationMarks
-@StringEnd:
 
 ;5000PTS'
 DATA_E5AD:
 DB $1F
-@StringStart:
 	DB "5000PTS'"
-@StringEnd:
 
 ;3000PTS'
 DATA_E5B6:
 DB $1F
-@StringStart:
 	DB "3000PTS'"
-@StringEnd:
 
 ;     NO BONUS.
 DATA_E5BF:
 DB $1F
-@StringStart:
 	DB "     NO BONUS."
-@StringEnd:
 
 ;count each coin
 CODE_E5CE:
@@ -8828,9 +8808,7 @@ DB $D8,$BA,CoinSpinningAnimCycle_Start+4
 ;X 800 string
 DATA_E703:
 DB $1F
-@StringStart:
 	DB "X 800"
-@StringEnd:
 
 ;Combo chain timers and fireball spawn timers handler
 CODE_E709:
@@ -10624,50 +10602,38 @@ DB $68,$6A,$6F,$70,$6F,$70,$73,$24,$88
 ;1 PLAYER GAME A
 OnePlayerGameAString:
 DB $22,$09
-DB @StringEnd-@StringStart
-@StringStart:
-	DB "1 PLAYER GAME A"
-@StringEnd:
+DB $0F                  ; Length of "1 PLAYER GAME A" string
+DB "1 PLAYER GAME A"
 
-;1 PLAYER GAME B
+; 1 PLAYER GAME B
 OnePlayerGameBString:
 DB $22,$49
-DB @StringEnd-@StringStart
-@StringStart:
-	DB "1 PLAYER GAME B"
-@StringEnd:
+DB $0F                  ; Length of "1 PLAYER GAME B" string
+DB "1 PLAYER GAME B"
 
+; 2 PLAYER GAME A
 TwoPlayerGameAString:
-;2 PLAYER GAME A
 DB $22,$89
-DB @StringEnd-@StringStart
-@StringStart:
-	DB "2 PLAYER GAME A"
-@StringEnd:
+DB $0F                  ; Length of "2 PLAYER GAME A" string
+DB "2 PLAYER GAME A"
 
+; 2 PLAYER GAME B
 TwoPlayerGameBString:
-;2 PLAYER GAME B
 DB $22,$C9
-DB @StringEnd-@StringStart
-@StringStart:
-	DB "2 PLAYER GAME B"
-@StringEnd:
+DB $0F                  ; Length of "2 PLAYER GAME B" string
+DB "2 PLAYER GAME B"
 
+; (c)1983 NINTENDO CO.,LTD.
 NintendoCOString:
-;(c)1983 NINTENDO CO.,LTD.
 DB $23,$05
-DB @StringEnd-@StringStart
-@StringStart:
-	DB CopyrightSymbol,"1983 NINTENDO CO",DotAndComma,"LTD."
-@StringEnd:
+DB $17                  ; Length of copyright string
+DB CopyrightSymbol,"1983 NINTENDO CO",DotAndComma,"LTD."
 
-;MADE IN JAPAN
+; MADE IN JAPAN
 MadeInJapanString:
 DB $23,$4B
-DB @StringEnd-@StringStart
-@StringStart:
-	DB "MADE IN JAPAN"
-@StringEnd:
+DB $0D                  ; Length of "MADE IN JAPAN" string
+DB "MADE IN JAPAN"
 
 ;DB $0D
 ;DB $16,$0A,$0D,$0E,$24,$12,$17,$24,$13,$0A,$19,$0A,$17
@@ -11705,26 +11671,20 @@ DB $00,$00,$00,$00,$00,$00,$EE
 DATA_F722:
 PhaseString:
 DB $22,$4C
-DB @StringEnd-@StringStart
-@StringStart:
-	DB "PHASE   "				;PHASE    (last 2 spaces are replaced with appropriate digits depending on phase number)
-@StringEnd:
+DB $09                  ; Length of "PHASE   " string
+DB "PHASE   "          ; PHASE    (last 2 spaces are replaced with appropriate digits depending on phase number)
 
 PEqualsString:
 DB $23,$41
-DB @StringEnd-@StringStart
-@StringStart:
-	DB "P=  "					;P=   (same as above, spaces replaced with phase number digits)
-@StringEnd:
+DB $04                  ; Length of "P=  " string
+DB "P=  "              ; P=   (same as above, spaces replaced with phase number digits)
 DB VRAMWriteCommand_Stop
 
-;TEST YOUR SKILL string used when loading TEST YOUR SKILL! phase
+; TEST YOUR SKILL string used when loading TEST YOUR SKILL! phase
 DATA_F735:
 DB $21,$89
-DB @StringEnd-@StringStart
-@StringStart:
-	DB "TEST YOUR SKILL"
-@StringEnd:
+DB $0F                  ; Length of "TEST YOUR SKILL" string
+DB "TEST YOUR SKILL"
 
 ;maybe make the rest follow the same "first size then tiles" convention
 ;then timer initialization
