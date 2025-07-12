@@ -958,19 +958,11 @@ Version = NTSC
 MAPPER = 0					;which mapper it's using (NROM)
 MIRRORING = 1					;vertical mirroring (supposedly)
 
-.if Version = PAL
-  REGION = 1					;obviously the TV system is PAL for PAL version
-.else
   REGION = 0
-.endif
 
    DB "NES", $1A
 
-.if Version = Gamecube
-   DB $02					;16KB PRG space (for code) = 2
-.else
    DB $01					;16KB PRG space (for code) = 1
-.endif
 
    DB $01					;8KB CHR space (for GFX) = 1
    DB $01		;Mapper = 0 and Mirroring is (supposedly) vertical
@@ -986,48 +978,6 @@ MIRRORING = 1					;vertical mirroring (supposedly)
 
 .segment "TILES"
 .incbin "MarioBrosGFX.bin"			;graphics
-
-.if Version = Gamecube
-.segment "GCPADDING"
-;there will be padding here...
-
-;padding ends here
-.segment "GCCODE"
-
-Gamecube_CODE_BFD0:
-   LDX NonGameplayMode				;check if loading the title screen
-   BNE Gamecube_CODE_BFD7			;
-   JMP CODE_C58E				;obviously, can't select options yet
-
-Gamecube_CODE_BFD7:
-   LDY Cursor_Option				;
-   INY						;
-   CMP #Input_Select				;if pressed select, cursor goes down (like in vanilla)
-   BEQ Gamecube_CODE_BFEB			;
-   CMP #Input_Down				;if pressed down on d-pad, cursor goes down (like in not vanilla but pretty much any game you can think of)
-   BEQ Gamecube_CODE_BFEB			;
-   DEY						;cursor will go up if...
-   DEY						;
-   CMP #Input_Up				;...if pressed up
-   BEQ Gamecube_CODE_BFEB			;
-   JMP CODE_C568				;
-
-Gamecube_CODE_BFEB:
-   CPX #$01					;
-   BEQ Gamecube_CODE_BFF2			;are we on the title screen?
-   JMP CODE_C561				;do return to the title screen
-
-Gamecube_CODE_BFF2:
-   LDA TitleScreen_SelectHeldFlag		;
-   BEQ Gamecube_CODE_BFF9			;
-   JMP CODE_C574				;
-
-Gamecube_CODE_BFF9:
-   TYA						;change selected option
-   AND #$03					;
-   TAY						;
-   JMP CODE_C55C				;
-.endif
 
 .segment "CODE"
 
@@ -2092,11 +2042,7 @@ DATA_C510:
 
 CODE_C528:
    LDA Controller1InputHolding			;
-.if Version = Gamecube				;count ups and downs in the gamecube version (modernize selecting options on the title screen)
-   AND #$30|Input_Up|Input_Down
-.else
    AND #$30		;
-.endif
    CMP #Input_Start				;if player pressed start, start the game
    BNE CODE_C543				;
 
@@ -2113,13 +2059,8 @@ CODE_C528:
    RTS						;
 
 CODE_C543:
-.if Version = Gamecube
-   JMP Gamecube_CODE_BFD0			;a hijack
-   NOP						;
-.else
    LDX NonGameplayMode				;\if it's title screen init
    BEQ CODE_C58E				;/don't check things
-.endif
    CMP #Input_Select                 		;\check if pressed select
    BNE CODE_C568                		;/
    CPX #$01                 			;\if select was pressed, but it's not a title screen
@@ -2194,9 +2135,6 @@ DATA_C593:
    DW CODE_D448				;reset pointer
 
 CODE_C5A3:
-.if Version = PAL
-   JSR PAL_CODE_C5DE				;alter speed of fireballs and players
-.endif
    JSR CODE_D56E				;spawn enemy entities if needed
    JSR CODE_D202				;handle bumping tiles
    JSR CODE_D301				;apply POW's screen shake if needed
@@ -2218,18 +2156,6 @@ CODE_C5A3:
    LDA #$01					;
    STA UpdateEntitiesFlag			;can update entity variables (for NMI)
    RTS						;
-
-.if Version = PAL
-PAL_CODE_C5DE:
-   DEC PAL_SpeedAlterationTimer			;tick this special speed-altering timer
-   BPL PAL_CODE_C5E6				;
-
-   LDA #$03					;
-   STA PAL_SpeedAlterationTimer			;refresh this mysterious variable
-
-PAL_CODE_C5E6:
-   RTS						;
-.endif
 
 HandlePlayerEntities_C5DB:
    LDA #<Entity_Address				;
@@ -2832,25 +2758,7 @@ CODE_C8F4:
 
    LDA CurrentEntity_ID				;check for player
    AND #$0F					;
-.if Version <> PAL
    BNE CODE_C90A				;just update x
-.else
-   BEQ PAL_CODE_C919
-
-   LDA PAL_SpeedAlterationTimer			;player will be slightly slower to match PAL's lower refresh rate
-   BNE PAL_CODE_C927				;
-
-   LDA CurrentEntity_XSpeedTableEntry		;if player is moving only slightly
-   BEQ PAL_CODE_C927				;
-   DEY						;
-   CMP #$01					;if running...
-   BEQ PAL_CODE_C927				;will slow down
-
-   LDY #$01					;skidding, on the other hand, is FASTER. Every 4th frame that is.
-   BNE PAL_CODE_C927				;
-
-PAL_CODE_C919:
-.endif
 
    LDA CurrentEntity_TurningCounter		;is it turning?
    BNE CODE_C916				;doesnt move
@@ -8281,11 +8189,7 @@ CODE_E36C:
    DEC BonusTimeMilliSecs			;-1 millisecond
 
 CODE_E374:
-.if Version = PAL
-   LDA #BonusTimerMilliSecondTiming-1		;WOW! Milliseconds go by faster in PAL version! Who woulda guessed? Well... maybe not me.
-.else
    LDA #BonusTimerMilliSecondTiming		;
-.endif
    STA BonusTimeMilliSecs_Timing		;
 
    LDA #$14					;draw 1 row with 4 tiles
@@ -9278,15 +9182,6 @@ CODE_E905:
 CODE_E907:
    DEC Entity_WavyFireball_XPos			;
 
-.if Version = PAL
-   LDX PAL_SpeedAlterationTimer			;will move an extra pixel every 4th frame
-   BNE PAL_CODE_E92E				;
-
-   DEC Entity_WavyFireball_XPos			;move left
-
-PAL_CODE_E92E:
-.endif
-
 CODE_E90A:
    CLC						;
    ADC Entity_WavyFireball_YPos			;
@@ -9333,13 +9228,6 @@ CODE_E94B:
    LDA #$00					;
 
 CODE_E94D:
-.if Version = PAL
-   INC Entity_WavyFireball_XPos			;
-
-   LDX PAL_SpeedAlterationTimer			;will move an extra pixel every 4th frame
-   BNE PAL_CODE_E92E				;
-.endif
-
    INC Entity_WavyFireball_XPos			;
    BNE CODE_E90A				;
 
@@ -9790,24 +9678,10 @@ CODE_EBBC:
    LDA Entity_ReflectingFireball_HorzDirection	;check direction with which the fireball is moving (left or right)
    BNE CODE_EBC9				;
 
-.if Version = PAL
-   INC Entity_ReflectingFireball_XPos		;
-
-   LDA PAL_SpeedAlterationTimer			;I hope you already got the idea. Yes, extra pixel every fourth frame
-   BNE PAL_CODE_EC05				;
-.endif
-
    INC Entity_ReflectingFireball_XPos		;move right
    BNE CODE_EBCC				;
 
 CODE_EBC9:
-.if Version = PAL
-   DEC Entity_ReflectingFireball_XPos		;
-
-   LDA PAL_SpeedAlterationTimer			;The wonders of PAL conversions. Did you know that the European version of Duck Tales for the NES made Scrooge faster to compensate for slower frame rate?
-   BNE PAL_CODE_EC05				;
-.endif
-
    DEC Entity_ReflectingFireball_XPos		;move left
 
 PAL_CODE_EC05:
@@ -10647,24 +10521,14 @@ DB $00					;CurrentEntity_TileAtBottomVRAMPos
 DB $04,$04					;CurrentEntity_HitBoxHeight/CurrentEntity_HitBoxWidth
 
 DATA_F081:
-.if Version <> PAL
   DB $28,$1E,$0A,$05,$0F,$0A,$07,$03		;NTSC
-.else
-  DB $21,$19,$08,$04,$0D,$08,$06,$03		;PAL
-.endif
 
 ;timer values for how long it should take for a reflecting fireball to appear
 ;progressively less and less time to spawn a fireball
 DATA_F089:
-.if Version <> PAL
   DB $32,$32,$28,$26,$1E,$1E,$1C,$12		;NTSC
   DB $28,$28,$1C,$12,$1C,$1C,$12,$0A
   DB $1E,$14,$14,$12,$14,$12,$0A,$08
-.else
-  DB $28,$28,$21,$1F,$19,$19,$17,$0F		;PAL
-  DB $21,$21,$17,$0F,$17,$17,$0F,$08
-  DB $19,$10,$10,$0F,$10,$0F,$08,$06
-.endif
 
 ;y-positions for wavy fireball's spawn points, based on which platform level the player was on at the moment of its spawn
 WavyFireball_SpawnYPos_F0A1:
@@ -11063,108 +10927,61 @@ DB $00,$00,$00,$00,$00,$00
 
 ;gravity y-speeds for entities (differs between PAL and NTSC versions)
 DATA_F33A:
-.if Version <> PAL
   DB $01,$00,$01,$00,$01,$01,$00,$01		;NTSC gravity
   DB $01,$02,$01,$02,$02,$02,$02,$02
   DB $02,$03,$03,$03,$03
-.else
-  DB $01,$00,$01,$01,$01,$02,$01,$02		;PAL gravity (faster)
-  DB $02,$02,$02,$03,$03,$03,$03,$03
-  DB $03
-.endif
 
 DB $AA
 
 ;Vertical jump/bounce y-speeds for Mario & Luigi (when jumping or bouncing off another player)
 DATA_F350:
-.if Version <> PAL
   DB $FC,$FC,$FC,$FC,$FC,$FC,$FC,$FD		;NTSC
   DB $FD,$FE,$FE,$FE,$FE,$FE,$FE,$FF
   DB $FE,$FF,$FF,$FF,$00,$FF,$FF,$00
   DB $FF,$00,$00,$00
-.else
-  DB $FC,$FC,$FC,$FC,$FC,$FC,$FC,$FC		;PAL
-  DB $FD,$FD,$FE,$FE,$FE,$FE,$FE,$FE
-  DB $FE,$FF,$FF,$FF,$00,$FF,$00
-.endif
 
 DB $AA
 
 ;Vertical jump y-speeds for the Fighterfly when not on the bottom platform
 DATA_F36D:
-.if Version <> PAL
   DB $FE,$FE,$FE
-.else
-  DB $FD,$FE,$FE
-.endif
 
 ;vertical jump y-speeds for the Fighterfly, general
 DATA_F370:
-.if Version <> PAL
   DB $FF,$FF,$FF,$FF,$FF,$00,$FF,$00		;NTSC
   DB $FF,$00
-.else
-  DB $FE,$FE,$FF,$FF,$FF,$00,$FF		;PAL
-.endif
 
 DB $AA
 
 ;Sidestepper's something
 DATA_F37B:
-.if Version <> PAL
   DB $00,$01,$00,$01,$00,$01,$01,$01		;NTSC
   DB $02,$01,$01,$02,$03,$03,$04,$04
   DB $CC,$04,$CC,$CC,$CC,$04,$CC
-.else
-  DB $00,$01,$01,$01,$01,$01,$02,$02		;PAL (I don't think I need to tell you that fact from now on, just know that values after .if - NTSC, after .else - PAL)
-  DB $02,$02,$03,$03,$04,$04,$CC,$04
-  DB $CC,$CC,$CC,$04,$CC
-.endif
 
 DB $AA
 
 ;x-speed, movement timing (every x frames), speed modifier (typically used to make the entity stop at certain times so it looks like it moves slowly)
 EntityXMovementData_F393:
 PlayerXMovementData:
-.if Version <> PAL
   DB $01,$03,$00
   DB $01,$02,$00
   DB $01,$01,$00
-.else
-  DB $01,$02,$00
-  DB $01,$01,$00
-  DB $01,$01,$00
-.endif
 DB $AA
 
 ShellcreeperXMovementData:
-.if Version <> PAL
   DB $01,$03,$00
   DB $01,$02,$00
   DB $01,$01,$FF
-.else
-  DB $01,$02,$00
-  DB $01,$01,$FF
-  DB $01,$01,$00
-.endif
 DB $AA
 
 SidestepperXMovementData:
-.if Version <> PAL
   DB $01,$02,$00
   DB $01,$01,$FF
   DB $01,$01,$FF
   DB $01,$01,$00
   DB $01,$01,$00
   DB $01,$01,$01			;third byte = actutally speed up instead of slowing down every now and then
-.else
-  DB $01,$01,$FF
-  DB $01,$01,$00
-  DB $01,$01,$00
-  DB $01,$01,$01
-  DB $01,$01,$01
-  DB $02,$01,$FF
-.endif
 DB $AA
 
 ;This set of data is enemy data to spawn from pipes per "Enemy level".
@@ -11190,202 +11007,108 @@ DW DATA_F449
 
 ;3 shellkreepers
 DATA_F3D2:
-.if Version <> PAL
   DB $05,$00
   DB $12,$00
   DB $1F,$00
-.else
-  DB $04,$00				;yes, spawning times are also different in PAL version
-  DB $0E,$00
-  DB $19,$00
-.endif
 DB $AA
 
 ;5 shellkreepers
 DATA_F3D9:
-.if Version <> PAL
   DB $05,$00
   DB $12,$00
   DB $1F,$00
   DB $19,$00
   DB $1F,$00
-.else
-  DB $04,$00
-  DB $0E,$00
-  DB $19,$00
-  DB $14,$00
-  DB $19,$00
-.endif
 DB $AA
 
 ;4 sidesteppers
 DATA_F3E4:
-.if Version <> PAL
   DB $05,$01
   DB $0C,$01
   DB $2B,$01
   DB $0C,$01
-.else
-  DB $04,$01
-  DB $0A,$01
-  DB $24,$01
-  DB $0A,$01
-.endif
 DB $AA
 
 ;4 sidesteppers and 2 shellkreepers
 DATA_F3ED:
-.if Version <> PAL
   DB $03,$01
   DB $0C,$01
   DB $31,$00
   DB $06,$00
   DB $49,$01
   DB $07,$01
-.else
-  DB $03,$01
-  DB $0A,$01
-  DB $28,$00
-  DB $05,$00
-  DB $3C,$01
-  DB $06,$01
-.endif
 DB $AA
 
 ;4 fighterflies
 DATA_F3FA:
-.if Version <> PAL
   DB $0C,$02
   DB $0C,$02
   DB $31,$02
   DB $0C,$02
-.else
-  DB $0A,$02
-  DB $0A,$02
-  DB $28,$02
-  DB $0A,$02
-.endif
 DB $AA
 
 ;3 fighterflies and 2 sidesteppers
 DATA_F403:
-.if Version <> PAL
   DB $0C,$02
   DB $0C,$02
   DB $31,$01
   DB $06,$01
   DB $31,$02
-.else
-  DB $0A,$02
-  DB $0A,$02
-  DB $28,$01
-  DB $05,$01
-  DB $28,$02
-.endif
 DB $AA
 
 ;4 shellkreepers, 1 fighterfly
 DATA_F40E:
-.if Version <> PAL
   DB $03,$00
   DB $0C,$00
   DB $31,$02
   DB $06,$00
   DB $31,$00
-.else
-  DB $03,$00
-  DB $0A,$00
-  DB $28,$02
-  DB $05,$00
-  DB $28,$00
-.endif
 DB $AA
 
 ;4 sidesteppers, 1 fighterfly
 DATA_F419:
-.if Version <> PAL
   DB $03,$01
   DB $0C,$01
   DB $31,$02
   DB $06,$01
   DB $31,$01
-.else
-  DB $03,$01
-  DB $0A,$01
-  DB $28,$02
-  DB $05,$01
-  DB $28,$01
-.endif
 DB $AA
 
 ;4 sidesteppers, 2 fighterflies
 DATA_F424:
-.if Version <> PAL
   DB $0C,$02
   DB $0C,$01
   DB $31,$01
   DB $06,$01
   DB $31,$02
   DB $12,$01
-.else
-  DB $0A,$02
-  DB $0A,$01
-  DB $28,$01
-  DB $05,$01
-  DB $28,$02
-  DB $0E,$01
-.endif
 DB $AA
 
 ;4 sidesteppers, 2 fighterflies, different order
 DATA_F431:
-.if Version <> PAL
   DB $03,$01
   DB $0C,$01
   DB $31,$01
   DB $06,$02
   DB $31,$02
   DB $12,$01
-.else
-  DB $03,$01
-  DB $0A,$01
-  DB $28,$01
-  DB $05,$02
-  DB $28,$02
-  DB $0E,$01
-.endif
 DB $AA
 
 ;4 shellkreepers, 1 sidestepper
 DATA_F43E:
-.if Version <> PAL
   DB $03,$00
   DB $0C,$00
   DB $31,$01
   DB $06,$00
   DB $06,$00
-.else
-  DB $03,$00
-  DB $0A,$00
-  DB $28,$01
-  DB $05,$00
-  DB $05,$00
-.endif
 DB $AA
 
 ;4 shellkreepers, different timings
 DATA_F449:
-.if Version <> PAL
   DB $01,$00
   DB $05,$00
   DB $40,$00
   DB $FF,$00
-.else
-  DB $01,$00
-  DB $05,$00
-  DB $31,$00
-  DB $FF,$00
-.endif
 DB $AA
 
 ;initial values for entities when spawned, specifically, shellcreeper, sidestepper and fighterfly
@@ -11741,37 +11464,22 @@ DB GFX_CollectedCoin_Frame1,Entity_Draw_8x8
 
 ;bounce y-speed for shellcreeper and sidestepper (flows into the table right after)
 DATA_F5AA:
-.if Version <> PAL
   DB $FD,$FE,$FE
-.else
-  DB $FD,$FD,$FE
-.endif
 
 ;bounce y-speed after getting bumped by the player (continuation for shellcreeper/sidestepper, and beginning for players)
 DATA_F5AD:
-.if Version <> PAL
   DB $FE,$FE,$FF,$FF,$FF,$FE,$00,$FF
   DB $00,$FE,$00,$FF,$00,$00,$00
-.else
-  DB $FE,$FE,$FE,$FF,$FF,$00,$FF,$00
-  DB $FF,$00,$00
-.endif
 DB $99					;stop
 
 DATA_F5BD:
-.if Version <> PAL
   DB $FE,$FE,$FE,$FF,$FF,$FF,$00,$FF
   DB $00,$FF,$00,$00
-.else
-  DB $FD,$FE,$FE,$FF,$FF,$FF,$00,$FF
-  DB $00
-.endif
 DB $99
 
 ;flipped animation table for shellcreeper, first byte is graphic frame and the second is how long it lasts
 ;$00 - cycle palette (to indicate that it's going to move faster)
 DATA_F5CA:
-.if Version <> PAL
   DB GFX_Shellcreeper_Flipped1,$40		;un-flipping animation timings are different between regions
   DB GFX_Shellcreeper_Flipped2,$40
   DB GFX_Shellcreeper_Flipped1,$40
@@ -11788,30 +11496,11 @@ DATA_F5CA:
   DB GFX_Shellcreeper_Flipped1,$10
   DB GFX_Shellcreeper_Flipped2,$08
   DB GFX_Shellcreeper_Flipped1,$08
-.else
-  DB GFX_Shellcreeper_Flipped1,$35
-  DB GFX_Shellcreeper_Flipped2,$35
-  DB GFX_Shellcreeper_Flipped1,$35
-  DB GFX_Shellcreeper_Flipped2,$28
-  DB GFX_Shellcreeper_Flipped1,$28
-  DB GFX_Shellcreeper_Flipped2,$1A
-  DB GFX_Shellcreeper_Flipped1,$1A
-  DB GFX_Shellcreeper_Flipped2,$1A
-  DB GFX_Shellcreeper_Flipped1,$1A
-  DB GFX_Shellcreeper_Flipped2,$14
-  DB GFX_Shellcreeper_Flipped1,$0D
-  DB $00
-  DB GFX_Shellcreeper_Flipped2,$0E
-  DB GFX_Shellcreeper_Flipped1,$0E
-  DB GFX_Shellcreeper_Flipped2,$08
-  DB GFX_Shellcreeper_Flipped1,$08
-.endif
 DB $FF
 
 
 ;flipped animation table for sidestepper
 DATA_F5EA:
-.if Version <> PAL
   DB GFX_Sidestepper_Flipped1,$40
   DB GFX_Sidestepper_Flipped2,$40
   DB GFX_Sidestepper_Flipped1,$40
@@ -11827,28 +11516,10 @@ DATA_F5EA:
   DB GFX_Sidestepper_Flipped2,$08
   DB GFX_Sidestepper_Flipped1,$08
   DB GFX_Sidestepper_Flipped2,$08
-.else
-  DB GFX_Sidestepper_Flipped1,$35
-  DB GFX_Sidestepper_Flipped2,$35
-  DB GFX_Sidestepper_Flipped1,$35
-  DB GFX_Sidestepper_Flipped2,$28
-  DB GFX_Sidestepper_Flipped1,$28
-  DB GFX_Sidestepper_Flipped2,$1A
-  DB GFX_Sidestepper_Flipped1,$1A
-  DB GFX_Sidestepper_Flipped2,$1A
-  DB GFX_Sidestepper_Flipped1,$14
-  DB GFX_Sidestepper_Flipped2,$0D
-  DB $00
-  DB GFX_Sidestepper_Flipped1,$0E
-  DB GFX_Sidestepper_Flipped2,$08
-  DB GFX_Sidestepper_Flipped1,$08
-  DB GFX_Sidestepper_Flipped2,$08
-.endif
 DB $FF
 
 ;flipped animation table for fighterfly
 DATA_F608:
-.if Version <> PAL
   DB GFX_Fighterfly_Flipped1,$60
   DB GFX_Fighterfly_Flipped2,$40
   DB GFX_Fighterfly_Flipped1,$30
@@ -11864,23 +11535,6 @@ DATA_F608:
   DB GFX_Fighterfly_Flipped2,$08
   DB GFX_Fighterfly_Flipped1,$08
   DB GFX_Fighterfly_Flipped2,$04
-.else
-  DB GFX_Fighterfly_Flipped1,$50
-  DB GFX_Fighterfly_Flipped2,$35
-  DB GFX_Fighterfly_Flipped1,$28
-  DB GFX_Fighterfly_Flipped2,$1A
-  DB GFX_Fighterfly_Flipped1,$1A
-  DB GFX_Fighterfly_Flipped2,$14
-  DB GFX_Fighterfly_Flipped1,$14
-  DB GFX_Fighterfly_Flipped2,$0E
-  DB GFX_Fighterfly_Flipped1,$0E
-  DB $00
-  DB GFX_Fighterfly_Flipped2,$08
-  DB GFX_Fighterfly_Flipped1,$08
-  DB GFX_Fighterfly_Flipped2,$08
-  DB GFX_Fighterfly_Flipped1,$08
-  DB GFX_Fighterfly_Flipped2,$04
-.endif
 DB $FF
 
 ;turning animation for shellcreeper. $01 - flip the image, $FF - end turning
@@ -12255,7 +11909,6 @@ DB $00,$01,$02,$02,$01,$00,$AA
 
 ;this table contains movement for Mario for demo mode. consists of pairs that are input and time for said input to be held.
 Player1DemoInputs_F823:
-.if Version <> PAL
   DB $00,$5C
   DB Input_Right,$50
   DB $00,$10
@@ -12280,38 +11933,12 @@ Player1DemoInputs_F823:
   DB $00,$08
   DB Input_Right,$40
   DB Input_Right|Input_A,$40
-.else
-  DB $00,$70					;the demo movie plays a bit differently compared to an NTSC version (the inputs are different + all the timing and speed differences from before)
-  DB Input_Right,$38
-  DB $00,$10
-  DB Input_Left,$18
-  DB Input_Left|Input_A,$01
-  DB Input_Right,$38
-  DB Input_A,$60
-  DB Input_A,$48
-  DB Input_Left,$0E
-  DB Input_Left|Input_A,$40
-  DB $00,$10
-  DB Input_Right,$10
-  DB Input_Right|Input_A,$58
-  DB $00,$40
-  DB Input_A,$30
-  DB Input_A,$20
-  DB Input_Right,$20
-  DB Input_Left,$88
-  DB Input_Right,$20
-  DB Input_A,$40
-  DB Input_Left,$60
-  DB Input_Left|Input_A,$30
-  DB Input_Right,$50
-  DB Input_Right|Input_A,$80
-.endif
+
 
 DB Demo_EndCommand
 
 ;same as above but for Luigi.
 DATA_F854:
-.if Version <> PAL
   DB $00,$30
   DB Input_Left,$50
   DB $00,$10
@@ -12332,28 +11959,6 @@ DATA_F854:
   DB Input_Right,$60
   DB $00,$50
   DB Input_Right,$FF
-.else
-  DB $00,$A0					;Luigi's demo inputs also get hit by PAL-region stick
-  DB Input_Left,$38
-  DB Input_Right,$20
-  DB Input_Right|Input_A,$40
-  DB $00,$20
-  DB Input_Left,$10
-  DB Input_Left|Input_A,$39
-  DB Input_Left|Input_A,$20
-  DB $00,$30
-  DB Input_Left,$08
-  DB Input_Left|Input_A,$40
-  DB Input_A,$90
-  DB Input_Left,$20
-  DB Input_Right,$30
-  DB Input_Right|Input_A,$50
-  DB $00,$50
-  DB Input_Right,$B8
-  DB Input_Right|Input_A,$80
-  DB $00,$50
-  DB Input_Right,$FF
-.endif
 
 ;Freespace from here on. 43 bytes in NTSC (and Gamecube, obviously) version, PAL version leaves only 7 bytes.
 
