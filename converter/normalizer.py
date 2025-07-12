@@ -41,8 +41,14 @@ def normalize_ca65(input_file, output_file):
                     i += 2
                     continue
         
-        # Keep the original line
-        output_lines.append(lines[i])
+        # Strip z: and a: prefixes and line numbers, then keep the line
+        cleaned_line = lines[i]
+        # Strip z: and a: prefixes
+        cleaned_line = re.sub(r'\b[za]:', '', cleaned_line)
+        # Strip line numbers at beginning of line
+        cleaned_line = re.sub(r'^\d+\s+', '', cleaned_line)
+        
+        output_lines.append(cleaned_line)
         i += 1
     
     # Write the output file
