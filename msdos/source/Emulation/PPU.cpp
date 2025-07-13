@@ -824,6 +824,10 @@ void PPU::writeByte(uint16_t address, uint8_t value)
             for (int i = 0; i < 512 * 8; i++) {
                 g_comprehensiveCache[i].is_valid = false;
             }
+            
+            // ALSO CLEAR THE FLIP CACHE
+            g_flipCache.clear();
+            g_flipCacheIndex.clear();
         }
 
         // Mirroring
