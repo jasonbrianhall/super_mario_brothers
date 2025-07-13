@@ -5,6 +5,9 @@
 
 ComprehensiveTileCache PPU::g_comprehensiveCache[512 * 8];
 bool PPU::g_comprehensiveCacheInit = false;
+std::vector<FlipCacheEntry> PPU::g_flipCache;
+std::unordered_map<uint32_t, size_t> PPU::g_flipCacheIndex;
+
 
 static const uint8_t nametableMirrorLookup[][4] = {
     {0, 0, 1, 1}, // Vertical
@@ -465,7 +468,7 @@ int PPU::getTileCacheIndex(uint16_t tile, uint8_t palette_type, uint8_t attribut
 void PPU::cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t attribute)
 {
     int cacheIndex = getTileCacheIndex(tile, palette_type, attribute);
-    if (cacheIndex >= 512 * 8) return;  // Bounds check
+    if (cacheIndex >= 512 * 8) return;
     
     ComprehensiveTileCache& cache = g_comprehensiveCache[cacheIndex];
     
@@ -475,7 +478,7 @@ void PPU::cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t at
         return;  // Already cached
     }
     
-    // Cache all 4 variations: normal, flipX, flipY, flipX+flipY
+    // Cache ONLY normal orientation (no flipping)
     for (int row = 0; row < 8; row++) {
         uint8_t plane1 = readCHR(tile * 16 + row);
         uint8_t plane2 = readCHR(tile * 16 + row + 8);
@@ -488,39 +491,27 @@ void PPU::cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t at
             uint16_t pixel16;
             
             if (palette_type == 0) {
-                // Background palette - ALL pixels are drawn
                 if (paletteIndex == 0) {
-                    colorIndex = palette[0];  // Universal background color
+                    colorIndex = palette[0];
                 } else {
-                    colorIndex = palette[(attribute & 0x03) * 4 + paletteIndex];  // Use only bottom 2 bits of attribute
+                    colorIndex = palette[(attribute & 0x03) * 4 + paletteIndex];
                 }
                 uint32_t pixel32 = paletteRGB[colorIndex];
                 pixel16 = ((pixel32 & 0xF80000) >> 8) | ((pixel32 & 0x00FC00) >> 5) | ((pixel32 & 0x0000F8) >> 3);
             } else {
-                // Sprite palette - paletteIndex 0 is transparent
                 if (paletteIndex == 0) {
-                    pixel16 = 0;  // Use 0 as transparency marker for sprites
+                    pixel16 = 0;
                 } else {
                     colorIndex = palette[0x10 + ((palette_type - 1) & 0x03) * 4 + paletteIndex];
                     uint32_t pixel32 = paletteRGB[colorIndex];
                     pixel16 = ((pixel32 & 0xF80000) >> 8) | ((pixel32 & 0x00FC00) >> 5) | ((pixel32 & 0x0000F8) >> 3);
-                    // Ensure non-transparent pixels are never 0
-                    if (pixel16 == 0) {
-                        pixel16 = 1;  // Make black slightly non-zero so it's not confused with transparency
-                    }
+                    if (pixel16 == 0) pixel16 = 1;
                 }
             }
             
-            // Store in all 4 orientations
-            int normalIdx = row * 8 + (7 - column);
-            int flipXIdx = row * 8 + column;
-            int flipYIdx = (7 - row) * 8 + (7 - column);
-            int flipXYIdx = (7 - row) * 8 + column;
-            
-            cache.pixels[normalIdx] = pixel16;
-            cache.pixels_flipX[flipXIdx] = pixel16;
-            cache.pixels_flipY[flipYIdx] = pixel16;
-            cache.pixels_flipXY[flipXYIdx] = pixel16;
+            // Store in normal orientation (7-column for NES bit order)
+            int pixelIndex = row * 8 + (7 - column);
+            cache.pixels[pixelIndex] = pixel16;
         }
     }
     
@@ -529,6 +520,7 @@ void PPU::cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t at
     cache.attribute = attribute;
     cache.is_valid = true;
 }
+
 void PPU::renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset, bool flipX, bool flipY)
 {
     // Initialize cache
@@ -542,28 +534,28 @@ void PPU::renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset
     uint16_t tile = readByte(index) + (ppuCtrl & (1 << 4) ? 256 : 0);
     uint8_t attribute = getAttributeTableValue(index);
     
-    // Cache the tile (background palette = 0)
-    cacheTileAllVariations(tile, 0, attribute);
-    
-    // Get cached pixels
-    int cacheIndex = getTileCacheIndex(tile, 0, attribute);
-    if (cacheIndex >= 512 * 8) return;
-    
-    ComprehensiveTileCache& cache = g_comprehensiveCache[cacheIndex];
     uint16_t* pixels;
     
-    // Select the right variation
-    if (flipX && flipY) {
-        pixels = cache.pixels_flipXY;
-    } else if (flipX) {
-        pixels = cache.pixels_flipX;
-    } else if (flipY) {
-        pixels = cache.pixels_flipY;
+    if (!flipX && !flipY) {
+        // Use normal cache
+        cacheTileAllVariations(tile, 0, attribute);
+        int cacheIndex = getTileCacheIndex(tile, 0, attribute);
+        if (cacheIndex >= 512 * 8) return;
+        pixels = g_comprehensiveCache[cacheIndex].pixels;
     } else {
-        pixels = cache.pixels;
+        // Use flip cache - create if needed
+        cacheFlipVariation(tile, 0, attribute, flipX, flipY);
+        
+        uint8_t flip_flags = (flipY ? 2 : 0) | (flipX ? 1 : 0);
+        uint32_t key = getFlipCacheKey(tile, 0, attribute, flip_flags);
+        
+        auto it = g_flipCacheIndex.find(key);
+        if (it == g_flipCacheIndex.end()) return; // Should not happen
+        
+        pixels = g_flipCache[it->second].pixels;
     }
     
-    // Draw ALL pixels (background tiles have no transparency)
+    // Draw pixels
     int pixelIndex = 0;
     for (int row = 0; row < 8; row++) {
         int y = yOffset + row;
@@ -575,7 +567,7 @@ void PPU::renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset
         for (int column = 0; column < 8; column++) {
             int x = xOffset + column;
             if (x >= 0 && x < 256) {
-                buffer[y * 256 + x] = pixels[pixelIndex];  // Draw ALL pixels
+                buffer[y * 256 + x] = pixels[pixelIndex];
             }
             pixelIndex++;
         }
@@ -584,29 +576,29 @@ void PPU::renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset
 
 void PPU::renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, int xOffset, int yOffset, bool flipX, bool flipY)
 {
-    // Cache the sprite tile (palette_type 1-4 for sprite palettes 0-3)
     uint8_t palette_type = (sprite_palette & 0x03) + 1;
-    cacheTileAllVariations(tile, palette_type, 0);  // Sprites don't use attribute for palette
-    
-    // Get cached pixels
-    int cacheIndex = getTileCacheIndex(tile, palette_type, 0);
-    if (cacheIndex >= 512 * 8) return;
-    
-    ComprehensiveTileCache& cache = g_comprehensiveCache[cacheIndex];
     uint16_t* pixels;
     
-    // Select the right variation
-    if (flipX && flipY) {
-        pixels = cache.pixels_flipXY;
-    } else if (flipX) {
-        pixels = cache.pixels_flipX;
-    } else if (flipY) {
-        pixels = cache.pixels_flipY;
+    if (!flipX && !flipY) {
+        // Use normal cache
+        cacheTileAllVariations(tile, palette_type, 0);
+        int cacheIndex = getTileCacheIndex(tile, palette_type, 0);
+        if (cacheIndex >= 512 * 8) return;
+        pixels = g_comprehensiveCache[cacheIndex].pixels;
     } else {
-        pixels = cache.pixels;
+        // Use flip cache - create if needed
+        cacheFlipVariation(tile, palette_type, 0, flipX, flipY);
+        
+        uint8_t flip_flags = (flipY ? 2 : 0) | (flipX ? 1 : 0);
+        uint32_t key = getFlipCacheKey(tile, palette_type, 0, flip_flags);
+        
+        auto it = g_flipCacheIndex.find(key);
+        if (it == g_flipCacheIndex.end()) return;
+        
+        pixels = g_flipCache[it->second].pixels;
     }
     
-    // Draw sprites with transparency support
+    // Draw sprites with transparency
     int pixelIndex = 0;
     for (int row = 0; row < 8; row++) {
         int y = yOffset + row;
@@ -619,7 +611,7 @@ void PPU::renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t sprite_pal
             int x = xOffset + column;
             if (x >= 0 && x < 256) {
                 uint16_t pixel = pixels[pixelIndex];
-                if (pixel != 0) {  // Only draw non-transparent pixels
+                if (pixel != 0) {
                     buffer[y * 256 + x] = pixel;
                 }
             }
@@ -704,24 +696,25 @@ void PPU::renderCachedSpriteWithPriority(uint16_t* buffer, uint16_t tile, uint8_
 {
     // Cache the sprite tile
     uint8_t palette_type = (sprite_palette & 0x03) + 1;
-    cacheTileAllVariations(tile, palette_type, 0);
-    
-    // Get cached pixels
-    int cacheIndex = getTileCacheIndex(tile, palette_type, 0);
-    if (cacheIndex >= 512 * 8) return;
-    
-    ComprehensiveTileCache& cache = g_comprehensiveCache[cacheIndex];
     uint16_t* pixels;
     
-    // Select the right variation
-    if (flipX && flipY) {
-        pixels = cache.pixels_flipXY;
-    } else if (flipX) {
-        pixels = cache.pixels_flipX;
-    } else if (flipY) {
-        pixels = cache.pixels_flipY;
+    if (!flipX && !flipY) {
+        // Use normal cache
+        cacheTileAllVariations(tile, palette_type, 0);
+        int cacheIndex = getTileCacheIndex(tile, palette_type, 0);
+        if (cacheIndex >= 512 * 8) return;
+        pixels = g_comprehensiveCache[cacheIndex].pixels;
     } else {
-        pixels = cache.pixels;
+        // Use flip cache - create if needed
+        cacheFlipVariation(tile, palette_type, 0, flipX, flipY);
+        
+        uint8_t flip_flags = (flipY ? 2 : 0) | (flipX ? 1 : 0);
+        uint32_t key = getFlipCacheKey(tile, palette_type, 0, flip_flags);
+        
+        auto it = g_flipCacheIndex.find(key);
+        if (it == g_flipCacheIndex.end()) return;
+        
+        pixels = g_flipCache[it->second].pixels;
     }
     
     // Draw sprites with background priority checking
@@ -910,3 +903,57 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
         break;
     }
 }
+
+uint32_t PPU::getFlipCacheKey(uint16_t tile, uint8_t palette_type, uint8_t attribute, uint8_t flip_flags)
+{
+    return (tile << 16) | (palette_type << 8) | (attribute << 4) | flip_flags;
+}
+
+void PPU::cacheFlipVariation(uint16_t tile, uint8_t palette_type, uint8_t attribute, bool flipX, bool flipY)
+{
+    uint8_t flip_flags = (flipY ? 2 : 0) | (flipX ? 1 : 0);
+    if (flip_flags == 0) return; // Normal orientation already cached
+    
+    uint32_t key = getFlipCacheKey(tile, palette_type, attribute, flip_flags);
+    
+    // Check if this flip variation is already cached
+    if (g_flipCacheIndex.find(key) != g_flipCacheIndex.end()) {
+        return; // Already cached
+    }
+    
+    // First, make sure we have the normal version cached
+    cacheTileAllVariations(tile, palette_type, attribute);
+    
+    // Get the normal cached version
+    int normalCacheIndex = getTileCacheIndex(tile, palette_type, attribute);
+    if (normalCacheIndex >= 512 * 8) return;
+    
+    ComprehensiveTileCache& normalCache = g_comprehensiveCache[normalCacheIndex];
+    if (!normalCache.is_valid) return;
+    
+    // Create new flip cache entry
+    FlipCacheEntry flipEntry;
+    flipEntry.tile_id = tile;
+    flipEntry.palette_type = palette_type;
+    flipEntry.attribute = attribute;
+    flipEntry.flip_flags = flip_flags;
+    
+    // Copy pixels from normal cache and apply flipping
+    for (int row = 0; row < 8; row++) {
+        for (int column = 0; column < 8; column++) {
+            int srcIndex = row * 8 + column;
+            
+            int dstRow = flipY ? (7 - row) : row;
+            int dstColumn = flipX ? (7 - column) : column;
+            int dstIndex = dstRow * 8 + dstColumn;
+            
+            flipEntry.pixels[dstIndex] = normalCache.pixels[srcIndex];
+        }
+    }
+    
+    // Add to dynamic cache
+    size_t newIndex = g_flipCache.size();
+    g_flipCache.push_back(flipEntry);
+    g_flipCacheIndex[key] = newIndex;
+}
+

@@ -2,17 +2,24 @@
 #define PPU_HPP
 
 #include <cstdint>
-
+#include <vector>
+#include <unordered_map>
 
 struct ComprehensiveTileCache {
-    uint16_t pixels[64];        
-    uint16_t pixels_flipX[64];  
-    uint16_t pixels_flipY[64];  
-    uint16_t pixels_flipXY[64]; 
+    uint16_t pixels[64];        // Normal orientation only
     uint16_t tile_id;
     uint8_t palette_type;       
     uint8_t attribute;
     bool is_valid;
+};
+
+// Dynamic storage for flip variations
+struct FlipCacheEntry {
+    uint16_t pixels[64];
+    uint16_t tile_id;
+    uint8_t palette_type;
+    uint8_t attribute;
+    uint8_t flip_flags;  // 1=flipX, 2=flipY, 3=flipXY
 };
 
 class SMBEngine;
@@ -106,15 +113,18 @@ private:
     void writeDataRegister(uint8_t value);
     void renderTile16(uint16_t* buffer, int index, int xOffset, int yOffset);
 
-static ComprehensiveTileCache g_comprehensiveCache[512 * 8];  // 512 tiles × 8 palette combinations
-static bool g_comprehensiveCacheInit;
+    static ComprehensiveTileCache g_comprehensiveCache[512 * 8];  // 512 tiles × 8 palette combinations
+    static bool g_comprehensiveCacheInit;
 
-int getTileCacheIndex(uint16_t tile, uint8_t palette_type, uint8_t attribute);
-void cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t attribute);
-void renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset, bool flipX, bool flipY);
-void renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t palette_idx, int xOffset, int yOffset, bool flipX, bool flipY);
-void renderCachedSpriteWithPriority(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, int xOffset, int yOffset, bool flipX, bool flipY, bool behindBackground);
-
+    int getTileCacheIndex(uint16_t tile, uint8_t palette_type, uint8_t attribute);
+    void cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t attribute);
+    void renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset, bool flipX, bool flipY);
+    void renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t palette_idx, int xOffset, int yOffset, bool flipX, bool flipY);
+    void renderCachedSpriteWithPriority(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, int xOffset, int yOffset, bool flipX, bool flipY, bool behindBackground);
+    static std::vector<FlipCacheEntry> g_flipCache;
+    static std::unordered_map<uint32_t, size_t> g_flipCacheIndex; // maps key -> index in g_flipCache
+    void cacheFlipVariation(uint16_t tile, uint8_t palette_type, uint8_t attribute, bool flipX, bool flipY);
+    uint32_t getFlipCacheKey(uint16_t tile, uint8_t palette_type, uint8_t attribute, uint8_t flip_flags);
 };
 
 #endif // PPU_HPP
