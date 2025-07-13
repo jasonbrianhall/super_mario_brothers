@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 #include <unordered_map>
+#include <cstring>
 
 struct ComprehensiveTileCache {
     uint16_t pixels[64];        // Normal orientation only
