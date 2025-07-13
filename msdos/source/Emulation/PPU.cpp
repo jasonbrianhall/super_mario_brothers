@@ -7,6 +7,7 @@ ComprehensiveTileCache PPU::g_comprehensiveCache[512 * 8];
 bool PPU::g_comprehensiveCacheInit = false;
 std::vector<FlipCacheEntry> PPU::g_flipCache;
 std::unordered_map<uint32_t, size_t> PPU::g_flipCacheIndex;
+PPU::ScalingCache PPU::g_scalingCache;
 
 
 static const uint8_t nametableMirrorLookup[][4] = {
@@ -959,5 +960,286 @@ void PPU::cacheFlipVariation(uint16_t tile, uint8_t palette_type, uint8_t attrib
     size_t newIndex = g_flipCache.size();
     g_flipCache.push_back(flipEntry);
     g_flipCacheIndex[key] = newIndex;
+}
+
+PPU::ScalingCache::ScalingCache() 
+    : scaledBuffer(nullptr), sourceToDestX(nullptr), sourceToDestY(nullptr),
+      scaleFactor(0), destWidth(0), destHeight(0), destOffsetX(0), destOffsetY(0),
+      screenWidth(0), screenHeight(0), isValid(false) 
+{
+}
+
+PPU::ScalingCache::~ScalingCache() 
+{
+    cleanup();
+}
+
+void PPU::ScalingCache::cleanup() 
+{
+    if (scaledBuffer) { 
+        delete[] scaledBuffer; 
+        scaledBuffer = nullptr; 
+    }
+    if (sourceToDestX) { 
+        delete[] sourceToDestX; 
+        sourceToDestX = nullptr; 
+    }
+    if (sourceToDestY) { 
+        delete[] sourceToDestY; 
+        sourceToDestY = nullptr; 
+    }
+    isValid = false;
+}
+
+void PPU::renderScaled(uint16_t* buffer, int screenWidth, int screenHeight)
+{
+    // Clear the screen buffer
+    uint32_t bgColor32 = paletteRGB[palette[0]];
+    //uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | ((bgColor32 & 0x00FC00) >> 5) | ((bgColor32 & 0x0000F8) >> 3);
+    uint16_t bgColor16 = 0x0000; // Pure black in RGB565
+
+    for (int i = 0; i < screenWidth * screenHeight; i++) {
+        buffer[i] = bgColor16;
+    }
+    
+    // Update scaling cache if needed
+    if (!isScalingCacheValid(screenWidth, screenHeight)) {
+        updateScalingCache(screenWidth, screenHeight);
+    }
+    
+    // Render NES frame to temporary buffer
+    static uint16_t nesBuffer[256 * 240];
+    render16(nesBuffer);
+    
+    // Apply scaling based on cache
+    const int scale = g_scalingCache.scaleFactor;
+
+    if (scale == 1) {
+        renderScaled1x1(nesBuffer, buffer, screenWidth, screenHeight);
+    } else if (scale == 2) {
+        renderScaled2x(nesBuffer, buffer, screenWidth, screenHeight);
+    } else if (scale == 3) {
+        renderScaled3x(nesBuffer, buffer, screenWidth, screenHeight);
+    } else {
+        renderScaledGeneric(nesBuffer, buffer, screenWidth, screenHeight, scale);
+    }
+}
+
+void PPU::renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight)
+{
+    // For 32-bit rendering, first render to 16-bit then convert
+    static uint16_t tempBuffer[1024 * 768]; // Large enough for most screens
+    
+    if (screenWidth * screenHeight <= 1024 * 768) {
+        renderScaled(tempBuffer, screenWidth, screenHeight);
+        convertNESToScreen32(tempBuffer, buffer, screenWidth, screenHeight);
+    } else {
+        // Fallback for very large screens
+        render(buffer); // Use original 32-bit render
+    }
+}
+
+void PPU::updateScalingCache(int screenWidth, int screenHeight)
+{
+    // Calculate optimal scaling
+    int scale_x = screenWidth / 256;
+    int scale_y = screenHeight / 240;
+    int scale = (scale_x < scale_y) ? scale_x : scale_y;
+    if (scale < 1) scale = 1;
+    
+    // Check if cache needs updating
+    if (g_scalingCache.isValid && 
+        g_scalingCache.scaleFactor == scale &&
+        g_scalingCache.screenWidth == screenWidth &&
+        g_scalingCache.screenHeight == screenHeight) {
+        return; // Cache is still valid
+    }
+    
+    // Clean up old cache
+    g_scalingCache.cleanup();
+    
+    // Calculate new dimensions
+    g_scalingCache.scaleFactor = scale;
+    g_scalingCache.destWidth = 256 * scale;
+    g_scalingCache.destHeight = 240 * scale;
+    g_scalingCache.destOffsetX = (screenWidth - g_scalingCache.destWidth) / 2;
+    g_scalingCache.destOffsetY = (screenHeight - g_scalingCache.destHeight) / 2;
+    g_scalingCache.screenWidth = screenWidth;
+    g_scalingCache.screenHeight = screenHeight;
+    
+    // Allocate coordinate mapping tables
+    g_scalingCache.sourceToDestX = new int[256];
+    g_scalingCache.sourceToDestY = new int[240];
+    
+    // Pre-calculate coordinate mappings
+    for (int x = 0; x < 256; x++) {
+        g_scalingCache.sourceToDestX[x] = x * scale + g_scalingCache.destOffsetX;
+    }
+    
+    for (int y = 0; y < 240; y++) {
+        g_scalingCache.sourceToDestY[y] = y * scale + g_scalingCache.destOffsetY;
+    }
+    
+    g_scalingCache.isValid = true;
+}
+
+bool PPU::isScalingCacheValid(int screenWidth, int screenHeight)
+{
+    return g_scalingCache.isValid && 
+           g_scalingCache.screenWidth == screenWidth &&
+           g_scalingCache.screenHeight == screenHeight;
+}
+
+void PPU::renderScaled1x1(uint16_t* nesBuffer, uint16_t* screenBuffer, int screenWidth, int screenHeight)
+{
+    const int dest_x = g_scalingCache.destOffsetX;
+    const int dest_y = g_scalingCache.destOffsetY;
+
+    // Direct 1:1 copy
+    for (int y = 0; y < 240; y++) {
+        int screen_y = y + dest_y;
+        if (screen_y < 0 || screen_y >= screenHeight) continue;
+        
+        uint16_t* src_row = &nesBuffer[y * 256];
+        uint16_t* dest_row = &screenBuffer[screen_y * screenWidth + dest_x];
+        
+        int copy_width = 256;
+        if (dest_x + copy_width > screenWidth) {
+            copy_width = screenWidth - dest_x;
+        }
+        if (dest_x < 0) {
+            src_row -= dest_x;
+            dest_row -= dest_x;
+            copy_width += dest_x;
+        }
+        
+        if (copy_width > 0) {
+            memcpy(dest_row, src_row, copy_width * sizeof(uint16_t));
+        }
+    }
+}
+
+void PPU::renderScaled2x(uint16_t* nesBuffer, uint16_t* screenBuffer, int screenWidth, int screenHeight)
+{
+    const int dest_x = g_scalingCache.destOffsetX;
+    const int dest_y = g_scalingCache.destOffsetY;
+    
+    // Optimized 2x scaling
+    for (int y = 0; y < 240; y++) {
+        int dest_y1 = y * 2 + dest_y;
+        int dest_y2 = dest_y1 + 1;
+        
+        if (dest_y2 >= screenHeight) break;
+        if (dest_y1 < 0) continue;
+        
+        uint16_t* src_row = &nesBuffer[y * 256];
+        uint16_t* dest_row1 = &screenBuffer[dest_y1 * screenWidth + dest_x];
+        uint16_t* dest_row2 = &screenBuffer[dest_y2 * screenWidth + dest_x];
+        
+        // Process pixels in groups for better cache utilization
+        for (int x = 0; x < 256; x += 4) {
+            if ((x * 2 + dest_x + 8) > screenWidth) break;
+            
+            uint16_t p1 = src_row[x];
+            uint16_t p2 = src_row[x + 1];
+            uint16_t p3 = src_row[x + 2];
+            uint16_t p4 = src_row[x + 3];
+            
+            int dest_base = x * 2;
+            
+            // First row
+            dest_row1[dest_base]     = p1; dest_row1[dest_base + 1] = p1;
+            dest_row1[dest_base + 2] = p2; dest_row1[dest_base + 3] = p2;
+            dest_row1[dest_base + 4] = p3; dest_row1[dest_base + 5] = p3;
+            dest_row1[dest_base + 6] = p4; dest_row1[dest_base + 7] = p4;
+            
+            // Second row (duplicate)
+            dest_row2[dest_base]     = p1; dest_row2[dest_base + 1] = p1;
+            dest_row2[dest_base + 2] = p2; dest_row2[dest_base + 3] = p2;
+            dest_row2[dest_base + 4] = p3; dest_row2[dest_base + 5] = p3;
+            dest_row2[dest_base + 6] = p4; dest_row2[dest_base + 7] = p4;
+        }
+    }
+}
+
+void PPU::renderScaled3x(uint16_t* nesBuffer, uint16_t* screenBuffer, int screenWidth, int screenHeight)
+{
+    const int dest_x = g_scalingCache.destOffsetX;
+    const int dest_y = g_scalingCache.destOffsetY;
+    
+    for (int y = 0; y < 240; y++) {
+        int dest_y1 = y * 3 + dest_y;
+        int dest_y2 = dest_y1 + 1;
+        int dest_y3 = dest_y1 + 2;
+        
+        if (dest_y3 >= screenHeight) break;
+        if (dest_y1 < 0) continue;
+        
+        uint16_t* src_row = &nesBuffer[y * 256];
+        uint16_t* dest_row1 = &screenBuffer[dest_y1 * screenWidth + dest_x];
+        uint16_t* dest_row2 = &screenBuffer[dest_y2 * screenWidth + dest_x];
+        uint16_t* dest_row3 = &screenBuffer[dest_y3 * screenWidth + dest_x];
+        
+        for (int x = 0; x < 256; x++) {
+            if ((x * 3 + dest_x + 3) > screenWidth) break;
+            
+            uint16_t pixel = src_row[x];
+            int dest_base = x * 3;
+            
+            // Triple each pixel
+            dest_row1[dest_base] = dest_row1[dest_base + 1] = dest_row1[dest_base + 2] = pixel;
+            dest_row2[dest_base] = dest_row2[dest_base + 1] = dest_row2[dest_base + 2] = pixel;
+            dest_row3[dest_base] = dest_row3[dest_base + 1] = dest_row3[dest_base + 2] = pixel;
+        }
+    }
+}
+
+void PPU::renderScaledGeneric(uint16_t* nesBuffer, uint16_t* screenBuffer, int screenWidth, int screenHeight, int scale)
+{
+    // Generic scaling using pre-calculated coordinate tables
+    for (int y = 0; y < 240; y++) {
+        uint16_t* src_row = &nesBuffer[y * 256];
+        int dest_y_start = g_scalingCache.sourceToDestY[y];
+        
+        for (int scale_y = 0; scale_y < scale; scale_y++) {
+            int dest_y = dest_y_start + scale_y;
+            if (dest_y < 0 || dest_y >= screenHeight) continue;
+            
+            uint16_t* dest_row = &screenBuffer[dest_y * screenWidth];
+            
+            for (int x = 0; x < 256; x++) {
+                uint16_t pixel = src_row[x];
+                int dest_x_start = g_scalingCache.sourceToDestX[x];
+                
+                for (int scale_x = 0; scale_x < scale; scale_x++) {
+                    int dest_x = dest_x_start + scale_x;
+                    if (dest_x >= 0 && dest_x < screenWidth) {
+                        dest_row[dest_x] = pixel;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void PPU::convertNESToScreen32(uint16_t* nesBuffer, uint32_t* screenBuffer, int screenWidth, int screenHeight)
+{
+    // Convert 16-bit RGB565 to 32-bit RGBA
+    for (int i = 0; i < screenWidth * screenHeight; i++) {
+        uint16_t pixel16 = nesBuffer[i];
+        
+        // Extract RGB565 components
+        int r = (pixel16 >> 11) & 0x1F;
+        int g = (pixel16 >> 5) & 0x3F;
+        int b = pixel16 & 0x1F;
+        
+        // Scale to 8-bit
+        r = (r << 3) | (r >> 2);
+        g = (g << 2) | (g >> 4);
+        b = (b << 3) | (b >> 2);
+        
+        // Pack into 32-bit with alpha
+        screenBuffer[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
+    }
 }
 

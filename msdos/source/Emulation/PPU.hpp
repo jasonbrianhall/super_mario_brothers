@@ -82,9 +82,43 @@ void setScrollY(uint8_t val) { ppuScrollY = val; }
 void setVRAMAddress(uint16_t val) { currentAddress = val; }
 void setWriteToggle(bool val) { writeToggle = val; }
 void setDataBuffer(uint8_t val) { vramBuffer = val; }
+    void renderScaled(uint16_t* buffer, int screenWidth, int screenHeight);
+    void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
 
 private:
     SMBEngine& engine;
+
+    struct ScalingCache {
+        uint16_t* scaledBuffer;
+        int* sourceToDestX;
+        int* sourceToDestY;
+        int scaleFactor;
+        int destWidth, destHeight;
+        int destOffsetX, destOffsetY;
+        int screenWidth, screenHeight;
+        bool isValid;
+        
+        ScalingCache();
+        ~ScalingCache();
+        void cleanup();
+    };
+    
+    static ScalingCache g_scalingCache;
+    
+    // Scaling methods
+    void initializeScalingCache(int screenWidth, int screenHeight);
+    void updateScalingCache(int screenWidth, int screenHeight);
+    bool isScalingCacheValid(int screenWidth, int screenHeight);
+    
+    // Optimized scaling implementations
+    void renderScaled1x1(uint16_t* nesBuffer, uint16_t* screenBuffer, int screenWidth, int screenHeight);
+    void renderScaled2x(uint16_t* nesBuffer, uint16_t* screenBuffer, int screenWidth, int screenHeight);
+    void renderScaled3x(uint16_t* nesBuffer, uint16_t* screenBuffer, int screenWidth, int screenHeight);
+    void renderScaledGeneric(uint16_t* nesBuffer, uint16_t* screenBuffer, int screenWidth, int screenHeight, int scale);
+    
+    // Color conversion
+    void convertNESToScreen32(uint16_t* nesBuffer, uint32_t* screenBuffer, int screenWidth, int screenHeight);
+
 
     uint8_t ppuCtrl; /**< $2000 */
     uint8_t ppuMask; /**< $2001 */

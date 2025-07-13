@@ -638,3 +638,15 @@ bool SMBEngine::loadState(const std::string& filename) {
     
     return true;
 }
+
+void SMBEngine::renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight)
+{
+    // Delegate to PPU
+    ppu->renderScaled(buffer, screenWidth, screenHeight);
+}
+
+void SMBEngine::renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight)
+{
+    // Delegate to PPU
+    ppu->renderScaled32(buffer, screenWidth, screenHeight);
+}

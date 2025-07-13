@@ -160,6 +160,8 @@ public:
 
     void saveState(const std::string& filename);
     bool loadState(const std::string& filename);
+    void renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight);  
+    void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
 
 
 private:

@@ -44,6 +44,8 @@ public:
     CAPTURE_JOY_SELECT
   };
   CaptureType currentCaptureType;
+void renderScaled(uint16_t* buffer, int screenWidth, int screenHeight);
+void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
 
 private:
   // Allegro components
@@ -272,6 +274,8 @@ void resetVideoDefaults();
     void drawGameDOS320x200(BITMAP* target);
     void drawGameDOSOptimized(BITMAP* target);
     #endif
+    void convertScreenBuffer16ToBitmap(uint16_t* buffer16, BITMAP* bitmap);
+    void convertScreenBuffer32ToBitmap(uint32_t* buffer32, BITMAP* bitmap);
 };
 
 
