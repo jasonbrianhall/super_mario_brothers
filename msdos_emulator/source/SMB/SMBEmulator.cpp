@@ -81,8 +81,6 @@ void SMBEmulator::writeCNROMRegister(uint16_t address, uint8_t value)
         ppu->invalidateTileCache();
     }
     
-    printf("CNROM CHR Bank Switch: CHR=%d (value=$%02X)\n", 
-           cnrom.chrBank, value);
 }
 
 
@@ -200,14 +198,7 @@ bool SMBEmulator::parseNESHeader(std::ifstream& file)
     std::cout << "Mirroring: " << (nesHeader.mirroring ? "Vertical" : "Horizontal") << std::endl;
     std::cout << "Battery: " << (nesHeader.battery ? "Yes" : "No") << std::endl;
     std::cout << "Trainer: " << (nesHeader.trainer ? "Yes" : "No") << std::endl;
-    
-    // Print raw header bytes for debugging
-    std::cout << "Raw header bytes: ";
-    for (int i = 0; i < 16; i++) {
-        printf("%02X ", header[i]);
-    }
-    std::cout << std::endl;
-    
+        
     // Check for unsupported features
     if (nesHeader.mapper != 0) {
         std::cout << "WARNING: Mapper " << (int)nesHeader.mapper << " not fully supported (only mapper 0 implemented)" << std::endl;
@@ -235,7 +226,6 @@ bool SMBEmulator::loadCHRROM(std::ifstream& file)
 {
     chrSize = nesHeader.chrROMPages * 8192; // 8KB pages
     if (chrSize == 0) {
-        // CHR RAM instead of CHR ROM
         chrSize = 8192;
         chrROM = new uint8_t[chrSize];
         memset(chrROM, 0, chrSize);
@@ -246,28 +236,29 @@ bool SMBEmulator::loadCHRROM(std::ifstream& file)
     chrROM = new uint8_t[chrSize];
     file.read(reinterpret_cast<char*>(chrROM), chrSize);
     
-    printf("Loaded CHR ROM: %d bytes (%d KB, %d x 1KB banks)\n", 
-           chrSize, chrSize/1024, chrSize/0x400);
+    // CRITICAL DEBUG INFO
+    uint32_t totalCHRBanks = chrSize / 0x400;  // Number of 1KB banks
+    printf("=== CHR ROM DEBUG ===\n");
+    printf("CHR ROM Size: %d bytes (%d KB)\n", chrSize, chrSize/1024);
+    printf("Total 1KB CHR banks: %d (0x00 - 0x%02X)\n", totalCHRBanks, totalCHRBanks-1);
+    printf("CHR ROM Pages: %d\n", nesHeader.chrROMPages);
     
-    // Debug: Print first few CHR bytes
-    printf("First CHR bytes: ");
-    for (int i = 0; i < 16 && i < chrSize; i++) {
-        printf("%02X ", chrROM[i]);
+    // Check if common bank numbers are valid
+    printf("Bank validity check:\n");
+    for (int bank : {0x00, 0x08, 0x09, 0x0C, 0x10, 0x11, 0x18, 0x19}) {
+        bool valid = (bank < totalCHRBanks);
+        printf("  Bank 0x%02X: %s\n", bank, valid ? "VALID" : "OUT OF BOUNDS!");
     }
-    printf("\n");
+    printf("=== END CHR DEBUG ===\n");
     
     return file.good();
 }
 
 void SMBEmulator::handleNMI()
 {
-    static bool debugNMI = true;
     static int nmiCount = 0;
     
     nmiCount++;
-    if (debugNMI && nmiCount % 60 == 0) {
-        printf("NMI #%d: PC=$%04X\n", nmiCount, regPC);
-    }
     
     // Push PC and status to stack
     pushWord(regPC);
@@ -276,10 +267,6 @@ void SMBEmulator::handleNMI()
     
     // Jump to NMI vector
     regPC = readWord(0xFFFA);
-    
-    if (debugNMI && nmiCount % 60 == 0) {
-        printf("NMI jumps to: $%04X\n", regPC);
-    }
     
     totalCycles += 7;
     frameCycles += 7;
@@ -361,13 +348,10 @@ void SMBEmulator::reset()
         mmc1.prgBank = 0;     
         mmc1.currentPRGBank = 0;
         updateMMC1Banks();
-        printf("MMC1 initialized: control=$%02X\n", mmc1.control);
     } else if (nesHeader.mapper == 66) {
         gxrom = GxROMState();
-        printf("GxROM initialized: PRG bank 0, CHR bank 0\n");
         
         // Debug: Check all PRG banks for reset vectors
-        printf("=== GxROM Banks Debug ===\n");
         uint8_t totalBanks = prgSize / 0x8000;  // 32KB banks
         for (int bank = 0; bank < totalBanks; bank++) {
             uint32_t bankOffset = bank * 0x8000;
@@ -378,13 +362,10 @@ void SMBEmulator::reset()
                 uint8_t low = prgROM[resetLow];
                 uint8_t high = prgROM[resetHigh];
                 uint16_t resetVector = low | (high << 8);
-                printf("GxROM Bank %d: reset vector = $%04X\n", bank, resetVector);
             }
         }
-        printf("=== End GxROM Debug ===\n");
     } else if (nesHeader.mapper == 3) {
         cnrom = CNROMState();
-        printf("CNROM initialized: CHR bank 0\n");
     } else if (nesHeader.mapper == 4) {
         mmc3 = MMC3State();
         // MMC3 power-up state according to wiki
@@ -398,7 +379,6 @@ void SMBEmulator::reset()
         mmc3.bankData[7] = 1;  // R7: 8KB PRG bank (switchable)
         mmc3.bankSelect = 0;   // Normal mode
         updateMMC3Banks();
-        printf("MMC3 initialized with default banks\n");
     }
     
     // Reset vector at $FFFC-$FFFD
@@ -784,17 +764,6 @@ uint8_t SMBEmulator::readByte(uint16_t address)
             uint16_t bankOffset = (address - 0x8000) % 0x2000;
             uint32_t romAddr = (mmc3.currentPRGBanks[bankIndex] * 0x2000) + bankOffset;
             
-            // Debug reset vector reads
-            if (address >= 0xFFFC) {
-                printf("MMC3 reset vector $%04X: bank %d, romAddr=$%08X, ", 
-                       address, mmc3.currentPRGBanks[bankIndex], romAddr);
-                if (romAddr < prgSize) {
-                    printf("value=$%02X\n", prgROM[romAddr]);
-                } else {
-                    printf("OUT OF BOUNDS!\n");
-                }
-            }
-            
             if (romAddr < prgSize) {
                 return prgROM[romAddr];
             }
@@ -835,25 +804,9 @@ uint8_t SMBEmulator::readByte(uint16_t address)
             romAddr = ((mmc1.currentPRGBank >> 1) * 0x8000) + (address - 0x8000);
         }
     }
-    
-    // Debug for IRQ vector reads specifically
-    if (address >= 0xFFFE) {
-        printf("IRQ vector $%04X: control=$%02X, bit2=%d, bit3=%d, bank calculation gives romAddr=$%08X, ", 
-               address, mmc1.control, 
-               (mmc1.control & 0x04) ? 1 : 0,
-               (mmc1.control & 0x08) ? 1 : 0,
-               romAddr);
-        if (romAddr < prgSize) {
-            printf("value=$%02X\n", prgROM[romAddr]);
-        } else {
-            printf("OUT OF BOUNDS!\n");
-        }
-    }
-    
+        
     // Bounds checking
     if (romAddr >= prgSize) {
-        printf("MMC1 ERROR: romAddr $%08X >= prgSize $%08X (addr=$%04X, bank=%d, totalBanks=%d)\n", 
-               romAddr, prgSize, address, mmc1.currentPRGBank, totalBanks);
         return 0;
     }
     
@@ -863,16 +816,6 @@ uint8_t SMBEmulator::readByte(uint16_t address)
             // GxROM mapping - 32KB PRG banks
             uint32_t romAddr = (gxrom.prgBank * 0x8000) + (address - 0x8000);
             
-            // Debug reset vector reads
-            if (address >= 0xFFFC) {
-                printf("GxROM reset vector $%04X: bank %d, romAddr=$%08X, ", 
-                       address, gxrom.prgBank, romAddr);
-                if (romAddr < prgSize) {
-                    printf("value=$%02X\n", prgROM[romAddr]);
-                } else {
-                    printf("OUT OF BOUNDS!\n");
-                }
-            }
             
             if (romAddr < prgSize) {
                 return prgROM[romAddr];
@@ -880,17 +823,7 @@ uint8_t SMBEmulator::readByte(uint16_t address)
         } else if (nesHeader.mapper == 3) {
             // CNROM - 32KB PRG ROM (no PRG banking)
             uint32_t romAddr = address - 0x8000;
-            
-            // Debug reset vector reads
-            if (address >= 0xFFFC) {
-                printf("CNROM reset vector $%04X: romAddr=$%04X, ", address, romAddr);
-                if (romAddr < prgSize) {
-                    printf("value=$%02X\n", prgROM[romAddr]);
-                } else {
-                    printf("OUT OF BOUNDS! (prgSize=%d)\n", prgSize);
-                }
-            }
-            
+                        
             if (romAddr < prgSize) {
                 return prgROM[romAddr];
             }
@@ -906,8 +839,6 @@ void SMBEmulator::writeMMC3Register(uint16_t address, uint8_t value)
         case 0x8000: // Bank select ($8000-$9FFE, even)
             mmc3.bankSelect = value;
             updateMMC3Banks();
-            printf("MMC3 Bank Select: $%02X (bank=%d, mode=%s)\n", 
-                   value, value & 7, (value & 0x40) ? "PRG swap" : "PRG normal");
             break;
             
         case 0x8001: // Bank data ($8001-$9FFF, odd)
@@ -925,44 +856,32 @@ void SMBEmulator::writeMMC3Register(uint16_t address, uint8_t value)
                 updateMMC3Banks();
                 
                 // CRITICAL: Invalidate cache immediately when CHR data changes
-                if (chrChanged) {
-                    ppu->invalidateTileCache();
-                    printf("MMC3 CHR Bank Data[%d]: $%02X (cache invalidated)\n", bank, value);
-                } else {
-                    printf("MMC3 PRG Bank Data[%d]: $%02X\n", bank, value);
-                }
             }
             break;
             
         case 0xA000: // Mirroring ($A000-$BFFE, even)
             mmc3.mirroring = value & 1;
             // Update PPU mirroring if needed
-            printf("MMC3 Mirroring: %s\n", (value & 1) ? "Horizontal" : "Vertical");
             break;
             
         case 0xA001: // PRG RAM protect ($A001-$BFFF, odd)
             mmc3.prgRamProtect = value;
-            printf("MMC3 PRG RAM Protect: $%02X\n", value);
             break;
             
         case 0xC000: // IRQ latch ($C000-$DFFE, even)
             mmc3.irqLatch = value;
-            printf("MMC3 IRQ Latch: $%02X\n", value);
             break;
             
         case 0xC001: // IRQ reload ($C001-$DFFF, odd)
             mmc3.irqReload = true;
-            printf("MMC3 IRQ Reload\n");
             break;
             
         case 0xE000: // IRQ disable ($E000-$FFFE, even)
             mmc3.irqEnable = false;
-            printf("MMC3 IRQ Disable\n");
             break;
             
         case 0xE001: // IRQ enable ($E001-$FFFF, odd)
             mmc3.irqEnable = true;
-            printf("MMC3 IRQ Enable\n");
             break;
     }
 }
@@ -972,19 +891,9 @@ void SMBEmulator::updateMMC3Banks()
     uint8_t totalPRGBanks = prgSize / 0x2000;  // Number of 8KB banks
     uint8_t totalCHRBanks = chrSize / 0x400;   // Number of 1KB banks
     
-    printf("=== MMC3 Bank Update ===\n");
-    printf("CHR ROM Size: %d bytes = %d x 1KB banks\n", chrSize, totalCHRBanks);
-    printf("Bank Select: $%02X (CHR A12=%s, PRG mode=%s)\n", 
-           mmc3.bankSelect,
-           (mmc3.bankSelect & 0x80) ? "invert" : "normal",
-           (mmc3.bankSelect & 0x40) ? "swap" : "normal");
-    
-    printf("Bank Data: R0=%02X R1=%02X R2=%02X R3=%02X R4=%02X R5=%02X R6=%02X R7=%02X\n",
-           mmc3.bankData[0], mmc3.bankData[1], mmc3.bankData[2], mmc3.bankData[3],
-           mmc3.bankData[4], mmc3.bankData[5], mmc3.bankData[6], mmc3.bankData[7]);
-    
-    // PRG banking
+    // PRG banking (this looks correct in your code)
     bool prgSwap = (mmc3.bankSelect & 0x40) != 0;
+    
     if (prgSwap) {
         mmc3.currentPRGBanks[0] = totalPRGBanks - 2;
         mmc3.currentPRGBanks[1] = mmc3.bankData[7] % totalPRGBanks;
@@ -997,58 +906,46 @@ void SMBEmulator::updateMMC3Banks()
         mmc3.currentPRGBanks[3] = totalPRGBanks - 1;
     }
     
-    // CHR banking with proper bounds checking
+    // CHR banking - THE BUG IS LIKELY HERE
     bool chrA12Invert = (mmc3.bankSelect & 0x80) != 0;
     
     if (chrA12Invert) {
-        // A12 inversion: 4x1KB banks at $0000, 2x2KB banks at $1000
-        mmc3.currentCHRBanks[0] = mmc3.bankData[2] % totalCHRBanks;
-        mmc3.currentCHRBanks[1] = mmc3.bankData[3] % totalCHRBanks;
-        mmc3.currentCHRBanks[2] = mmc3.bankData[4] % totalCHRBanks;
-        mmc3.currentCHRBanks[3] = mmc3.bankData[5] % totalCHRBanks;
-        // For 2KB banks, make sure both consecutive banks exist
-        uint8_t bank0_base = (mmc3.bankData[0] & 0xFE) % totalCHRBanks;
-        uint8_t bank1_base = (mmc3.bankData[1] & 0xFE) % totalCHRBanks;
-        mmc3.currentCHRBanks[4] = bank0_base;
-        mmc3.currentCHRBanks[5] = (bank0_base + 1) % totalCHRBanks;
-        mmc3.currentCHRBanks[6] = bank1_base;
-        mmc3.currentCHRBanks[7] = (bank1_base + 1) % totalCHRBanks;
+        // CHR A12 inversion: 4×1KB at $0000-$0FFF, 2×2KB at $1000-$1FFF
+        mmc3.currentCHRBanks[0] = mmc3.bankData[2] % totalCHRBanks;  // R2 -> $0000-$03FF
+        mmc3.currentCHRBanks[1] = mmc3.bankData[3] % totalCHRBanks;  // R3 -> $0400-$07FF
+        mmc3.currentCHRBanks[2] = mmc3.bankData[4] % totalCHRBanks;  // R4 -> $0800-$0BFF
+        mmc3.currentCHRBanks[3] = mmc3.bankData[5] % totalCHRBanks;  // R5 -> $0C00-$0FFF
+        
+        // R0 selects 2KB bank at $1000 (even bank number)
+        uint8_t r0_base = mmc3.bankData[0] & 0xFE;  // Force even
+        mmc3.currentCHRBanks[4] = r0_base % totalCHRBanks;          // R0 -> $1000-$13FF
+        mmc3.currentCHRBanks[5] = (r0_base + 1) % totalCHRBanks;    // R0+1 -> $1400-$17FF
+        
+        // R1 selects 2KB bank at $1800 (even bank number)
+        uint8_t r1_base = mmc3.bankData[1] & 0xFE;  // Force even
+        mmc3.currentCHRBanks[6] = r1_base % totalCHRBanks;          // R1 -> $1800-$1BFF
+        mmc3.currentCHRBanks[7] = (r1_base + 1) % totalCHRBanks;    // R1+1 -> $1C00-$1FFF
     } else {
-        // Normal: 2x2KB banks at $0000, 4x1KB banks at $1000
-        uint8_t bank0_base = (mmc3.bankData[0] & 0xFE) % totalCHRBanks;
-        uint8_t bank1_base = (mmc3.bankData[1] & 0xFE) % totalCHRBanks;
-        mmc3.currentCHRBanks[0] = bank0_base;
-        mmc3.currentCHRBanks[1] = (bank0_base + 1) % totalCHRBanks;
-        mmc3.currentCHRBanks[2] = bank1_base;
-        mmc3.currentCHRBanks[3] = (bank1_base + 1) % totalCHRBanks;
-        mmc3.currentCHRBanks[4] = mmc3.bankData[2] % totalCHRBanks;
-        mmc3.currentCHRBanks[5] = mmc3.bankData[3] % totalCHRBanks;
-        mmc3.currentCHRBanks[6] = mmc3.bankData[4] % totalCHRBanks;
-        mmc3.currentCHRBanks[7] = mmc3.bankData[5] % totalCHRBanks;
-    }
-    
-    // Verify all banks are valid
-    for (int i = 0; i < 8; i++) {
-        if (mmc3.currentCHRBanks[i] >= totalCHRBanks) {
-            printf("ERROR: Final CHR bank %d = %02X >= %02X total banks!\n", 
-                   i, mmc3.currentCHRBanks[i], totalCHRBanks);
-            mmc3.currentCHRBanks[i] = 0;  // Fallback to bank 0
-        }
+        // Normal CHR mode: 2×2KB at $0000-$0FFF, 4×1KB at $1000-$1FFF
+        
+        // R0 selects 2KB bank at $0000 (even bank number)
+        uint8_t r0_base = mmc3.bankData[0] & 0xFE;  // Force even
+        mmc3.currentCHRBanks[0] = r0_base % totalCHRBanks;          // R0 -> $0000-$03FF
+        mmc3.currentCHRBanks[1] = (r0_base + 1) % totalCHRBanks;    // R0+1 -> $0400-$07FF
+        
+        // R1 selects 2KB bank at $0800 (even bank number)
+        uint8_t r1_base = mmc3.bankData[1] & 0xFE;  // Force even
+        mmc3.currentCHRBanks[2] = r1_base % totalCHRBanks;          // R1 -> $0800-$0BFF
+        mmc3.currentCHRBanks[3] = (r1_base + 1) % totalCHRBanks;    // R1+1 -> $0C00-$0FFF
+        
+        mmc3.currentCHRBanks[4] = mmc3.bankData[2] % totalCHRBanks;  // R2 -> $1000-$13FF
+        mmc3.currentCHRBanks[5] = mmc3.bankData[3] % totalCHRBanks;  // R3 -> $1400-$17FF
+        mmc3.currentCHRBanks[6] = mmc3.bankData[4] % totalCHRBanks;  // R4 -> $1800-$1BFF
+        mmc3.currentCHRBanks[7] = mmc3.bankData[5] % totalCHRBanks;  // R5 -> $1C00-$1FFF
     }
     
     ppu->invalidateTileCache();
-    
-    printf("Final CHR Banks: [%02X %02X %02X %02X | %02X %02X %02X %02X]\n",
-           mmc3.currentCHRBanks[0], mmc3.currentCHRBanks[1], 
-           mmc3.currentCHRBanks[2], mmc3.currentCHRBanks[3],
-           mmc3.currentCHRBanks[4], mmc3.currentCHRBanks[5], 
-           mmc3.currentCHRBanks[6], mmc3.currentCHRBanks[7]);
-    printf("Final PRG Banks: [%02X %02X %02X %02X]\n",
-           mmc3.currentPRGBanks[0], mmc3.currentPRGBanks[1], 
-           mmc3.currentPRGBanks[2], mmc3.currentPRGBanks[3]);
-    printf("=== End MMC3 Update ===\n");
 }
-
 
 void SMBEmulator::stepMMC3IRQ()
 {
@@ -1065,7 +962,6 @@ void SMBEmulator::stepMMC3IRQ()
     // Trigger IRQ when counter reaches 0 and IRQ is enabled
     if (mmc3.irqCounter == 0 && mmc3.irqEnable) {
         // Set IRQ pending flag (you'll need to handle this in your main loop)
-        printf("MMC3 IRQ triggered!\n");
     }
 }
 
@@ -2028,22 +1924,15 @@ void SMBEmulator::writeMMC1Register(uint16_t address, uint8_t value)
         if (address < 0xA000) {
             // Control register ($8000-$9FFF)
             mmc1.control = data;
-            printf("MMC1 Control: $%02X (PRG mode: %s, CHR mode: %s)\n", 
-                   data, 
-                   (data & 0x08) ? "16KB" : "32KB",
-                   (data & 0x10) ? "4KB" : "8KB");
         } else if (address < 0xC000) {
             // CHR bank 0 ($A000-$BFFF)
             mmc1.chrBank0 = data;
-            printf("MMC1 CHR Bank 0: $%02X\n", data);
         } else if (address < 0xE000) {
             // CHR bank 1 ($C000-$DFFF)  
             mmc1.chrBank1 = data;
-            printf("MMC1 CHR Bank 1: $%02X\n", data);
         } else {
             // PRG bank ($E000-$FFFF)
             mmc1.prgBank = data;
-            printf("MMC1 PRG Bank: $%02X\n", data);
         }
         
         updateMMC1Banks();
@@ -2080,8 +1969,6 @@ void SMBEmulator::updateMMC1Banks()
         ppu->invalidateTileCache();
     }
     
-    printf("MMC1 Banks: PRG=%d, CHR0=%d, CHR1=%d (control=$%02X)\n", 
-           mmc1.currentPRGBank, mmc1.currentCHRBank0, mmc1.currentCHRBank1, mmc1.control);
 }
 
 void SMBEmulator::writeGxROMRegister(uint16_t address, uint8_t value)
@@ -2097,8 +1984,6 @@ void SMBEmulator::writeGxROMRegister(uint16_t address, uint8_t value)
         ppu->invalidateTileCache();
     }
     
-    printf("GxROM Bank Switch: PRG=%d, CHR=%d (value=$%02X)\n", 
-           gxrom.prgBank, gxrom.chrBank, value);
 }
 
 uint8_t SMBEmulator::readCHRData(uint16_t address)
@@ -2114,27 +1999,16 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
         
         // Debug specific problematic addresses
         static int debugCount = 0;
-        if (address < 0x20 || (address >= 0x1000 && address < 0x1020)) {
-            debugCount++;
-            if (debugCount % 100 == 0) {  // Less frequent debugging
-                printf("CHR[$%04X] -> slot%d, bank%02X, ROM[$%08X/%08X] = $%02X\n", 
-                       address, bankIndex, physicalBank, chrAddr, chrSize,
-                       (chrAddr < chrSize) ? chrROM[chrAddr] : 0xFF);
-            }
-        }
         
         // Critical: Check if CHR bank is valid
         uint8_t totalCHRBanks = chrSize / 0x400;
         if (physicalBank >= totalCHRBanks) {
-            printf("ERROR: CHR bank %02X >= total banks %02X (addr=$%04X)\n", 
-                   physicalBank, totalCHRBanks, address);
             return 0;
         }
         
         if (chrAddr < chrSize) {
             return chrROM[chrAddr];
         } else {
-            printf("CHR ADDR OUT OF BOUNDS: $%08X >= $%08X\n", chrAddr, chrSize);
             return 0;
         }
     }

@@ -591,7 +591,7 @@ void PPU::renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset
     if (!g_comprehensiveCacheInit) {
         memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
         g_comprehensiveCacheInit = true;
-        printf("Comprehensive PPU cache initialized (%d KB)\n", 
+        printf("PPU cache initialized (%d KB)\n", 
                (int)(sizeof(g_comprehensiveCache) / 1024));
     }
     
@@ -687,16 +687,6 @@ void PPU::renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t sprite_pal
 
 void PPU::render16(uint16_t* buffer)
 {
-    // For MMC3 (mapper 4), use simple direct rendering
-    /*if (engine.getMapper() == 4) {
-        printf("Simple direct\n");
-        renderSimpleDirect16(buffer);
-        return;
-    }*/
-    
-    // For other mappers, use the existing cached rendering
-    // [Keep the existing render16 implementation for non-MMC3 games]
-    
     // Clear the buffer
     uint32_t bgColor32 = paletteRGB[palette[0]];
     uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | ((bgColor32 & 0x00FC00) >> 5) | ((bgColor32 & 0x0000F8) >> 3);
@@ -706,10 +696,20 @@ void PPU::render16(uint16_t* buffer)
         buffer[index] = bgColor16;
     }
 
-    // Use the captured frame scroll AND control values for stable mappers
-    int scrollOffset = frameScrollX;
-    uint8_t baseNametable = frameCtrl & 0x01;
+    // FOR MMC3: Use current values, not captured frame values
+    int scrollOffset;
+    uint8_t baseNametable;
     
+    if (engine.getMapper() == 4) {
+        // MMC3: Use immediate current values (CHR banks change mid-frame)
+        scrollOffset = ppuScrollX;
+        baseNametable = ppuCtrl & 0x01;
+    } else {
+        // Other mappers: Use captured frame values for stability
+        scrollOffset = frameScrollX;
+        baseNametable = frameCtrl & 0x01;
+    }
+
     if (ppuMask & (1 << 3))
     {
         // Status bar (rows 0-3) - ALWAYS from nametable 0, never scrolled
@@ -719,7 +719,7 @@ void PPU::render16(uint16_t* buffer)
             }
         }
         
-        // Game area (rows 4-29) - use captured scroll and nametable
+        // Game area (rows 4-29)
         int leftmostTile = scrollOffset / 8;
         int rightmostTile = (scrollOffset + 256) / 8 + 1;
         
@@ -732,9 +732,11 @@ void PPU::render16(uint16_t* buffer)
                 
                 uint16_t baseAddr = baseNametable ? 0x2400 : 0x2000;
                 
+                // Handle wrapping within the 32x32 tile nametable
                 int localTileX = tileX % 32;
                 if (localTileX < 0) localTileX += 32;
                 
+                // For horizontal scrolling, switch nametables
                 if (tileX >= 32) {
                     baseAddr = baseNametable ? 0x2000 : 0x2400;
                     localTileX = tileX - 32;
@@ -746,7 +748,7 @@ void PPU::render16(uint16_t* buffer)
         }
     }
 
-    // Sprites (use cached version for stable mappers)
+    // Sprites
     if (ppuMask & (1 << 4))
     {
         for (int i = 63; i >= 0; i--)
@@ -769,7 +771,6 @@ void PPU::render16(uint16_t* buffer)
         }
     }
 }
-
 void PPU::updateRenderRegisters()
 {
     uint8_t oldRenderScrollX = renderScrollX;
@@ -779,9 +780,6 @@ void PPU::updateRenderRegisters()
     renderScrollY = ppuScrollY;
     renderCtrl = ppuCtrl;
     
-    if (renderScrollX != oldRenderScrollX) {
-        printf("RENDER UPDATE: Using game scroll $%02X\n", renderScrollX);
-    }
 }
 
 
@@ -934,11 +932,7 @@ void PPU::writeByte(uint16_t address, uint8_t value)
 void PPU::writeDataRegister(uint8_t value)
 {
     static bool debugPalette = true;
-    
-    if (debugPalette && currentAddress >= 0x3F00 && currentAddress < 0x3F20) {
-        printf("Palette[$%02X] = $%02X\n", currentAddress - 0x3F00, value);
-    }
-    
+        
     writeByte(currentAddress, value);
     if (!(ppuCtrl & (1 << 2)))
     {
@@ -969,14 +963,6 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
     {
     // PPUCTRL
     case 0x2000:
-        if (debugPPU && ppuCtrl != value) {
-            printf("PPU CTRL: $%02X (NMI:%s, Master:%s, Sprite:%s, BG:%s)\n", 
-                   value,
-                   (value & 0x80) ? "ON" : "OFF",
-                   (value & 0x40) ? "SLAVE" : "MASTER", 
-                   (value & 0x08) ? "HIGH" : "LOW",
-                   (value & 0x10) ? "HIGH" : "LOW");
-        }
         ppuCtrl = value;
         // Cache for next frame's rendering
         cachedCtrl = value;
@@ -984,19 +970,6 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
         
     // PPUMASK
     case 0x2001:
-        if (debugPPU && ppuMask != value) {
-            printf("PPU MASK: $%02X (BG:%s, Sprites:%s, EmphR:%s, EmphG:%s, EmphB:%s)\n", 
-                   value,
-                   (value & 0x08) ? "ON" : "OFF",
-                   (value & 0x10) ? "ON" : "OFF",
-                   (value & 0x20) ? "ON" : "OFF",
-                   (value & 0x40) ? "ON" : "OFF",
-                   (value & 0x80) ? "ON" : "OFF");
-            if ((value & 0x18) && !(ppuMask & 0x18)) {
-                printf("*** RENDERING ENABLED! ***\n");
-            }
-        }
-        ppuMask = value;
         break;
         
     // OAMADDR
@@ -1019,12 +992,9 @@ case 0x2005:
         if (value != 0) {
             // This is likely the game area scroll value
             if (gameAreaScrollX != value) {
-                printf("GAME SCROLL: $%02X -> $%02X\n", gameAreaScrollX, value);
                 gameAreaScrollX = value;
             }
         } else {
-            // This is likely the status bar scroll (ignore for now)
-            printf("STATUS SCROLL: ignored $00\n");
         }
         ppuScrollX = value;  // Still update the register for compatibility
     }
@@ -1038,15 +1008,11 @@ case 0x2005:
     // PPUADDR
     case 0x2006:
         writeAddressRegister(value);
-        if (debugPPU && writeToggle) {
-            printf("PPU ADDR set to: $%04X\n", currentAddress);
-        }
         break;
         
     // PPUDATA
     case 0x2007:
         if (debugPPU && currentAddress >= 0x3F00 && currentAddress < 0x3F20) {
-            printf("Palette write: $%04X = $%02X\n", currentAddress, value);
         }
         writeDataRegister(value);
         break;
@@ -1391,6 +1357,10 @@ void PPU::convertNESToScreen32(uint16_t* nesBuffer, uint32_t* screenBuffer, int 
 }
 
 void PPU::captureFrameScroll() {
+
+    if (engine.getMapper() == 4) {
+        return;  // Skip frame capture for MMC3
+    }
     // Capture the current scroll value AND control register at the start of VBlank
     frameScrollX = ppuScrollX;
     frameCtrl = ppuCtrl;
@@ -1412,8 +1382,6 @@ void PPU::invalidateTileCache()
         // Clear flip cache too
         g_flipCache.clear();
         g_flipCacheIndex.clear();
-        
-        printf("PPU tile cache invalidated due to CHR bank switch\n");
     }
 }
 
