@@ -94,6 +94,23 @@ PPU::PPU(SMBEmulator& engine) :
 {
     currentAddress = 0;
     writeToggle = false;
+    
+    // Initialize PPU registers to proper reset state
+    ppuCtrl = 0x00;
+    ppuMask = 0x00;
+    ppuStatus = 0xA0;  // VBlank flag set initially
+    oamAddress = 0x00;
+    ppuScrollX = 0x00;
+    ppuScrollY = 0x00;
+    vramBuffer = 0x00;
+    
+    // Clear all memory
+    memset(palette, 0, sizeof(palette));
+    memset(nametable, 0, sizeof(nametable));
+    memset(oam, 0, sizeof(oam));
+    
+    // Set default background color (usually black)
+    palette[0] = 0x0F;  // Black
 }
 
 uint8_t PPU::getAttributeTableValue(uint16_t nametableAddress)
@@ -167,30 +184,40 @@ uint8_t PPU::readCHR(int index)
 
 uint8_t PPU::readDataRegister()
 {
-    uint8_t value = vramBuffer;
-    vramBuffer = readByte(currentAddress);
-
-    if (!(ppuCtrl & (1 << 2)))
-    {
-        currentAddress++;
+    uint8_t value;
+    
+    if (currentAddress < 0x3F00) {
+        // Normal VRAM - return buffered value
+        value = vramBuffer;
+        vramBuffer = readByte(currentAddress);
+    } else {
+        // Palette RAM - return immediately but also update buffer
+        value = readByte(currentAddress);
+        vramBuffer = readByte(currentAddress - 0x1000); // Mirror to nametable
     }
-    else
-    {
-        currentAddress += 32;
-    }
 
+    // Increment address
+    if (ppuCtrl & 0x04) {
+        currentAddress += 32;  // Vertical increment
+    } else {
+        currentAddress += 1;   // Horizontal increment
+    }
+    
     return value;
 }
 
 uint8_t PPU::readRegister(uint16_t address)
 {
-    static int cycle = 0;
     switch(address)
     {
     // PPUSTATUS
     case 0x2002:
-        writeToggle = false;
-        return (cycle++ % 2 == 0 ? 0xc0 : 0);
+        {
+            uint8_t status = ppuStatus;
+            writeToggle = false;        // Reading $2002 clears write toggle
+            ppuStatus &= 0x7F;         // Clear VBlank flag after reading
+            return status;
+        }
     // OAMDATA
     case 0x2004:
         return oam[oamAddress];
@@ -203,6 +230,17 @@ uint8_t PPU::readRegister(uint16_t address)
 
     return 0;
 }
+
+void PPU::setVBlankFlag(bool flag)
+{
+    if (flag) {
+        ppuStatus |= 0x80;  // Set VBlank flag
+    } else {
+        ppuStatus &= 0x7F;  // Clear VBlank flag
+    }
+}
+
+
 
 void PPU::renderTile(uint32_t* buffer, int index, int xOffset, int yOffset)
 {
@@ -864,25 +902,45 @@ void PPU::writeDMA(uint8_t page)
 
 void PPU::writeRegister(uint16_t address, uint8_t value)
 {
+    static bool debugPPU = true; // Set to false to disable
+    
     switch(address)
     {
     // PPUCTRL
     case 0x2000:
+        if (debugPPU && ppuCtrl != value) {
+            printf("PPU CTRL: $%02X (NMI:%s, Master:%s, Sprite:%s, BG:%s)\n", 
+                   value,
+                   (value & 0x80) ? "ON" : "OFF",
+                   (value & 0x40) ? "SLAVE" : "MASTER", 
+                   (value & 0x08) ? "HIGH" : "LOW",
+                   (value & 0x10) ? "HIGH" : "LOW");
+        }
         ppuCtrl = value;
         break;
+        
     // PPUMASK
     case 0x2001:
+        if (debugPPU && ppuMask != value) {
+            printf("PPU MASK: $%02X (BG:%s, Sprites:%s)\n", 
+                   value,
+                   (value & 0x08) ? "ON" : "OFF",
+                   (value & 0x10) ? "ON" : "OFF");
+        }
         ppuMask = value;
         break;
+        
     // OAMADDR
     case 0x2003:
         oamAddress = value;
         break;
+        
     // OAMDATA
     case 0x2004:
         oam[oamAddress] = value;
         oamAddress++;
         break;
+        
     // PPUSCROLL
     case 0x2005:
         if (!writeToggle)
@@ -895,14 +953,17 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
         }
         writeToggle = !writeToggle;
         break;
+        
     // PPUADDR
     case 0x2006:
         writeAddressRegister(value);
         break;
+        
     // PPUDATA
     case 0x2007:
         writeDataRegister(value);
         break;
+        
     default:
         break;
     }

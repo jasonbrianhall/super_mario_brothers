@@ -85,6 +85,9 @@ void setWriteToggle(bool val) { writeToggle = val; }
 void setDataBuffer(uint8_t val) { vramBuffer = val; }
     void renderScaled(uint16_t* buffer, int screenWidth, int screenHeight);
     void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
+void setVBlankFlag(bool flag);
+uint8_t getControl() const { return ppuCtrl; }
+
 
 private:
     SMBEmulator& engine;
@@ -105,7 +108,7 @@ private:
     };
     
     static ScalingCache g_scalingCache;
-    
+    void handleNMI();
     // Scaling methods
     void initializeScalingCache(int screenWidth, int screenHeight);
     void updateScalingCache(int screenWidth, int screenHeight);

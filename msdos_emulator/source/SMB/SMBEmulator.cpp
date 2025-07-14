@@ -166,13 +166,65 @@ bool SMBEmulator::loadCHRROM(std::ifstream& file)
         chrSize = 8192;
         chrROM = new uint8_t[chrSize];
         memset(chrROM, 0, chrSize);
+        printf("Using CHR RAM (8KB)\n");  // ADD THIS LINE
         return true;
     }
     
     chrROM = new uint8_t[chrSize];
     file.read(reinterpret_cast<char*>(chrROM), chrSize);
     
+    // ADD THESE DEBUG LINES:
+    printf("Loaded CHR ROM: %d bytes\n", chrSize);
+    
+    // Debug: Print first few CHR bytes
+    printf("First CHR bytes: ");
+    for (int i = 0; i < 16 && i < chrSize; i++) {
+        printf("%02X ", chrROM[i]);
+    }
+    printf("\n");
+    
     return file.good();
+}
+
+void SMBEmulator::handleNMI()
+{
+    if (getFlag(FLAG_INTERRUPT)) return;  // NMI can be disabled
+    
+    pushWord(regPC);
+    pushByte(regP & ~FLAG_BREAK);  // Push status without break flag
+    setFlag(FLAG_INTERRUPT, true);
+    regPC = readWord(0xFFFA);      // NMI vector
+}
+
+void SMBEmulator::update()
+{
+    if (!romLoaded) return;
+    
+    frameCycles = 0;
+    
+    // Execute CPU instructions for one frame
+    while (frameCycles < CYCLES_PER_FRAME) {
+        executeInstruction();
+        
+        // Simulate VBlank at end of frame
+        if (frameCycles >= CYCLES_PER_FRAME - 100) {
+            // Set VBlank flag in PPU
+            ppu->setVBlankFlag(true);
+            
+            // Generate NMI if enabled
+            if (ppu->getControl() & 0x80) {  // NMI enable bit
+                handleNMI();
+            }
+        }
+    }
+    
+    // Clear VBlank flag for next frame
+    ppu->setVBlankFlag(false);
+    
+    // Update APU
+    if (Configuration::getAudioEnabled()) {
+        apu->stepFrame();
+    }
 }
 
 void SMBEmulator::reset()
@@ -192,23 +244,6 @@ void SMBEmulator::reset()
     memset(ram, 0, sizeof(ram));
     
     std::cout << "Emulator reset, PC = $" << std::hex << regPC << std::dec << std::endl;
-}
-
-void SMBEmulator::update()
-{
-    if (!romLoaded) return;
-    
-    frameCycles = 0;
-    
-    // Execute CPU instructions for one frame
-    while (frameCycles < CYCLES_PER_FRAME) {
-        executeInstruction();
-    }
-    
-    // Update APU
-    if (Configuration::getAudioEnabled()) {
-        apu->stepFrame();
-    }
 }
 
 void SMBEmulator::step()
