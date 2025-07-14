@@ -1,4 +1,4 @@
-#include "../SMB/SMBEngine.hpp"
+#include "../SMB/SMBEmulator.hpp"
 
 #include "MemoryAccess.hpp"
 

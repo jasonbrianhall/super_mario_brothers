@@ -40,6 +40,7 @@ public:
     void render16(uint16_t* buffer);
     void renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight);
     void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
+    void renderDirectFast(uint16_t* buffer, int screenWidth, int screenHeight);
     
     // Audio
     void audioCallback(uint8_t* stream, int length);

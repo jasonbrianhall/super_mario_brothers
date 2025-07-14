@@ -4,7 +4,6 @@
 #include "../Constants.hpp"
 
 #include "Video.hpp"
-#include "../SMBRom.hpp"
 
 struct TilePixelCache {
     uint16_t pixels[64];  // 8x8 = 64 pixels, pre-converted to RGB565

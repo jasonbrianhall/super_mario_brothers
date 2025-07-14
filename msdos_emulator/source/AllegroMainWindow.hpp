@@ -26,7 +26,7 @@ public:
   ~AllegroMainWindow();
 
   bool initialize();
-  void run();
+  void run(const char* romFilename);
   void shutdown();
   enum CaptureType {
     CAPTURE_NONE,

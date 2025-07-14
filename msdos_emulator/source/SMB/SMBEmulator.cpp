@@ -53,7 +53,7 @@ SMBEmulator::SMBEmulator()
     
     // Create components - they'll get CHR data when ROM is loaded
     apu = new APU();
-    ppu = new PPU(reinterpret_cast<SMBEngine&>(*this));
+    ppu = new PPU(*this);
     controller1 = new Controller(1);
     controller2 = new Controller(2);
 }
@@ -1081,6 +1081,12 @@ void SMBEmulator::render16(uint16_t* buffer)
 {
     ppu->render16(buffer);
 }
+
+void SMBEmulator::renderDirectFast(uint16_t* buffer, int screenWidth, int screenHeight)
+{
+    ppu->renderScaled(buffer, screenWidth, screenHeight);
+}
+
 
 void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight)
 {

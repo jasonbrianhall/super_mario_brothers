@@ -31,7 +31,7 @@ class SMBEngine;
 class PPU
 {
 public:
-    PPU(SMBEngine& engine);
+    PPU(SMBEmulator& engine);
 
     uint8_t readRegister(uint16_t address);
 
@@ -87,7 +87,7 @@ void setDataBuffer(uint8_t val) { vramBuffer = val; }
     void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
 
 private:
-    SMBEngine& engine;
+    SMBEmulator& engine;
 
     struct ScalingCache {
         uint16_t* scaledBuffer;

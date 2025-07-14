@@ -1,4 +1,4 @@
-#include "../SMB/SMBEngine.hpp"
+#include "../SMB/SMBEmulator.hpp"
 #include "../Util/Video.hpp"
 
 #include "PPU.hpp"
@@ -90,7 +90,7 @@ static constexpr const uint32_t defaultPaletteRGB[64] = {
  */
 const uint32_t* paletteRGB = defaultPaletteRGB;
 
-PPU::PPU(SMBEngine& engine) :
+PPU::PPU(SMBEmulator& engine) :
     engine(engine)
 {
     currentAddress = 0;

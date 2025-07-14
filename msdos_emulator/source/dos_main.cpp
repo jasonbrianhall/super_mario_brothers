@@ -7,7 +7,7 @@
 #include <cstring>
 #include <cstdlib>
 #include "AllegroMainWindow.hpp"
-#include "SMB/SMBEmulator.hpp"
+#include "SMB/SMBEmulator.hpp" 
 #include "Emulation/Controller.hpp"
 #include "Configuration.hpp"
 #include "Constants.hpp"
@@ -24,7 +24,7 @@
 static AUDIOSTREAM* audiostream = NULL;
 
 // Global variables for DOS compatibility
-static SMBEngine* smbEngine = NULL;
+static SMBEmulator* smbEngine = NULL;
 static uint32_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
 AllegroMainWindow* g_mainWindow = NULL;
 
@@ -975,7 +975,7 @@ void AllegroMainWindow::setupMenu()
     menuCount++;
 }
 
-void AllegroMainWindow::run() 
+void AllegroMainWindow::run(const char* romFilename) 
 {
     printf("=== Starting Super Mario Bros ===\n");
     
@@ -983,8 +983,19 @@ void AllegroMainWindow::run()
     showingMenu = false;
     currentDialog = DIALOG_NONE;
     
-    SMBEngine engine(const_cast<unsigned char*>(smbRomData));
+    // Create and initialize emulator
+    SMBEmulator engine;
     smbEngine = &engine;
+    
+    // Load ROM file
+    printf("Loading ROM: %s\n", romFilename);
+    if (!engine.loadROM(romFilename)) {
+        printf("Failed to load ROM file: %s\n", romFilename);
+        setStatusMessage("ROM loading failed");
+        return;
+    }
+    
+    printf("ROM loaded successfully\n");
     engine.reset();
     
     gameRunning = true;
@@ -3300,7 +3311,25 @@ void AllegroMainWindow::convertBuffer16ToBitmap16_2x(uint16_t* buffer16, BITMAP*
 // Main function for DOS
 int main(int argc, char** argv) 
 {
-    printf("Super Mario Bros Virtualizer - DOS Version\n");
+    printf("Super Mario Bros Emulator - DOS Version\n");
+    
+    // Check for ROM file argument
+    if (argc < 2) {
+        printf("Usage: %s <rom_file.nes>\n", argv[0]);
+        printf("Example: %s smb.nes\n", argv[0]);
+        return -1;
+    }
+    
+    // Validate ROM file exists
+    FILE* romTest = fopen(argv[1], "rb");
+    if (!romTest) {
+        printf("Error: Cannot open ROM file '%s'\n", argv[1]);
+        printf("Please check the file path and try again\n");
+        return -1;
+    }
+    fclose(romTest);
+    
+    printf("ROM file: %s\n", argv[1]);
     printf("Initializing...\n");
     
     // Initialize Configuration first (CRITICAL for sound)
@@ -3318,8 +3347,8 @@ int main(int argc, char** argv)
         return -1;
     }
     
-    printf("Starting game...\n");
-    mainWindow.run();
+    printf("Starting game with ROM: %s\n", argv[1]);
+    mainWindow.run(argv[1]);  // Pass ROM filename to run method
     
     return 0;
 }
