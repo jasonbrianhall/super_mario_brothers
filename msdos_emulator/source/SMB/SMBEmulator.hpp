@@ -258,6 +258,17 @@ struct MMC1State {
 void writeMMC1Register(uint16_t address, uint8_t value);
 void updateMMC1Banks();
 
+struct GxROMState {
+    uint8_t prgBank;    // Current PRG bank (32KB)
+    uint8_t chrBank;    // Current CHR bank (8KB) 
+    
+    GxROMState() {
+        prgBank = 0;
+        chrBank = 0;
+    }
+} gxrom;
+
+void writeGxROMRegister(uint16_t address, uint8_t value);
 
 };
 

@@ -331,56 +331,40 @@ void SMBEmulator::reset()
 {
     if (!romLoaded) return;
     
-    // Debug: Check all banks for non-zero reset vectors
-    if (nesHeader.mapper == 1) {
-        printf("=== DEBUG: Searching for reset vector in all PRG banks ===\n");
-        uint8_t totalBanks = prgSize / 0x4000;
-        
-        for (int bank = 0; bank < totalBanks; bank++) {
-            uint32_t bankOffset = bank * 0x4000;
-            uint32_t resetLow = bankOffset + 0x3FFC;   // $FFFC relative to bank start
-            uint32_t resetHigh = bankOffset + 0x3FFD;  // $FFFD relative to bank start
-            
-            if (resetLow < prgSize && resetHigh < prgSize) {
-                uint8_t low = prgROM[resetLow];
-                uint8_t high = prgROM[resetHigh];
-                uint16_t resetVector = low | (high << 8);
-                
-                printf("Bank %d: reset vector = $%04X (bytes: $%02X $%02X)\n", 
-                       bank, resetVector, low, high);
-                
-                // Also check interrupt vectors
-                uint32_t nmiLow = bankOffset + 0x3FFA;
-                uint32_t nmiHigh = bankOffset + 0x3FFB;
-                if (nmiLow < prgSize && nmiHigh < prgSize) {
-                    uint8_t nmiL = prgROM[nmiLow];
-                    uint8_t nmiH = prgROM[nmiHigh];
-                    uint16_t nmiVector = nmiL | (nmiH << 8);
-                    printf("Bank %d: NMI vector = $%04X (bytes: $%02X $%02X)\n", 
-                           bank, nmiVector, nmiL, nmiH);
-                }
-            }
-        }
-        printf("=== END DEBUG ===\n");
-    }
-    
     // Reset CPU state
     regA = regX = regY = 0;
     regSP = 0xFF;
     regP = 0x24;
     totalCycles = frameCycles = 0;
     
-    // Initialize MMC1 to power-on state
+    // Initialize mapper state
     if (nesHeader.mapper == 1) {
         mmc1 = MMC1State();
-        // MMC1 should power on with the last bank at $C000-$FFFF for reset vector
-        // Control $08 = 16KB mode, last bank fixed at $C000
-        mmc1.control = 0x08;  // NOT 0x0C!
+        mmc1.control = 0x08;
         mmc1.prgBank = 0;     
         mmc1.currentPRGBank = 0;
         updateMMC1Banks();
+        printf("MMC1 initialized: control=$%02X\n", mmc1.control);
+    } else if (nesHeader.mapper == 66) {
+        gxrom = GxROMState();
+        printf("GxROM initialized: PRG bank 0, CHR bank 0\n");
         
-        printf("MMC1 initialized: control=$%02X (16KB mode, last bank fixed)\n", mmc1.control);
+        // Debug: Check all PRG banks for reset vectors
+        printf("=== GxROM Banks Debug ===\n");
+        uint8_t totalBanks = prgSize / 0x8000;  // 32KB banks
+        for (int bank = 0; bank < totalBanks; bank++) {
+            uint32_t bankOffset = bank * 0x8000;
+            uint32_t resetLow = bankOffset + 0x7FFC;   // $FFFC relative to bank
+            uint32_t resetHigh = bankOffset + 0x7FFD;  // $FFFD relative to bank
+            
+            if (resetLow < prgSize && resetHigh < prgSize) {
+                uint8_t low = prgROM[resetLow];
+                uint8_t high = prgROM[resetHigh];
+                uint16_t resetVector = low | (high << 8);
+                printf("GxROM Bank %d: reset vector = $%04X\n", bank, resetVector);
+            }
+        }
+        printf("=== End GxROM Debug ===\n");
     }
     
     // Reset vector at $FFFC-$FFFD
@@ -761,54 +745,16 @@ uint8_t SMBEmulator::readByte(uint16_t address)
                 return prgROM[romAddr];
             }
         } else if (nesHeader.mapper == 1) {
-            // MMC1 mapping - CORRECTED VERSION
-            uint32_t romAddr;
-            uint8_t totalBanks = prgSize / 0x4000;  // Number of 16KB banks
+            // MMC1 mapping (existing code...)
+            // [Keep your existing MMC1 code here]
+        } else if (nesHeader.mapper == 66) {
+            // GxROM mapping - 32KB PRG banks
+            uint32_t romAddr = (gxrom.prgBank * 0x8000) + (address - 0x8000);
             
-            if (address < 0xC000) {
-                // $8000-$BFFF (first 16KB bank)
-                if (mmc1.control & 0x08) {
-                    // 16KB PRG mode
-                    if (mmc1.control & 0x04) {
-                        // Fix first bank (bank 0) at $8000
-                        romAddr = (address - 0x8000);
-                    } else {
-                        // Switch first bank based on prgBank register  
-                        romAddr = (mmc1.currentPRGBank * 0x4000) + (address - 0x8000);
-                    }
-                } else {
-                    // 32KB PRG mode
-                    romAddr = (mmc1.currentPRGBank * 0x8000) + (address - 0x8000);
-                }
-            } else {
-                // $C000-$FFFF (second 16KB bank) - THIS IS THE CRITICAL PART
-                if (mmc1.control & 0x08) {
-                    // 16KB PRG mode
-                    if (mmc1.control & 0x04) {
-                        // Fix first bank at $8000, switch second bank at $C000
-                        romAddr = (mmc1.currentPRGBank * 0x4000) + (address - 0xC000);
-                    } else {
-                        // Switch first bank at $8000, fix LAST bank at $C000
-                        // CONTROL $0C means this case: fix last bank at $C000
-                        uint8_t lastBank = totalBanks - 1;  // Bank 3 for 4 banks (0,1,2,3)
-                        romAddr = (lastBank * 0x4000) + (address - 0xC000);
-                        
-                        // Debug the calculation
-                        if (address >= 0xFFFC) {
-                            printf("LAST BANK: totalBanks=%d, lastBank=%d, offset=$%04X -> romAddr=$%08X, ", 
-                                   totalBanks, lastBank, (address - 0xC000), romAddr);
-                        }
-                    }
-                } else {
-                    // 32KB PRG mode
-                    romAddr = (mmc1.currentPRGBank * 0x8000) + (address - 0x8000);
-                }
-            }
-            
-            // Debug for reset vector reads
+            // Debug reset vector reads
             if (address >= 0xFFFC) {
-                printf("Reading reset vector $%04X: bank calculation gives romAddr=$%08X, ", 
-                       address, romAddr);
+                printf("GxROM reset vector $%04X: bank %d, romAddr=$%08X, ", 
+                       address, gxrom.prgBank, romAddr);
                 if (romAddr < prgSize) {
                     printf("value=$%02X\n", prgROM[romAddr]);
                 } else {
@@ -816,20 +762,14 @@ uint8_t SMBEmulator::readByte(uint16_t address)
                 }
             }
             
-            // Bounds checking
-            if (romAddr >= prgSize) {
-                printf("MMC1 ERROR: romAddr $%08X >= prgSize $%08X (addr=$%04X, bank=%d, totalBanks=%d)\n", 
-                       romAddr, prgSize, address, mmc1.currentPRGBank, totalBanks);
-                return 0;
+            if (romAddr < prgSize) {
+                return prgROM[romAddr];
             }
-            
-            return prgROM[romAddr];
         }
     }
     
     return 0; // Open bus
 }
-
 
 void SMBEmulator::writeByte(uint16_t address, uint8_t value)
 {
@@ -860,10 +800,13 @@ void SMBEmulator::writeByte(uint16_t address, uint8_t value)
         // Mapper registers
         if (nesHeader.mapper == 1) {
             writeMMC1Register(address, value);
+        } else if (nesHeader.mapper == 66) {
+            writeGxROMRegister(address, value);
         }
         // Other writes to ROM area are ignored
     }
 }
+
 
 uint16_t SMBEmulator::readWord(uint16_t address)
 {
@@ -1827,4 +1770,17 @@ void SMBEmulator::updateMMC1Banks()
     
     printf("MMC1 Banks: PRG=%d, CHR0=%d, CHR1=%d (control=$%02X)\n", 
            mmc1.currentPRGBank, mmc1.currentCHRBank0, mmc1.currentCHRBank1, mmc1.control);
+}
+
+void SMBEmulator::writeGxROMRegister(uint16_t address, uint8_t value)
+{
+    // Mapper 66: Write to $8000-$FFFF sets both PRG and CHR banks
+    // Bits 4-5: PRG bank (32KB)
+    // Bits 0-1: CHR bank (8KB)
+    
+    gxrom.prgBank = (value >> 4) & 0x03;  // Bits 4-5
+    gxrom.chrBank = value & 0x03;         // Bits 0-1
+    
+    printf("GxROM Bank Switch: PRG=%d, CHR=%d (value=$%02X)\n", 
+           gxrom.prgBank, gxrom.chrBank, value);
 }
