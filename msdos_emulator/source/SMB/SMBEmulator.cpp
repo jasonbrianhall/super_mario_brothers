@@ -765,71 +765,68 @@ uint8_t SMBEmulator::readByte(uint16_t address)
             if (romAddr < prgSize) {
                 return prgROM[romAddr];
             }
-        } else if (nesHeader.mapper == 1) {
-            // MMC1 mapping - CORRECTED VERSION
-            uint32_t romAddr;
-            uint8_t totalBanks = prgSize / 0x4000;  // Number of 16KB banks
-            
-            if (address < 0xC000) {
-                // $8000-$BFFF (first 16KB bank)
-                if (mmc1.control & 0x08) {
-                    // 16KB PRG mode
-                    if (mmc1.control & 0x04) {
-                        // Fix first bank (bank 0) at $8000
-                        romAddr = (address - 0x8000);
-                    } else {
-                        // Switch first bank based on prgBank register  
-                        romAddr = (mmc1.currentPRGBank * 0x4000) + (address - 0x8000);
-                    }
-                } else {
-                    // 32KB PRG mode
-                    romAddr = (mmc1.currentPRGBank * 0x8000) + (address - 0x8000);
-                }
+} else if (nesHeader.mapper == 1) {
+    // MMC1 mapping - CORRECTED VERSION
+    uint32_t romAddr;
+    uint8_t totalBanks = prgSize / 0x4000;  // Number of 16KB banks
+    
+    if (address < 0xC000) {
+        // $8000-$BFFF (first 16KB bank)
+        if (mmc1.control & 0x08) {
+            // 16KB PRG mode
+            if (mmc1.control & 0x04) {
+                // Fix FIRST bank at $8000, switch second bank at $C000
+                romAddr = (address - 0x8000);  // Always bank 0
             } else {
-                // $C000-$FFFF (second 16KB bank) - THIS IS THE CRITICAL PART
-                if (mmc1.control & 0x08) {
-                    // 16KB PRG mode
-                    if (mmc1.control & 0x04) {
-                        // Fix first bank at $8000, switch second bank at $C000
-                        romAddr = (mmc1.currentPRGBank * 0x4000) + (address - 0xC000);
-                    } else {
-                        // Switch first bank at $8000, fix LAST bank at $C000
-                        // CONTROL $0C means this case: fix last bank at $C000
-                        uint8_t lastBank = totalBanks - 1;  // Bank 3 for 4 banks (0,1,2,3)
-                        romAddr = (lastBank * 0x4000) + (address - 0xC000);
-                        
-                        // Debug the calculation
-                        if (address >= 0xFFFC) {
-                            printf("LAST BANK: totalBanks=%d, lastBank=%d, offset=$%04X -> romAddr=$%08X, ", 
-                                   totalBanks, lastBank, (address - 0xC000), romAddr);
-                        }
-                    }
-                } else {
-                    // 32KB PRG mode
-                    romAddr = (mmc1.currentPRGBank * 0x8000) + (address - 0x8000);
-                }
+                // Switch FIRST bank at $8000, fix last bank at $C000  
+                romAddr = (mmc1.currentPRGBank * 0x4000) + (address - 0x8000);
             }
-            
-            // Debug for reset vector reads
-            if (address >= 0xFFFC) {
-                printf("Reading reset vector $%04X: bank calculation gives romAddr=$%08X, ", 
-                       address, romAddr);
-                if (romAddr < prgSize) {
-                    printf("value=$%02X\n", prgROM[romAddr]);
-                } else {
-                    printf("OUT OF BOUNDS!\n");
-                }
+        } else {
+            // 32KB PRG mode
+            romAddr = ((mmc1.currentPRGBank >> 1) * 0x8000) + (address - 0x8000);
+        }
+    } else {
+        // $C000-$FFFF (second 16KB bank)
+        if (mmc1.control & 0x08) {
+            // 16KB PRG mode
+            if (mmc1.control & 0x04) {
+                // Fix first bank at $8000, SWITCH second bank at $C000
+                romAddr = (mmc1.currentPRGBank * 0x4000) + (address - 0xC000);
+            } else {
+                // Switch first bank at $8000, FIX LAST bank at $C000
+                uint8_t lastBank = totalBanks - 1;
+                romAddr = (lastBank * 0x4000) + (address - 0xC000);
             }
-            
-            // Bounds checking
-            if (romAddr >= prgSize) {
-                printf("MMC1 ERROR: romAddr $%08X >= prgSize $%08X (addr=$%04X, bank=%d, totalBanks=%d)\n", 
-                       romAddr, prgSize, address, mmc1.currentPRGBank, totalBanks);
-                return 0;
-            }
-            
-            return prgROM[romAddr];
-        } else if (nesHeader.mapper == 66) {
+        } else {
+            // 32KB PRG mode
+            romAddr = ((mmc1.currentPRGBank >> 1) * 0x8000) + (address - 0x8000);
+        }
+    }
+    
+    // Debug for IRQ vector reads specifically
+    if (address >= 0xFFFE) {
+        printf("IRQ vector $%04X: control=$%02X, bit2=%d, bit3=%d, bank calculation gives romAddr=$%08X, ", 
+               address, mmc1.control, 
+               (mmc1.control & 0x04) ? 1 : 0,
+               (mmc1.control & 0x08) ? 1 : 0,
+               romAddr);
+        if (romAddr < prgSize) {
+            printf("value=$%02X\n", prgROM[romAddr]);
+        } else {
+            printf("OUT OF BOUNDS!\n");
+        }
+    }
+    
+    // Bounds checking
+    if (romAddr >= prgSize) {
+        printf("MMC1 ERROR: romAddr $%08X >= prgSize $%08X (addr=$%04X, bank=%d, totalBanks=%d)\n", 
+               romAddr, prgSize, address, mmc1.currentPRGBank, totalBanks);
+        return 0;
+    }
+    
+    return prgROM[romAddr];
+}
+        else if (nesHeader.mapper == 66) {
             // GxROM mapping - 32KB PRG banks
             uint32_t romAddr = (gxrom.prgBank * 0x8000) + (address - 0x8000);
             
