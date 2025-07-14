@@ -85,10 +85,12 @@ void setWriteToggle(bool val) { writeToggle = val; }
 void setDataBuffer(uint8_t val) { vramBuffer = val; }
     void renderScaled(uint16_t* buffer, int screenWidth, int screenHeight);
     void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
-void setVBlankFlag(bool flag);
-uint8_t getControl() const { return ppuCtrl; }
+    void setVBlankFlag(bool flag);
+    uint8_t getControl() const { return ppuCtrl; }
     void setSprite0Hit(bool hit);
-uint8_t getMask() const { return ppuMask; }
+    uint8_t getMask() const { return ppuMask; }
+    void updateRenderRegisters();
+void captureFrameScroll();
 
 private:
     SMBEmulator& engine;
@@ -165,6 +167,16 @@ private:
     void cacheFlipVariation(uint16_t tile, uint8_t palette_type, uint8_t attribute, bool flipX, bool flipY);
     uint32_t getFlipCacheKey(uint16_t tile, uint8_t palette_type, uint8_t attribute, uint8_t flip_flags);
     bool sprite0Hit;
+    uint8_t cachedScrollX;
+    uint8_t cachedScrollY;
+    uint8_t cachedCtrl;
+    uint8_t renderScrollX;
+    uint8_t renderScrollY; 
+    uint8_t renderCtrl;
+    uint8_t gameAreaScrollX;  // The "real" scroll value for the game area
+    bool ignoreNextScrollWrite;
+    uint8_t frameScrollX; 
+    uint8_t frameCtrl;     // The control register for this entire frame
 };
 
 #endif // PPU_HPP

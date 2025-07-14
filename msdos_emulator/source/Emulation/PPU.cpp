@@ -111,6 +111,16 @@ PPU::PPU(SMBEmulator& engine) :
     sprite0Hit = false;
     // Set default background color (usually black)
     palette[0] = 0x0F;  // Black
+    cachedScrollX = 0;
+    cachedScrollY = 0;
+    cachedCtrl = 0;
+    renderScrollX = 0;
+    renderScrollY = 0;
+    renderCtrl = 0;
+    gameAreaScrollX = 0;
+    ignoreNextScrollWrite = false;
+    frameScrollX = 0;
+    frameCtrl = 0;
 }
 
 uint8_t PPU::getAttributeTableValue(uint16_t nametableAddress)
@@ -677,7 +687,7 @@ void PPU::renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t sprite_pal
 
 void PPU::render16(uint16_t* buffer)
 {
-    // Clear the buffer with the background color
+    // Clear the buffer
     uint32_t bgColor32 = paletteRGB[palette[0]];
     uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | ((bgColor32 & 0x00FC00) >> 5) | ((bgColor32 & 0x0000F8) >> 3);
     
@@ -686,44 +696,61 @@ void PPU::render16(uint16_t* buffer)
         buffer[index] = bgColor16;
     }
 
-    // First, render ALL background tiles
+    // Use the captured frame scroll AND control values
+    int scrollOffset = frameScrollX;
+    uint8_t baseNametable = frameCtrl & 0x01;  // Use captured nametable selection
+    
+    static uint8_t lastFrameScroll = 255;
+    static uint8_t lastFrameCtrl = 255;
+    if (frameScrollX != lastFrameScroll || frameCtrl != lastFrameCtrl) {
+        printf("RENDER: Using scroll=$%02X, nametable=%d\n", frameScrollX, baseNametable);
+        lastFrameScroll = frameScrollX;
+        lastFrameCtrl = frameCtrl;
+    }
+
     if (ppuMask & (1 << 3))
     {
-        int scrollX = (int)ppuScrollX + ((ppuCtrl & (1 << 0)) ? 256 : 0);
-        int xMin = scrollX / 8;
-        int xMax = ((int)scrollX + 256) / 8;
-        
-        // Status bar tiles - cached
-        for (int x = 0; x < 32; x++)
-        {
-            for (int y = 0; y < 4; y++)
-            {
+        // Status bar (rows 0-3) - ALWAYS from nametable 0, never scrolled
+        for (int x = 0; x < 32; x++) {
+            for (int y = 0; y < 4; y++) {
                 renderCachedTile(buffer, 0x2000 + 32 * y + x, x * 8, y * 8, false, false);
             }
         }
         
-        // Background tiles - cached
-        for (int x = xMin; x <= xMax; x++)
-        {
-            for (int y = 4; y < 30; y++)
-            {
-                int index;
-                if (x < 32) {
-                    index = 0x2000 + 32 * y + x;
-                } else if (x < 64) {
-                    index = 0x2400 + 32 * y + (x - 32);
-                } else {
-                    index = 0x2800 + 32 * y + (x - 64);
+        // Game area (rows 4-29) - use captured scroll and nametable
+        int leftmostTile = scrollOffset / 8;
+        int rightmostTile = (scrollOffset + 256) / 8 + 1;
+        
+        for (int tileX = leftmostTile; tileX <= rightmostTile; tileX++) {
+            for (int tileY = 4; tileY < 30; tileY++) {
+                int screenX = (tileX * 8) - scrollOffset;
+                int screenY = tileY * 8;
+                
+                if (screenX < -8 || screenX >= 256) continue;
+                
+                // Use the base nametable from captured control register
+                uint16_t baseAddr = baseNametable ? 0x2400 : 0x2000;
+                
+                // Handle wrapping within the 32x32 tile nametable
+                int localTileX = tileX % 32;
+                if (localTileX < 0) localTileX += 32;
+                
+                // For SMB horizontal scrolling, when we go past 32 tiles, 
+                // we need to switch to the other nametable
+                if (tileX >= 32) {
+                    baseAddr = baseNametable ? 0x2000 : 0x2400;  // Switch to other nametable
+                    localTileX = tileX - 32;
                 }
-                renderCachedTile(buffer, index, (x * 8) - (int)scrollX, (y * 8), false, false);
+                
+                uint16_t nametableAddr = baseAddr + (tileY * 32) + localTileX;
+                renderCachedTile(buffer, nametableAddr, screenX, screenY, false, false);
             }
         }
     }
 
-    // Then render ALL sprites with proper priority handling
+    // Sprites (unchanged)
     if (ppuMask & (1 << 4))
     {
-        // Render in reverse order (highest priority first)
         for (int i = 63; i >= 0; i--)
         {
             uint8_t y          = oam[i * 4];
@@ -740,11 +767,25 @@ void PPU::render16(uint16_t* buffer)
             uint8_t sprite_palette = attributes & 0x03;
             bool behindBackground = (attributes & (1 << 5)) != 0;
 
-            // Render sprite with priority-aware pixel drawing
             renderCachedSpriteWithPriority(buffer, tile, sprite_palette, x, y, flipX, flipY, behindBackground);
         }
     }
 }
+
+void PPU::updateRenderRegisters()
+{
+    uint8_t oldRenderScrollX = renderScrollX;
+    
+    // Use the game area scroll value instead of the alternating one
+    renderScrollX = gameAreaScrollX;
+    renderScrollY = ppuScrollY;
+    renderCtrl = ppuCtrl;
+    
+    if (renderScrollX != oldRenderScrollX) {
+        printf("RENDER UPDATE: Using game scroll $%02X\n", renderScrollX);
+    }
+}
+
 
 void PPU::renderCachedSpriteWithPriority(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, int xOffset, int yOffset, bool flipX, bool flipY, bool behindBackground)
 {
@@ -939,6 +980,8 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
                    (value & 0x10) ? "HIGH" : "LOW");
         }
         ppuCtrl = value;
+        // Cache for next frame's rendering
+        cachedCtrl = value;
         break;
         
     // PPUMASK
@@ -951,9 +994,9 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
                    (value & 0x20) ? "ON" : "OFF",
                    (value & 0x40) ? "ON" : "OFF",
                    (value & 0x80) ? "ON" : "OFF");
-                           if ((value & 0x18) && !(ppuMask & 0x18)) {
-            printf("*** RENDERING ENABLED! ***\n");
-        }
+            if ((value & 0x18) && !(ppuMask & 0x18)) {
+                printf("*** RENDERING ENABLED! ***\n");
+            }
         }
         ppuMask = value;
         break;
@@ -970,19 +1013,29 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
         break;
         
     // PPUSCROLL
-    case 0x2005:
-        if (!writeToggle)
-        {
-            ppuScrollX = value;
-            if (debugPPU) printf("PPU SCROLL X: $%02X\n", value);
+case 0x2005:
+    if (!writeToggle)
+    {
+        // SMB alternates between $00 (status bar) and $C6 (game area)
+        // We want to keep the non-zero value as the "real" scroll
+        if (value != 0) {
+            // This is likely the game area scroll value
+            if (gameAreaScrollX != value) {
+                printf("GAME SCROLL: $%02X -> $%02X\n", gameAreaScrollX, value);
+                gameAreaScrollX = value;
+            }
+        } else {
+            // This is likely the status bar scroll (ignore for now)
+            printf("STATUS SCROLL: ignored $00\n");
         }
-        else
-        {
-            ppuScrollY = value;
-            if (debugPPU) printf("PPU SCROLL Y: $%02X\n", value);
-        }
-        writeToggle = !writeToggle;
-        break;
+        ppuScrollX = value;  // Still update the register for compatibility
+    }
+    else
+    {
+        ppuScrollY = value;
+    }
+    writeToggle = !writeToggle;
+    break;
         
     // PPUADDR
     case 0x2006:
@@ -1004,6 +1057,7 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
         break;
     }
 }
+
 uint32_t PPU::getFlipCacheKey(uint16_t tile, uint8_t palette_type, uint8_t attribute, uint8_t flip_flags)
 {
     return (tile << 16) | (palette_type << 8) | (attribute << 4) | flip_flags;
@@ -1338,3 +1392,10 @@ void PPU::convertNESToScreen32(uint16_t* nesBuffer, uint32_t* screenBuffer, int 
     }
 }
 
+void PPU::captureFrameScroll() {
+    // Capture the current scroll value AND control register at the start of VBlank
+    frameScrollX = ppuScrollX;
+    frameCtrl = ppuCtrl;  // CAPTURE THE CONTROL REGISTER TOO!
+    printf("CAPTURE: Frame scroll=$%02X, Ctrl=$%02X, Nametable=%d\n", 
+           frameScrollX, frameCtrl, (frameCtrl & 0x01));
+}

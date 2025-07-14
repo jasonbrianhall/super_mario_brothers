@@ -217,10 +217,9 @@ void SMBEmulator::handleNMI()
 void SMBEmulator::update()
 {
     if (!romLoaded) return;
-
     static int frameCount = 0;
     frameCycles = 0;
-
+    
     // More precise NTSC timing
     const int CYCLES_PER_SCANLINE = 113;
     const int VISIBLE_SCANLINES = 240;
@@ -238,6 +237,9 @@ void SMBEmulator::update()
             ppu->setSprite0Hit(true);
         }
     }
+
+    // CAPTURE SCROLL VALUE RIGHT BEFORE VBLANK
+    ppu->captureFrameScroll();
 
     // Start VBlank on scanline 241
     ppu->setVBlankFlag(true);
@@ -298,31 +300,6 @@ void SMBEmulator::step()
 
 void SMBEmulator::executeInstruction()
 {
-    // Debug the stuck PC with more detail
-    if (regPC == 0x8150) {
-        static int count = 0;
-        count++;
-        if (count % 1000 == 0) {
-            uint8_t opcode = readByte(0x8150);
-            uint8_t operand1 = readByte(0x8151);
-            uint8_t operand2 = readByte(0x8152);
-            uint8_t nextOpcode = readByte(0x8153);
-            uint8_t andOperand = readByte(0x8154);
-            
-            printf("At $8150: %02X %02X %02X (AND #$%02X) A=$%02X P=$%02X\n", 
-                   opcode, operand1, operand2, andOperand, regA, regP);
-            
-            // Force VBlank and immediately check it
-            printf("Before force: PPU Status = $%02X\n", ppu->getStatus());
-            ppu->setVBlankFlag(true);
-            printf("After force: PPU Status = $%02X\n", ppu->getStatus());
-            
-            // Test reading $2002 directly
-            uint8_t directRead = readByte(0x2002);
-            printf("Direct read $2002 = $%02X\n", directRead);
-        }
-    }
-    
     uint8_t opcode = fetchByte();
     uint8_t cycles = instructionCycles[opcode];
     
@@ -668,9 +645,6 @@ case 0x4016:
     {
         static bool debugController = true;
         uint8_t result = controller1->readByte(PLAYER_1);
-        if (debugController && result != 0) {
-            printf("Controller 1 read: $%02X\n", result);
-        }
         return result;
     }
                 case 0x4017:
