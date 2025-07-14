@@ -42,12 +42,9 @@ SOURCE_FILES = \
     source/dos_main.cpp \
     source/Emulation/APU.cpp \
     source/Emulation/Controller.cpp \
-    source/Emulation/MemoryAccess.cpp \
     source/Emulation/AllegroMidi.cpp \
     source/Emulation/PPU.cpp \
-    source/SMB/SMB.cpp \
-    source/SMB/SMBData.cpp \
-    source/SMB/SMBEngine.cpp \
+    source/SMB/SMBEmulator.cpp \
     source/Util/Video.cpp \
     source/Util/VideoFilters.cpp \
     source/SMBRom.cpp
