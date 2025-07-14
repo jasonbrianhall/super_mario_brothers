@@ -216,6 +216,13 @@ uint8_t PPU::readRegister(uint16_t address)
             uint8_t status = ppuStatus;
             writeToggle = false;        // Reading $2002 clears write toggle
             ppuStatus &= 0x7F;         // Clear VBlank flag after reading
+            
+            // DEBUG: Show VBlank reads
+            static bool debugVBlank = true;
+            if (debugVBlank && (status & 0x80)) {
+                printf("VBlank read: $%02X (VBlank cleared)\n", status);
+            }
+            
             return status;
         }
     // OAMDATA
@@ -878,6 +885,12 @@ void PPU::writeByte(uint16_t address, uint8_t value)
 
 void PPU::writeDataRegister(uint8_t value)
 {
+    static bool debugPalette = true;
+    
+    if (debugPalette && currentAddress >= 0x3F00 && currentAddress < 0x3F20) {
+        printf("Palette[$%02X] = $%02X\n", currentAddress - 0x3F00, value);
+    }
+    
     writeByte(currentAddress, value);
     if (!(ppuCtrl & (1 << 2)))
     {
@@ -922,10 +935,16 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
     // PPUMASK
     case 0x2001:
         if (debugPPU && ppuMask != value) {
-            printf("PPU MASK: $%02X (BG:%s, Sprites:%s)\n", 
+            printf("PPU MASK: $%02X (BG:%s, Sprites:%s, EmphR:%s, EmphG:%s, EmphB:%s)\n", 
                    value,
                    (value & 0x08) ? "ON" : "OFF",
-                   (value & 0x10) ? "ON" : "OFF");
+                   (value & 0x10) ? "ON" : "OFF",
+                   (value & 0x20) ? "ON" : "OFF",
+                   (value & 0x40) ? "ON" : "OFF",
+                   (value & 0x80) ? "ON" : "OFF");
+                           if ((value & 0x18) && !(ppuMask & 0x18)) {
+            printf("*** RENDERING ENABLED! ***\n");
+        }
         }
         ppuMask = value;
         break;
@@ -946,10 +965,12 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
         if (!writeToggle)
         {
             ppuScrollX = value;
+            if (debugPPU) printf("PPU SCROLL X: $%02X\n", value);
         }
         else
         {
             ppuScrollY = value;
+            if (debugPPU) printf("PPU SCROLL Y: $%02X\n", value);
         }
         writeToggle = !writeToggle;
         break;
@@ -957,10 +978,16 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
     // PPUADDR
     case 0x2006:
         writeAddressRegister(value);
+        if (debugPPU && writeToggle) {
+            printf("PPU ADDR set to: $%04X\n", currentAddress);
+        }
         break;
         
     // PPUDATA
     case 0x2007:
+        if (debugPPU && currentAddress >= 0x3F00 && currentAddress < 0x3F20) {
+            printf("Palette write: $%04X = $%02X\n", currentAddress, value);
+        }
         writeDataRegister(value);
         break;
         
@@ -968,7 +995,6 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
         break;
     }
 }
-
 uint32_t PPU::getFlipCacheKey(uint16_t tile, uint8_t palette_type, uint8_t attribute, uint8_t flip_flags)
 {
     return (tile << 16) | (palette_type << 8) | (attribute << 4) | flip_flags;

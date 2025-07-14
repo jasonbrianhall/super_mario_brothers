@@ -128,6 +128,7 @@ public:
      */
     void loadConfiguration();
 
+
 private:
     // Controller state for each player
     std::array<std::array<bool, 8>, 2> buttonStates;

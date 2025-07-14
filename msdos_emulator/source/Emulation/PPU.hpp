@@ -87,7 +87,7 @@ void setDataBuffer(uint8_t val) { vramBuffer = val; }
     void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
 void setVBlankFlag(bool flag);
 uint8_t getControl() const { return ppuCtrl; }
-
+uint8_t getMask() const { return ppuMask; }
 
 private:
     SMBEmulator& engine;

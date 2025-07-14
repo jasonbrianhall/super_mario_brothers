@@ -54,8 +54,8 @@ SMBEmulator::SMBEmulator()
     // Create components - they'll get CHR data when ROM is loaded
     apu = new APU();
     ppu = new PPU(*this);
-    controller1 = new Controller(1);
-    controller2 = new Controller(2);
+    controller1 = new Controller();
+    controller2 = new Controller();
 }
 
 SMBEmulator::~SMBEmulator()
@@ -188,38 +188,61 @@ bool SMBEmulator::loadCHRROM(std::ifstream& file)
 
 void SMBEmulator::handleNMI()
 {
-    if (getFlag(FLAG_INTERRUPT)) return;  // NMI can be disabled
+    static bool debugNMI = true;
+    static int nmiCount = 0;
+    
+    nmiCount++;
+    if (debugNMI && nmiCount % 60 == 0) {
+        printf("NMI #%d: PC=$%04X -> NMI vector\n", nmiCount, regPC);
+    }
+    
+    // NMI is NOT maskable - remove the interrupt flag check
     
     pushWord(regPC);
-    pushByte(regP & ~FLAG_BREAK);  // Push status without break flag
+    pushByte(regP & ~FLAG_BREAK);
     setFlag(FLAG_INTERRUPT, true);
-    regPC = readWord(0xFFFA);      // NMI vector
+    regPC = readWord(0xFFFA);
+    
+    if (debugNMI && nmiCount % 60 == 0) {
+        printf("NMI jumps to: $%04X\n", regPC);
+    }
+    
+    totalCycles += 7;
+    frameCycles += 7;
 }
 
 void SMBEmulator::update()
 {
     if (!romLoaded) return;
     
+    static int frameCount = 0;
     frameCycles = 0;
     
-    // Execute CPU instructions for one frame
-    while (frameCycles < CYCLES_PER_FRAME) {
+    // Execute most of the frame
+    while (frameCycles < CYCLES_PER_FRAME - 1000) {
         executeInstruction();
-        
-        // Simulate VBlank at end of frame
-        if (frameCycles >= CYCLES_PER_FRAME - 100) {
-            // Set VBlank flag in PPU
-            ppu->setVBlankFlag(true);
-            
-            // Generate NMI if enabled
-            if (ppu->getControl() & 0x80) {  // NMI enable bit
-                handleNMI();
-            }
-        }
     }
     
-    // Clear VBlank flag for next frame
-    ppu->setVBlankFlag(false);
+    // Set VBlank flag BEFORE finishing the frame
+    ppu->setVBlankFlag(true);
+    
+    // Execute remaining cycles with VBlank active
+    while (frameCycles < CYCLES_PER_FRAME) {
+        executeInstruction();
+    }
+    
+    // Generate NMI if enabled
+    if (ppu->getControl() & 0x80) {
+        handleNMI();
+    }
+    
+    frameCount++;
+    if (frameCount % 60 == 0) {
+        printf("Frame %d, PC=$%04X, PPUMASK=$%02X\n", frameCount, regPC, ppu->getMask());
+    }
+    
+    // Keep VBlank flag set until next frame starts
+    // Don't clear it here - let $2002 reads clear it
     
     // Update APU
     if (Configuration::getAudioEnabled()) {
@@ -254,6 +277,19 @@ void SMBEmulator::step()
 
 void SMBEmulator::executeInstruction()
 {
+    // Debug the stuck PC
+    static bool debugStuckPC = true;
+    /*if (debugStuckPC && (regPC == 0x8012 || regPC == 0x8057)) {
+        static int count = 0;
+        count++;
+        if (count % 1000 == 0) {  // Every 1000 instructions
+            uint8_t opcode = readByte(regPC);
+            uint8_t operand = readByte(regPC + 1);
+            printf("Stuck at $%04X - count: %d, A=$%02X, P=$%02X, opcode=$%02X $%02X\n", 
+                   regPC, count, regA, regP, opcode, operand);
+        }
+    }*/
+    
     uint8_t opcode = fetchByte();
     uint8_t cycles = instructionCycles[opcode];
     
@@ -593,9 +629,16 @@ uint8_t SMBEmulator::readByte(uint16_t address)
     else if (address < 0x4020) {
         // APU and I/O registers
         switch (address) {
-            case 0x4016:
-                return controller1->readByte(PLAYER_1);
-            case 0x4017:
+case 0x4016:
+    {
+        static bool debugController = true;
+        uint8_t result = controller1->readByte(PLAYER_1);
+        if (debugController && result != 0) {
+            printf("Controller 1 read: $%02X\n", result);
+        }
+        return result;
+    }
+                case 0x4017:
                 return controller2->readByte(PLAYER_2);
             default:
                 return 0; // Other APU registers are write-only
@@ -632,11 +675,18 @@ void SMBEmulator::writeByte(uint16_t address, uint8_t value)
             case 0x4014:
                 ppu->writeDMA(value);
                 break;
-            case 0x4016:
-                controller1->writeByte(value);
-                controller2->writeByte(value);
-                break;
-            default:
+case 0x4016:
+    {
+        static bool debugController = true;
+        if (debugController) {
+            printf("Controller strobe write: $%02X\n", value);
+        }
+        controller1->writeByte(value);
+        controller2->writeByte(value);
+    }
+    break;
+    
+                default:
                 apu->writeRegister(address, value);
                 break;
         }
