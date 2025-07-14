@@ -136,15 +136,69 @@ bool SMBEmulator::parseNESHeader(std::ifstream& file)
     
     // Check "NES\x1A" signature
     if (header[0] != 'N' || header[1] != 'E' || header[2] != 'S' || header[3] != 0x1A) {
+        std::cout << "Invalid NES signature" << std::endl;
         return false;
     }
     
+    // Detect iNES format version
+    bool isINES2 = false;
+    if ((header[7] & 0x0C) == 0x08) {
+        isINES2 = true;
+        std::cout << "ROM Format: iNES 2.0" << std::endl;
+    } else if ((header[7] & 0x0C) == 0x00) {
+        // Check if bytes 12-15 are zero (archaic iNES vs iNES 1.0)
+        bool hasTrailingZeros = (header[12] == 0 && header[13] == 0 && header[14] == 0 && header[15] == 0);
+        if (hasTrailingZeros) {
+            std::cout << "ROM Format: iNES 1.0" << std::endl;
+        } else {
+            std::cout << "ROM Format: Archaic iNES" << std::endl;
+        }
+    } else {
+        std::cout << "ROM Format: Unknown/Invalid" << std::endl;
+        return false;
+    }
+    
+    // Parse basic header info
     nesHeader.prgROMPages = header[4];
     nesHeader.chrROMPages = header[5];
-    nesHeader.mapper = (header[6] >> 4) | (header[7] & 0xF0);
+    
+    // Parse mapper number
+    if (isINES2) {
+        // iNES 2.0 mapper parsing (12-bit mapper number)
+        nesHeader.mapper = (header[6] >> 4) | (header[7] & 0xF0) | ((header[8] & 0x0F) << 8);
+    } else {
+        // iNES 1.0 mapper parsing (8-bit mapper number)
+        nesHeader.mapper = (header[6] >> 4) | (header[7] & 0xF0);
+    }
+    
     nesHeader.mirroring = header[6] & 0x01;
     nesHeader.battery = (header[6] & 0x02) != 0;
     nesHeader.trainer = (header[6] & 0x04) != 0;
+    
+    // Print detailed header info
+    std::cout << "=== ROM Header Info ===" << std::endl;
+    std::cout << "PRG ROM Pages: " << (int)nesHeader.prgROMPages << " (16KB each)" << std::endl;
+    std::cout << "CHR ROM Pages: " << (int)nesHeader.chrROMPages << " (8KB each)" << std::endl;
+    std::cout << "Mapper: " << (int)nesHeader.mapper << std::endl;
+    std::cout << "Mirroring: " << (nesHeader.mirroring ? "Vertical" : "Horizontal") << std::endl;
+    std::cout << "Battery: " << (nesHeader.battery ? "Yes" : "No") << std::endl;
+    std::cout << "Trainer: " << (nesHeader.trainer ? "Yes" : "No") << std::endl;
+    
+    // Print raw header bytes for debugging
+    std::cout << "Raw header bytes: ";
+    for (int i = 0; i < 16; i++) {
+        printf("%02X ", header[i]);
+    }
+    std::cout << std::endl;
+    
+    // Check for unsupported features
+    if (nesHeader.mapper != 0) {
+        std::cout << "WARNING: Mapper " << (int)nesHeader.mapper << " not fully supported (only mapper 0 implemented)" << std::endl;
+    }
+    
+    if (isINES2) {
+        std::cout << "WARNING: iNES 2.0 features not fully implemented" << std::endl;
+    }
     
     return true;
 }
@@ -687,9 +741,6 @@ void SMBEmulator::writeByte(uint16_t address, uint8_t value)
 case 0x4016:
     {
         static bool debugController = true;
-        if (debugController) {
-            printf("Controller strobe write: $%02X\n", value);
-        }
         controller1->writeByte(value);
         controller2->writeByte(value);
     }
