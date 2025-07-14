@@ -7,11 +7,10 @@
 #include <cstring>
 #include <cstdlib>
 #include "AllegroMainWindow.hpp"
-#include "SMB/SMBEngine.hpp"
+#include "SMB/SMBEmulator.hpp"
 #include "Emulation/Controller.hpp"
 #include "Configuration.hpp"
 #include "Constants.hpp"
-#include "SMBRom.hpp"
 
 // DOS-specific includes (will be ignored on Linux)
 #ifdef __DJGPP__
