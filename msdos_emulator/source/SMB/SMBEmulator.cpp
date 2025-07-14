@@ -331,11 +331,57 @@ void SMBEmulator::reset()
 {
     if (!romLoaded) return;
     
+    // Debug: Check all banks for non-zero reset vectors
+    if (nesHeader.mapper == 1) {
+        printf("=== DEBUG: Searching for reset vector in all PRG banks ===\n");
+        uint8_t totalBanks = prgSize / 0x4000;
+        
+        for (int bank = 0; bank < totalBanks; bank++) {
+            uint32_t bankOffset = bank * 0x4000;
+            uint32_t resetLow = bankOffset + 0x3FFC;   // $FFFC relative to bank start
+            uint32_t resetHigh = bankOffset + 0x3FFD;  // $FFFD relative to bank start
+            
+            if (resetLow < prgSize && resetHigh < prgSize) {
+                uint8_t low = prgROM[resetLow];
+                uint8_t high = prgROM[resetHigh];
+                uint16_t resetVector = low | (high << 8);
+                
+                printf("Bank %d: reset vector = $%04X (bytes: $%02X $%02X)\n", 
+                       bank, resetVector, low, high);
+                
+                // Also check interrupt vectors
+                uint32_t nmiLow = bankOffset + 0x3FFA;
+                uint32_t nmiHigh = bankOffset + 0x3FFB;
+                if (nmiLow < prgSize && nmiHigh < prgSize) {
+                    uint8_t nmiL = prgROM[nmiLow];
+                    uint8_t nmiH = prgROM[nmiHigh];
+                    uint16_t nmiVector = nmiL | (nmiH << 8);
+                    printf("Bank %d: NMI vector = $%04X (bytes: $%02X $%02X)\n", 
+                           bank, nmiVector, nmiL, nmiH);
+                }
+            }
+        }
+        printf("=== END DEBUG ===\n");
+    }
+    
     // Reset CPU state
     regA = regX = regY = 0;
     regSP = 0xFF;
-    regP = 0x24; // Interrupt flag set, decimal flag clear
+    regP = 0x24;
     totalCycles = frameCycles = 0;
+    
+    // Initialize MMC1 to power-on state
+    if (nesHeader.mapper == 1) {
+        mmc1 = MMC1State();
+        // MMC1 should power on with the last bank at $C000-$FFFF for reset vector
+        // Control $08 = 16KB mode, last bank fixed at $C000
+        mmc1.control = 0x08;  // NOT 0x0C!
+        mmc1.prgBank = 0;     
+        mmc1.currentPRGBank = 0;
+        updateMMC1Banks();
+        
+        printf("MMC1 initialized: control=$%02X (16KB mode, last bank fixed)\n", mmc1.control);
+    }
     
     // Reset vector at $FFFC-$FFFD
     regPC = readWord(0xFFFC);
@@ -689,38 +735,101 @@ uint8_t SMBEmulator::readByte(uint16_t address)
     else if (address < 0x4000) {
         // PPU registers (mirrored every 8 bytes)
         uint16_t ppuAddr = 0x2000 + (address & 0x7);
-        //printf("Reading PPU register $%04X (mapped to $%04X)\n", address, ppuAddr);
         return ppu->readRegister(ppuAddr);
     }
     else if (address < 0x4020) {
         // APU and I/O registers
         switch (address) {
-case 0x4016:
-    {
-        static bool debugController = true;
-        uint8_t result = controller1->readByte(PLAYER_1);
-        return result;
-    }
-                case 0x4017:
+            case 0x4016:
+                return controller1->readByte(PLAYER_1);
+            case 0x4017:
                 return controller2->readByte(PLAYER_2);
             default:
                 return 0; // Other APU registers are write-only
         }
     }
     else if (address >= 0x8000) {
-        // PRG ROM
-        uint32_t romAddr = address - 0x8000;
-        if (prgSize == 16384) {
-            // 16KB ROM mirrored
-            romAddr &= 0x3FFF;
-        }
-        if (romAddr < prgSize) {
+        // PRG ROM with mapper support
+        if (nesHeader.mapper == 0) {
+            // NROM - simple mapping
+            uint32_t romAddr = address - 0x8000;
+            if (prgSize == 16384) {
+                // 16KB ROM mirrored
+                romAddr &= 0x3FFF;
+            }
+            if (romAddr < prgSize) {
+                return prgROM[romAddr];
+            }
+        } else if (nesHeader.mapper == 1) {
+            // MMC1 mapping - CORRECTED VERSION
+            uint32_t romAddr;
+            uint8_t totalBanks = prgSize / 0x4000;  // Number of 16KB banks
+            
+            if (address < 0xC000) {
+                // $8000-$BFFF (first 16KB bank)
+                if (mmc1.control & 0x08) {
+                    // 16KB PRG mode
+                    if (mmc1.control & 0x04) {
+                        // Fix first bank (bank 0) at $8000
+                        romAddr = (address - 0x8000);
+                    } else {
+                        // Switch first bank based on prgBank register  
+                        romAddr = (mmc1.currentPRGBank * 0x4000) + (address - 0x8000);
+                    }
+                } else {
+                    // 32KB PRG mode
+                    romAddr = (mmc1.currentPRGBank * 0x8000) + (address - 0x8000);
+                }
+            } else {
+                // $C000-$FFFF (second 16KB bank) - THIS IS THE CRITICAL PART
+                if (mmc1.control & 0x08) {
+                    // 16KB PRG mode
+                    if (mmc1.control & 0x04) {
+                        // Fix first bank at $8000, switch second bank at $C000
+                        romAddr = (mmc1.currentPRGBank * 0x4000) + (address - 0xC000);
+                    } else {
+                        // Switch first bank at $8000, fix LAST bank at $C000
+                        // CONTROL $0C means this case: fix last bank at $C000
+                        uint8_t lastBank = totalBanks - 1;  // Bank 3 for 4 banks (0,1,2,3)
+                        romAddr = (lastBank * 0x4000) + (address - 0xC000);
+                        
+                        // Debug the calculation
+                        if (address >= 0xFFFC) {
+                            printf("LAST BANK: totalBanks=%d, lastBank=%d, offset=$%04X -> romAddr=$%08X, ", 
+                                   totalBanks, lastBank, (address - 0xC000), romAddr);
+                        }
+                    }
+                } else {
+                    // 32KB PRG mode
+                    romAddr = (mmc1.currentPRGBank * 0x8000) + (address - 0x8000);
+                }
+            }
+            
+            // Debug for reset vector reads
+            if (address >= 0xFFFC) {
+                printf("Reading reset vector $%04X: bank calculation gives romAddr=$%08X, ", 
+                       address, romAddr);
+                if (romAddr < prgSize) {
+                    printf("value=$%02X\n", prgROM[romAddr]);
+                } else {
+                    printf("OUT OF BOUNDS!\n");
+                }
+            }
+            
+            // Bounds checking
+            if (romAddr >= prgSize) {
+                printf("MMC1 ERROR: romAddr $%08X >= prgSize $%08X (addr=$%04X, bank=%d, totalBanks=%d)\n", 
+                       romAddr, prgSize, address, mmc1.currentPRGBank, totalBanks);
+                return 0;
+            }
+            
             return prgROM[romAddr];
         }
     }
     
     return 0; // Open bus
 }
+
 
 void SMBEmulator::writeByte(uint16_t address, uint8_t value)
 {
@@ -738,20 +847,22 @@ void SMBEmulator::writeByte(uint16_t address, uint8_t value)
             case 0x4014:
                 ppu->writeDMA(value);
                 break;
-case 0x4016:
-    {
-        static bool debugController = true;
-        controller1->writeByte(value);
-        controller2->writeByte(value);
-    }
-    break;
-    
-                default:
+            case 0x4016:
+                controller1->writeByte(value);
+                controller2->writeByte(value);
+                break;
+            default:
                 apu->writeRegister(address, value);
                 break;
         }
     }
-    // ROM area is read-only
+    else if (address >= 0x8000) {
+        // Mapper registers
+        if (nesHeader.mapper == 1) {
+            writeMMC1Register(address, value);
+        }
+        // Other writes to ROM area are ignored
+    }
 }
 
 uint16_t SMBEmulator::readWord(uint16_t address)
@@ -1643,4 +1754,77 @@ void SMBEmulator::AXS(uint16_t addr)
     setFlag(FLAG_CARRY, (regA & regX) >= value);
     regX = result;
     updateZN(regX);
+}
+
+void SMBEmulator::writeMMC1Register(uint16_t address, uint8_t value)
+{
+    // MMC1 uses a shift register for writes
+    if (value & 0x80) {
+        // Reset shift register
+        mmc1.shiftRegister = 0x10;
+        mmc1.shiftCount = 0;
+        mmc1.control |= 0x0C;  // Set to 16KB PRG mode
+        return;
+    }
+    
+    // Shift in the bit
+    mmc1.shiftRegister >>= 1;
+    mmc1.shiftRegister |= (value & 1) << 4;
+    mmc1.shiftCount++;
+    
+    // After 5 writes, update the appropriate register
+    if (mmc1.shiftCount == 5) {
+        uint8_t data = mmc1.shiftRegister;
+        mmc1.shiftRegister = 0x10;
+        mmc1.shiftCount = 0;
+        
+        if (address < 0xA000) {
+            // Control register ($8000-$9FFF)
+            mmc1.control = data;
+            printf("MMC1 Control: $%02X (PRG mode: %s, CHR mode: %s)\n", 
+                   data, 
+                   (data & 0x08) ? "16KB" : "32KB",
+                   (data & 0x10) ? "4KB" : "8KB");
+        } else if (address < 0xC000) {
+            // CHR bank 0 ($A000-$BFFF)
+            mmc1.chrBank0 = data;
+            printf("MMC1 CHR Bank 0: $%02X\n", data);
+        } else if (address < 0xE000) {
+            // CHR bank 1 ($C000-$DFFF)  
+            mmc1.chrBank1 = data;
+            printf("MMC1 CHR Bank 1: $%02X\n", data);
+        } else {
+            // PRG bank ($E000-$FFFF)
+            mmc1.prgBank = data;
+            printf("MMC1 PRG Bank: $%02X\n", data);
+        }
+        
+        updateMMC1Banks();
+    }
+}
+
+void SMBEmulator::updateMMC1Banks()
+{
+    // Update PRG banking
+    if (mmc1.control & 0x08) {
+        // 16KB PRG mode
+        mmc1.currentPRGBank = mmc1.prgBank & 0x0F;
+    } else {
+        // 32KB PRG mode - ignore low bit
+        mmc1.currentPRGBank = (mmc1.prgBank >> 1) & 0x07;
+    }
+    
+    // Update CHR banking
+    if (mmc1.control & 0x10) {
+        // 4KB CHR mode
+        mmc1.currentCHRBank0 = mmc1.chrBank0;
+        mmc1.currentCHRBank1 = mmc1.chrBank1;
+    } else {
+        // 8KB CHR mode - ignore low bit of chrBank0
+        mmc1.currentCHRBank0 = mmc1.chrBank0 & 0xFE;
+        mmc1.currentCHRBank1 = mmc1.currentCHRBank0 + 1;
+    }
+    
+    printf("MMC1 Banks: PRG=%d, CHR0=%d, CHR1=%d (control=$%02X)\n", 
+           mmc1.currentPRGBank, mmc1.currentCHRBank0, mmc1.currentCHRBank1, mmc1.control);
 }
