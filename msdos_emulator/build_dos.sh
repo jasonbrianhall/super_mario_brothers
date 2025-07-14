@@ -101,18 +101,13 @@ case "${1:-dos}" in
             g++ -c /src/source/Emulation/APU.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/APU.o && \
             g++ -c /src/source/Emulation/AllegroMidi.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/AllegroMidi.o && \
             g++ -c /src/source/Emulation/Controller.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Controller.o && \
-            g++ -c /src/source/Emulation/MemoryAccess.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/MemoryAccess.o && \
             g++ -c /src/source/Emulation/PPU.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/PPU.o && \
-            g++ -c /src/source/SMB/SMB.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMB.o && \
-            g++ -c /src/source/SMB/SMBData.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMBData.o && \
-            g++ -c /src/source/SMB/SMBEngine.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMBEngine.o && \
-            g++ -c /src/source/Util/Video.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Video.o && \
-            g++ -c /src/source/Util/VideoFilters.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/VideoFilters.o && \
-            g++ -c /src/source/SMBRom.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMBRom.o && \
+            g++ -c /src/source/SMB/SMBEmulator.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMBEngine.o && \
             g++ -c /src/source/dos_main.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Main.o && \
             g++ /src/$BUILD_DIR/obj/*.o -L/src/$BUILD_DIR/source-install/lib -lalleg -lm -O3 -march=i586 -s -o /src/$BUILD_DIR/smb.exe &&
+            g++ /src/$BUILD_DIR/obj/*.o -L/src/$BUILD_DIR/source-install/lib -lalleg -lm -O3 -march=i586 -s -o /src/$BUILD_DIR/smb.exe &&
             echo 'Linking executable...' &&
-            g++ /src/$BUILD_DIR/obj/*.o -lalleg -lm -s -L/src/$BUILD_DIR/source-install/lib -o /src/$BUILD_DIR/smb.exe &&
+            g++ /src/$BUILD_DIR/obj/*.o -lalleg -lm -s -L/src/$BUILD_DIR/source-install/lib -o /src/$BUILD_DIR/smbe.exe &&
             echo 'Converting to COFF format...' &&
             exe2coff /src/$BUILD_DIR/smb.exe &&
             echo 'Creating final DOS executable with DPMI stub...' &&
@@ -167,18 +162,12 @@ case "${1:-dos}" in
             g++ -c /src/source/Emulation/APU.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/APU.o && \
             g++ -c /src/source/Emulation/AllegroMidi.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/AllegroMidi.o && \
             g++ -c /src/source/Emulation/Controller.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Controller.o && \
-            g++ -c /src/source/Emulation/MemoryAccess.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/MemoryAccess.o && \
             g++ -c /src/source/Emulation/PPU.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/PPU.o && \
-            g++ -c /src/source/SMB/SMB.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMB.o && \
-            g++ -c /src/source/SMB/SMBData.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMBData.o && \
-            g++ -c /src/source/SMB/SMBEngine.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMBEngine.o && \
-            g++ -c /src/source/Util/Video.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Video.o && \
-            g++ -c /src/source/Util/VideoFilters.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/VideoFilters.o && \
-            g++ -c /src/source/SMBRom.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMBRom.o && \
+            g++ -c /src/source/SMB/SMBEmulator.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMBEngine.o && \
             g++ -c /src/source/dos_main.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Main.o && \
             g++ /src/$BUILD_DIR/obj/*.o -L/src/$BUILD_DIR/source-install/lib -lalleg -lm -O3 -march=i586 -s -o /src/$BUILD_DIR/smb.exe &&
             exe2coff /src/$BUILD_DIR/smb.exe && 
-            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/smb.exe &&
+            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/smbe.exe &&
             echo 'Quick compile complete!'
         "
     rm $BUILD_DIR/smb -f
