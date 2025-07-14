@@ -1014,7 +1014,6 @@ void AllegroMainWindow::run(const char* romFilename)
     static int outlierCount = 0;
     
     while (gameRunning) {
-        engine.update();
         #ifdef __DJGPP__
         // TSC timing with outlier rejection
         if (cpuFreqMHz == 0) {
@@ -1770,7 +1769,7 @@ void AllegroMainWindow::handleGameInput()
     }
 }
 
-/*void AllegroMainWindow::checkPlayerInput(Player player)
+void AllegroMainWindow::checkPlayerInput(Player player)
 {
    //int debugInput=1;
 
@@ -1929,50 +1928,6 @@ void AllegroMainWindow::handleGameInput()
            }
        }
        #endif
-       
-       controller.setButtonState(BUTTON_UP, up);
-       controller.setButtonState(BUTTON_DOWN, down);
-       controller.setButtonState(BUTTON_LEFT, left);
-       controller.setButtonState(BUTTON_RIGHT, right);
-       controller.setButtonState(BUTTON_A, a);
-       controller.setButtonState(BUTTON_B, b);
-       controller.setButtonState(BUTTON_START, start);
-       controller.setButtonState(BUTTON_SELECT, select);
-   }
-}*/
-
-void AllegroMainWindow::checkPlayerInput(Player player)
-{
-   if (!smbEngine) return;
-   
-   poll_keyboard();
-   
-   if (player == PLAYER_1) {
-       Controller& controller = smbEngine->getController1();
-       
-       bool up = (key[player1Keys.up] != 0);
-       bool down = (key[player1Keys.down] != 0);
-       bool left = (key[player1Keys.left] != 0);
-       bool right = (key[player1Keys.right] != 0);
-       bool a = (key[player1Keys.button_a] != 0);
-       bool b = (key[player1Keys.button_b] != 0);
-       bool start = (key[player1Keys.start] != 0);
-       bool select = (key[player1Keys.select] != 0);
-       
-       // FORCE CONTROLLER STROBE WHEN ANY KEY IS PRESSED
-       if (up || down || left || right || a || b || start || select) {
-           printf("Key pressed - forcing controller strobe\n");
-           
-           // Force the controller strobe sequence
-           smbEngine->writeMemory(0x4016, 0x01);  // Strobe high
-           smbEngine->writeMemory(0x4016, 0x00);  // Strobe low
-           
-           // Try reading controller to wake up the game
-           for (int i = 0; i < 8; i++) {
-               uint8_t result = smbEngine->readMemory(0x4016);
-               printf("Forced read $4016[%d]: $%02X\n", i, result);
-           }
-       }
        
        controller.setButtonState(BUTTON_UP, up);
        controller.setButtonState(BUTTON_DOWN, down);

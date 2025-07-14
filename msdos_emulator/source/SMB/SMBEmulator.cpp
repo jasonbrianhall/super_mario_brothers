@@ -222,22 +222,37 @@ void SMBEmulator::update()
     frameCycles = 0;
 
     const int VISIBLE_FRAME_CYCLES = 24100;     // Approximate end of scanline rendering
+    const int VBLANK_FLAG_SET_CYCLES = 24300;   // Small delay before VBlank flag is set
+    const int NMI_TRIGGER_CYCLES = 24400;       // Small delay before NMI triggers
     const int CYCLES_PER_FRAME = 29780;         // Total cycles per NTSC frame
 
     // Emulate visible scanlines (pre-VBlank)
     while (frameCycles < VISIBLE_FRAME_CYCLES) {
         executeInstruction();
+        if (frameCycles >= CYCLES_PER_FRAME) break; // Safety check
     }
 
-    // Begin VBlank
+    // Small gap before VBlank flag is set
+    while (frameCycles < VBLANK_FLAG_SET_CYCLES) {
+        executeInstruction();
+        if (frameCycles >= CYCLES_PER_FRAME) break;
+    }
+
+    // Set VBlank flag
     ppu->setVBlankFlag(true);
+
+    // Small gap before NMI triggers (this gives polling loops a chance to see the flag)
+    while (frameCycles < NMI_TRIGGER_CYCLES) {
+        executeInstruction();
+        if (frameCycles >= CYCLES_PER_FRAME) break;
+    }
 
     // Trigger NMI if enabled
     if (ppu->getControl() & 0x80) {
         handleNMI();
     }
 
-    // Emulate VBlank period (non-visible scanlines)
+    // Continue VBlank period
     while (frameCycles < CYCLES_PER_FRAME) {
         executeInstruction();
     }
@@ -252,7 +267,6 @@ void SMBEmulator::update()
         apu->stepFrame();
     }
 }
-
 void SMBEmulator::reset()
 {
     if (!romLoaded) return;
