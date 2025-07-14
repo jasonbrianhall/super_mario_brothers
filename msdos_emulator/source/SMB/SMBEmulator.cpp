@@ -442,6 +442,96 @@ void SMBEmulator::executeInstruction()
         case 0x8A: TXA(); break;
         case 0x9A: TXS(); break;
         case 0x98: TYA(); break;
+        // Illegal/Undocumented opcodes commonly used by NES games
+        case 0x0B: case 0x2B: ANC(addrImmediate()); break;  // ANC (AND + set carry)
+        case 0x4B: ALR(addrImmediate()); break;             // ALR (AND + LSR)
+        case 0x6B: ARR(addrImmediate()); break;             // ARR (AND + ROR)
+        case 0x8B: XAA(addrImmediate()); break;             // XAA (unstable)
+        case 0xAB: LAX(addrImmediate()); break;             // LAX (LDA + LDX)
+        case 0xCB: AXS(addrImmediate()); break;             // AXS (A&X - immediate)
+        case 0xEB: SBC(addrImmediate()); break;             // SBC (same as legal SBC)
+        
+        // ISC (INC + SBC) - very common
+        case 0xE3: ISC(addrIndirectX()); break;
+        case 0xE7: ISC(addrZeroPage()); break;
+        case 0xEF: ISC(addrAbsolute()); break;
+        case 0xF3: ISC(addrIndirectY()); break;
+        case 0xF7: ISC(addrZeroPageX()); break;
+        case 0xFB: ISC(addrAbsoluteY()); break;             // This is your $FB!
+        case 0xFF: ISC(addrAbsoluteX()); break;
+        
+        // DCP (DEC + CMP) - common
+        case 0xC3: DCP(addrIndirectX()); break;
+        case 0xC7: DCP(addrZeroPage()); break;
+        case 0xCF: DCP(addrAbsolute()); break;
+        case 0xD3: DCP(addrIndirectY()); break;
+        case 0xD7: DCP(addrZeroPageX()); break;
+        case 0xDB: DCP(addrAbsoluteY()); break;
+        case 0xDF: DCP(addrAbsoluteX()); break;
+        
+        // LAX (LDA + LDX) - common
+        case 0xA3: LAX(addrIndirectX()); break;
+        case 0xA7: LAX(addrZeroPage()); break;
+        case 0xAF: LAX(addrAbsolute()); break;
+        case 0xB3: LAX(addrIndirectY()); break;
+        case 0xB7: LAX(addrZeroPageY()); break;
+        case 0xBF: LAX(addrAbsoluteY()); break;
+        
+        // SAX (A & X)
+        case 0x83: SAX(addrIndirectX()); break;
+        case 0x87: SAX(addrZeroPage()); break;
+        case 0x8F: SAX(addrAbsolute()); break;
+        case 0x97: SAX(addrZeroPageY()); break;
+        
+        // SLO (ASL + ORA)
+        case 0x03: SLO(addrIndirectX()); break;
+        case 0x07: SLO(addrZeroPage()); break;
+        case 0x0F: SLO(addrAbsolute()); break;
+        case 0x13: SLO(addrIndirectY()); break;
+        case 0x17: SLO(addrZeroPageX()); break;
+        case 0x1B: SLO(addrAbsoluteY()); break;
+        case 0x1F: SLO(addrAbsoluteX()); break;
+        
+        // RLA (ROL + AND)
+        case 0x23: RLA(addrIndirectX()); break;
+        case 0x27: RLA(addrZeroPage()); break;
+        case 0x2F: RLA(addrAbsolute()); break;
+        case 0x33: RLA(addrIndirectY()); break;
+        case 0x37: RLA(addrZeroPageX()); break;
+        case 0x3B: RLA(addrAbsoluteY()); break;
+        case 0x3F: RLA(addrAbsoluteX()); break;
+        
+        // SRE (LSR + EOR)
+        case 0x43: SRE(addrIndirectX()); break;
+        case 0x47: SRE(addrZeroPage()); break;
+        case 0x4F: SRE(addrAbsolute()); break;
+        case 0x53: SRE(addrIndirectY()); break;
+        case 0x57: SRE(addrZeroPageX()); break;
+        case 0x5B: SRE(addrAbsoluteY()); break;
+        case 0x5F: SRE(addrAbsoluteX()); break;
+        
+        // RRA (ROR + ADC)
+        case 0x63: RRA(addrIndirectX()); break;
+        case 0x67: RRA(addrZeroPage()); break;
+        case 0x6F: RRA(addrAbsolute()); break;
+        case 0x73: RRA(addrIndirectY()); break;
+        case 0x77: RRA(addrZeroPageX()); break;
+        case 0x7B: RRA(addrAbsoluteY()); break;
+        case 0x7F: RRA(addrAbsoluteX()); break;
+        
+        // NOPs (various forms)
+        case 0x1A: case 0x3A: case 0x5A: case 0x7A: 
+        case 0xDA: case 0xFA: NOP(); break;
+        case 0x80: case 0x82: case 0x89: case 0xC2: case 0xE2: 
+            regPC++; cycles = 2; break; // NOP immediate
+        case 0x04: case 0x44: case 0x64: 
+            regPC++; cycles = 3; break; // NOP zero page
+        case 0x0C: 
+            regPC += 2; cycles = 4; break; // NOP absolute
+        case 0x14: case 0x34: case 0x54: case 0x74: case 0xD4: case 0xF4:
+            regPC++; cycles = 4; break; // NOP zero page,X
+        case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xDC: case 0xFC:
+            regPC += 2; cycles = 4; break; // NOP absolute,X
         
         default:
             std::cerr << "Unknown opcode: $" << std::hex << (int)opcode << " at PC=$" << (regPC - 1) << std::dec << std::endl;
@@ -1271,4 +1361,141 @@ uint8_t SMBEmulator::readData(uint16_t address)
 void SMBEmulator::writeData(uint16_t address, uint8_t value)
 {
     writeByte(address, value);
+}
+
+// Illegal opcode implementations
+void SMBEmulator::ISC(uint16_t addr)
+{
+    // INC + SBC
+    uint8_t value = readByte(addr) + 1;
+    writeByte(addr, value);
+    
+    // Then do SBC
+    uint16_t result = regA - value - (getFlag(FLAG_CARRY) ? 0 : 1);
+    setFlag(FLAG_CARRY, result <= 0xFF);
+    setFlag(FLAG_OVERFLOW, ((regA ^ result) & (~value ^ result) & 0x80) != 0);
+    regA = result & 0xFF;
+    updateZN(regA);
+}
+
+void SMBEmulator::DCP(uint16_t addr)
+{
+    // DEC + CMP
+    uint8_t value = readByte(addr) - 1;
+    writeByte(addr, value);
+    
+    // Then do CMP
+    uint8_t result = regA - value;
+    setFlag(FLAG_CARRY, regA >= value);
+    updateZN(result);
+}
+
+void SMBEmulator::LAX(uint16_t addr)
+{
+    // LDA + LDX
+    uint8_t value = readByte(addr);
+    regA = value;
+    regX = value;
+    updateZN(regA);
+}
+
+void SMBEmulator::SAX(uint16_t addr)
+{
+    // Store A & X
+    writeByte(addr, regA & regX);
+}
+
+void SMBEmulator::SLO(uint16_t addr)
+{
+    // ASL + ORA
+    uint8_t value = readByte(addr);
+    setFlag(FLAG_CARRY, (value & 0x80) != 0);
+    value <<= 1;
+    writeByte(addr, value);
+    regA |= value;
+    updateZN(regA);
+}
+
+void SMBEmulator::RLA(uint16_t addr)
+{
+    // ROL + AND
+    uint8_t value = readByte(addr);
+    bool oldCarry = getFlag(FLAG_CARRY);
+    setFlag(FLAG_CARRY, (value & 0x80) != 0);
+    value = (value << 1) | (oldCarry ? 1 : 0);
+    writeByte(addr, value);
+    regA &= value;
+    updateZN(regA);
+}
+
+void SMBEmulator::SRE(uint16_t addr)
+{
+    // LSR + EOR
+    uint8_t value = readByte(addr);
+    setFlag(FLAG_CARRY, (value & 0x01) != 0);
+    value >>= 1;
+    writeByte(addr, value);
+    regA ^= value;
+    updateZN(regA);
+}
+
+void SMBEmulator::RRA(uint16_t addr)
+{
+    // ROR + ADC
+    uint8_t value = readByte(addr);
+    bool oldCarry = getFlag(FLAG_CARRY);
+    setFlag(FLAG_CARRY, (value & 0x01) != 0);
+    value = (value >> 1) | (oldCarry ? 0x80 : 0);
+    writeByte(addr, value);
+    
+    uint16_t result = regA + value + (getFlag(FLAG_CARRY) ? 1 : 0);
+    setFlag(FLAG_CARRY, result > 0xFF);
+    setFlag(FLAG_OVERFLOW, ((regA ^ result) & (value ^ result) & 0x80) != 0);
+    regA = result & 0xFF;
+    updateZN(regA);
+}
+
+void SMBEmulator::ANC(uint16_t addr)
+{
+    // AND + set carry to bit 7
+    regA &= readByte(addr);
+    updateZN(regA);
+    setFlag(FLAG_CARRY, (regA & 0x80) != 0);
+}
+
+void SMBEmulator::ALR(uint16_t addr)
+{
+    // AND + LSR
+    regA &= readByte(addr);
+    setFlag(FLAG_CARRY, (regA & 0x01) != 0);
+    regA >>= 1;
+    updateZN(regA);
+}
+
+void SMBEmulator::ARR(uint16_t addr)
+{
+    // AND + ROR
+    regA &= readByte(addr);
+    bool oldCarry = getFlag(FLAG_CARRY);
+    setFlag(FLAG_CARRY, (regA & 0x01) != 0);
+    regA = (regA >> 1) | (oldCarry ? 0x80 : 0);
+    updateZN(regA);
+    setFlag(FLAG_OVERFLOW, ((regA >> 6) ^ (regA >> 5)) & 1);
+}
+
+void SMBEmulator::XAA(uint16_t addr)
+{
+    // Unstable - just do AND
+    regA &= readByte(addr);
+    updateZN(regA);
+}
+
+void SMBEmulator::AXS(uint16_t addr)
+{
+    // (A & X) - immediate
+    uint8_t value = readByte(addr);
+    uint8_t result = (regA & regX) - value;
+    setFlag(FLAG_CARRY, (regA & regX) >= value);
+    regX = result;
+    updateZN(regX);
 }

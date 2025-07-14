@@ -181,6 +181,21 @@ private:
     
     // Instruction cycle counts (for accurate timing)
     static const uint8_t instructionCycles[256];
+
+// Illegal opcode implementations
+void ISC(uint16_t addr); // INC + SBC
+void DCP(uint16_t addr); // DEC + CMP  
+void LAX(uint16_t addr); // LDA + LDX
+void SAX(uint16_t addr); // Store A & X
+void SLO(uint16_t addr); // ASL + ORA
+void RLA(uint16_t addr); // ROL + AND
+void SRE(uint16_t addr); // LSR + EOR
+void RRA(uint16_t addr); // ROR + ADC
+void ANC(uint16_t addr); // AND + set carry
+void ALR(uint16_t addr); // AND + LSR
+void ARR(uint16_t addr); // AND + ROR
+void XAA(uint16_t addr); // Unstable AND
+void AXS(uint16_t addr); // (A & X) - immediate
     
     // Save state structure
     struct EmulatorSaveState {
