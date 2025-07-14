@@ -591,8 +591,6 @@ void PPU::renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset
     if (!g_comprehensiveCacheInit) {
         memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
         g_comprehensiveCacheInit = true;
-        printf("Comprehensive PPU cache initialized (%d KB)\n", 
-               (int)(sizeof(g_comprehensiveCache) / 1024));
     }
     
     uint16_t tile = readByte(index) + (ppuCtrl & (1 << 4) ? 256 : 0);
@@ -703,7 +701,6 @@ void PPU::render16(uint16_t* buffer)
     static uint8_t lastFrameScroll = 255;
     static uint8_t lastFrameCtrl = 255;
     if (frameScrollX != lastFrameScroll || frameCtrl != lastFrameCtrl) {
-        printf("RENDER: Using scroll=$%02X, nametable=%d\n", frameScrollX, baseNametable);
         lastFrameScroll = frameScrollX;
         lastFrameCtrl = frameCtrl;
     }
@@ -781,9 +778,6 @@ void PPU::updateRenderRegisters()
     renderScrollY = ppuScrollY;
     renderCtrl = ppuCtrl;
     
-    if (renderScrollX != oldRenderScrollX) {
-        printf("RENDER UPDATE: Using game scroll $%02X\n", renderScrollX);
-    }
 }
 
 
@@ -937,10 +931,6 @@ void PPU::writeDataRegister(uint8_t value)
 {
     static bool debugPalette = true;
     
-    if (debugPalette && currentAddress >= 0x3F00 && currentAddress < 0x3F20) {
-        printf("Palette[$%02X] = $%02X\n", currentAddress - 0x3F00, value);
-    }
-    
     writeByte(currentAddress, value);
     if (!(ppuCtrl & (1 << 2)))
     {
@@ -971,14 +961,6 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
     {
     // PPUCTRL
     case 0x2000:
-        if (debugPPU && ppuCtrl != value) {
-            printf("PPU CTRL: $%02X (NMI:%s, Master:%s, Sprite:%s, BG:%s)\n", 
-                   value,
-                   (value & 0x80) ? "ON" : "OFF",
-                   (value & 0x40) ? "SLAVE" : "MASTER", 
-                   (value & 0x08) ? "HIGH" : "LOW",
-                   (value & 0x10) ? "HIGH" : "LOW");
-        }
         ppuCtrl = value;
         // Cache for next frame's rendering
         cachedCtrl = value;
@@ -986,18 +968,6 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
         
     // PPUMASK
     case 0x2001:
-        if (debugPPU && ppuMask != value) {
-            printf("PPU MASK: $%02X (BG:%s, Sprites:%s, EmphR:%s, EmphG:%s, EmphB:%s)\n", 
-                   value,
-                   (value & 0x08) ? "ON" : "OFF",
-                   (value & 0x10) ? "ON" : "OFF",
-                   (value & 0x20) ? "ON" : "OFF",
-                   (value & 0x40) ? "ON" : "OFF",
-                   (value & 0x80) ? "ON" : "OFF");
-            if ((value & 0x18) && !(ppuMask & 0x18)) {
-                printf("*** RENDERING ENABLED! ***\n");
-            }
-        }
         ppuMask = value;
         break;
         
@@ -1021,12 +991,8 @@ case 0x2005:
         if (value != 0) {
             // This is likely the game area scroll value
             if (gameAreaScrollX != value) {
-                printf("GAME SCROLL: $%02X -> $%02X\n", gameAreaScrollX, value);
                 gameAreaScrollX = value;
             }
-        } else {
-            // This is likely the status bar scroll (ignore for now)
-            printf("STATUS SCROLL: ignored $00\n");
         }
         ppuScrollX = value;  // Still update the register for compatibility
     }
@@ -1040,16 +1006,10 @@ case 0x2005:
     // PPUADDR
     case 0x2006:
         writeAddressRegister(value);
-        if (debugPPU && writeToggle) {
-            printf("PPU ADDR set to: $%04X\n", currentAddress);
-        }
         break;
         
     // PPUDATA
     case 0x2007:
-        if (debugPPU && currentAddress >= 0x3F00 && currentAddress < 0x3F20) {
-            printf("Palette write: $%04X = $%02X\n", currentAddress, value);
-        }
         writeDataRegister(value);
         break;
         
@@ -1414,7 +1374,5 @@ void PPU::invalidateTileCache()
         // Clear flip cache too
         g_flipCache.clear();
         g_flipCacheIndex.clear();
-        
-        printf("PPU tile cache invalidated due to CHR bank switch\n");
     }
 }
