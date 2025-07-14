@@ -80,7 +80,7 @@ public:
         return 0; 
     }
     uint8_t getMapper() const { return nesHeader.mapper; }
-    
+    void writeCNROMRegister(uint16_t address, uint8_t value);
 private:
     // 6502 CPU state
     uint8_t regA, regX, regY, regSP;
@@ -273,6 +273,14 @@ struct GxROMState {
         chrBank = 0;
     }
 } gxrom;
+
+struct CNROMState {
+    uint8_t chrBank;    // Current CHR bank (8KB)
+    
+    CNROMState() {
+        chrBank = 0;
+    }
+} cnrom;
 
 void writeGxROMRegister(uint16_t address, uint8_t value);
 

@@ -69,6 +69,23 @@ SMBEmulator::~SMBEmulator()
     unloadROM();
 }
 
+void SMBEmulator::writeCNROMRegister(uint16_t address, uint8_t value)
+{
+    uint8_t oldCHRBank = cnrom.chrBank;
+    
+    // Mapper 3: Write to $8000-$FFFF sets CHR bank
+    cnrom.chrBank = value & 0x03;  // Only 2 bits for CHR bank
+    
+    // Invalidate cache if CHR bank changed
+    if (oldCHRBank != cnrom.chrBank) {
+        ppu->invalidateTileCache();
+    }
+    
+    printf("CNROM CHR Bank Switch: CHR=%d (value=$%02X)\n", 
+           cnrom.chrBank, value);
+}
+
+
 bool SMBEmulator::loadROM(const std::string& filename)
 {
     std::ifstream file(filename, std::ios::binary);
@@ -365,7 +382,11 @@ void SMBEmulator::reset()
             }
         }
         printf("=== End GxROM Debug ===\n");
-    }
+    } else if (nesHeader.mapper == 3) {
+        cnrom = CNROMState();
+        printf("CNROM initialized: CHR bank 0\n");
+   }
+
     
     // Reset vector at $FFFC-$FFFD
     regPC = readWord(0xFFFC);
@@ -880,7 +901,9 @@ void SMBEmulator::writeByte(uint16_t address, uint8_t value)
             writeMMC1Register(address, value);
         } else if (nesHeader.mapper == 66) {
             writeGxROMRegister(address, value);
-        }
+        }else if (nesHeader.mapper == 3) {
+            writeCNROMRegister(address, value);
+        }        
         // Other writes to ROM area are ignored
     }
 }
@@ -1914,6 +1937,12 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
         // NROM - no banking
         if (address < chrSize) {
             return chrROM[address];
+        }
+    } else if (nesHeader.mapper == 3) {
+        // CNROM - CHR banking
+        uint32_t chrAddr = (cnrom.chrBank * 0x2000) + address;
+        if (chrAddr < chrSize) {
+            return chrROM[chrAddr];
         }
     }
     
