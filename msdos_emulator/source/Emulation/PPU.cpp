@@ -1,5 +1,4 @@
 #include "../SMB/SMBEmulator.hpp"
-#include "../Util/Video.hpp"
 
 #include "PPU.hpp"
 
