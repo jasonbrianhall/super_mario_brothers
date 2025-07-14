@@ -687,6 +687,16 @@ void PPU::renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t sprite_pal
 
 void PPU::render16(uint16_t* buffer)
 {
+    // For MMC3 (mapper 4), use simple direct rendering
+    /*if (engine.getMapper() == 4) {
+        printf("Simple direct\n");
+        renderSimpleDirect16(buffer);
+        return;
+    }*/
+    
+    // For other mappers, use the existing cached rendering
+    // [Keep the existing render16 implementation for non-MMC3 games]
+    
     // Clear the buffer
     uint32_t bgColor32 = paletteRGB[palette[0]];
     uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | ((bgColor32 & 0x00FC00) >> 5) | ((bgColor32 & 0x0000F8) >> 3);
@@ -696,18 +706,10 @@ void PPU::render16(uint16_t* buffer)
         buffer[index] = bgColor16;
     }
 
-    // Use the captured frame scroll AND control values
+    // Use the captured frame scroll AND control values for stable mappers
     int scrollOffset = frameScrollX;
-    uint8_t baseNametable = frameCtrl & 0x01;  // Use captured nametable selection
+    uint8_t baseNametable = frameCtrl & 0x01;
     
-    static uint8_t lastFrameScroll = 255;
-    static uint8_t lastFrameCtrl = 255;
-    if (frameScrollX != lastFrameScroll || frameCtrl != lastFrameCtrl) {
-        printf("RENDER: Using scroll=$%02X, nametable=%d\n", frameScrollX, baseNametable);
-        lastFrameScroll = frameScrollX;
-        lastFrameCtrl = frameCtrl;
-    }
-
     if (ppuMask & (1 << 3))
     {
         // Status bar (rows 0-3) - ALWAYS from nametable 0, never scrolled
@@ -728,17 +730,13 @@ void PPU::render16(uint16_t* buffer)
                 
                 if (screenX < -8 || screenX >= 256) continue;
                 
-                // Use the base nametable from captured control register
                 uint16_t baseAddr = baseNametable ? 0x2400 : 0x2000;
                 
-                // Handle wrapping within the 32x32 tile nametable
                 int localTileX = tileX % 32;
                 if (localTileX < 0) localTileX += 32;
                 
-                // For SMB horizontal scrolling, when we go past 32 tiles, 
-                // we need to switch to the other nametable
                 if (tileX >= 32) {
-                    baseAddr = baseNametable ? 0x2000 : 0x2400;  // Switch to other nametable
+                    baseAddr = baseNametable ? 0x2000 : 0x2400;
                     localTileX = tileX - 32;
                 }
                 
@@ -748,7 +746,7 @@ void PPU::render16(uint16_t* buffer)
         }
     }
 
-    // Sprites (unchanged)
+    // Sprites (use cached version for stable mappers)
     if (ppuMask & (1 << 4))
     {
         for (int i = 63; i >= 0; i--)
@@ -1416,5 +1414,175 @@ void PPU::invalidateTileCache()
         g_flipCacheIndex.clear();
         
         printf("PPU tile cache invalidated due to CHR bank switch\n");
+    }
+}
+
+void PPU::renderSimpleDirect16(uint16_t* buffer)
+{
+    // Clear the buffer
+    uint32_t bgColor32 = paletteRGB[palette[0]];
+    uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | ((bgColor32 & 0x00FC00) >> 5) | ((bgColor32 & 0x0000F8) >> 3);
+    
+    for (int index = 0; index < 256 * 240; index++)
+    {
+        buffer[index] = bgColor16;
+    }
+
+    // Use current scroll values directly (no frame capture for MMC3)
+    int scrollOffset = ppuScrollX;
+    uint8_t baseNametable = ppuCtrl & 0x01;
+    
+    // Render background
+    if (ppuMask & (1 << 3))
+    {
+        // Status bar (rows 0-3) - always from nametable 0, never scrolled
+        for (int x = 0; x < 32; x++) {
+            for (int y = 0; y < 4; y++) {
+                renderTileDirectNoCache(buffer, 0x2000 + 32 * y + x, x * 8, y * 8, false, false);
+            }
+        }
+        
+        // Game area (rows 4-29) - use current scroll
+        int leftmostTile = scrollOffset / 8;
+        int rightmostTile = (scrollOffset + 256) / 8 + 1;
+        
+        for (int tileX = leftmostTile; tileX <= rightmostTile; tileX++) {
+            for (int tileY = 4; tileY < 30; tileY++) {
+                int screenX = (tileX * 8) - scrollOffset;
+                int screenY = tileY * 8;
+                
+                if (screenX < -8 || screenX >= 256) continue;
+                
+                uint16_t baseAddr = baseNametable ? 0x2400 : 0x2000;
+                
+                // Handle wrapping within the 32x32 tile nametable
+                int localTileX = tileX % 32;
+                if (localTileX < 0) localTileX += 32;
+                
+                // For horizontal scrolling, switch nametables
+                if (tileX >= 32) {
+                    baseAddr = baseNametable ? 0x2000 : 0x2400;
+                    localTileX = tileX - 32;
+                }
+                
+                uint16_t nametableAddr = baseAddr + (tileY * 32) + localTileX;
+                renderTileDirectNoCache(buffer, nametableAddr, screenX, screenY, false, false);
+            }
+        }
+    }
+
+    // Render sprites
+    if (ppuMask & (1 << 4))
+    {
+        for (int i = 63; i >= 0; i--)
+        {
+            uint8_t y          = oam[i * 4];
+            uint8_t index      = oam[i * 4 + 1];
+            uint8_t attributes = oam[i * 4 + 2];
+            uint8_t x          = oam[i * 4 + 3];
+
+            if (y >= 0xef || x >= 0xf9) continue;
+
+            y++;
+            uint16_t tile = index + (ppuCtrl & (1 << 3) ? 256 : 0);
+            bool flipX = attributes & (1 << 6);
+            bool flipY = attributes & (1 << 7);
+            uint8_t sprite_palette = attributes & 0x03;
+            bool behindBackground = (attributes & (1 << 5)) != 0;
+
+            renderSpriteDirectNoCache(buffer, tile, sprite_palette, x, y, flipX, flipY, behindBackground, bgColor16);
+        }
+    }
+}
+
+void PPU::renderTileDirectNoCache(uint16_t* buffer, int index, int xOffset, int yOffset, bool flipX, bool flipY)
+{
+    // Read tile info directly each time
+    uint16_t tile = readByte(index) + (ppuCtrl & (1 << 4) ? 256 : 0);
+    uint8_t attribute = getAttributeTableValue(index);
+
+    // Render each pixel directly
+    for (int row = 0; row < 8; row++)
+    {
+        // Read CHR data directly - no caching!
+        uint8_t plane1 = readCHR(tile * 16 + row);
+        uint8_t plane2 = readCHR(tile * 16 + row + 8);
+
+        for (int column = 0; column < 8; column++)
+        {
+            uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + 
+                                   ((plane2 & (1 << column)) ? 2 : 0));
+            
+            uint8_t colorIndex;
+            if (paletteIndex == 0) {
+                colorIndex = palette[0];  // Universal background color
+            } else {
+                colorIndex = palette[(attribute & 0x03) * 4 + paletteIndex];
+            }
+            
+            // Convert to RGB565 directly
+            uint32_t pixel32 = paletteRGB[colorIndex];
+            uint16_t pixel16 = ((pixel32 & 0xF80000) >> 8) | ((pixel32 & 0x00FC00) >> 5) | ((pixel32 & 0x0000F8) >> 3);
+
+            // Apply flipping
+            int pixelX = flipX ? column : (7 - column);
+            int pixelY = flipY ? (7 - row) : row;
+            
+            int x = xOffset + pixelX;
+            int y = yOffset + pixelY;
+            
+            if (x >= 0 && x < 256 && y >= 0 && y < 240)
+            {
+                buffer[y * 256 + x] = pixel16;
+            }
+        }
+    }
+}
+
+void PPU::renderSpriteDirectNoCache(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, 
+                                   int xOffset, int yOffset, bool flipX, bool flipY, 
+                                   bool behindBackground, uint16_t bgColor16)
+{
+    // Render each pixel directly
+    for (int row = 0; row < 8; row++)
+    {
+        // Read CHR data directly - no caching!
+        uint8_t plane1 = readCHR(tile * 16 + row);
+        uint8_t plane2 = readCHR(tile * 16 + row + 8);
+
+        for (int column = 0; column < 8; column++)
+        {
+            uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + 
+                                   ((plane2 & (1 << column)) ? 2 : 0));
+            
+            if (paletteIndex == 0) continue; // Transparent sprite pixel
+            
+            // Get sprite color
+            uint8_t colorIndex = palette[0x10 + (sprite_palette & 0x03) * 4 + paletteIndex];
+            uint32_t pixel32 = paletteRGB[colorIndex];
+            uint16_t spritePixel = ((pixel32 & 0xF80000) >> 8) | ((pixel32 & 0x00FC00) >> 5) | ((pixel32 & 0x0000F8) >> 3);
+
+            // Apply flipping
+            int pixelX = flipX ? column : (7 - column);
+            int pixelY = flipY ? (7 - row) : row;
+            
+            int x = xOffset + pixelX;
+            int y = yOffset + pixelY;
+            
+            if (x >= 0 && x < 256 && y >= 0 && y < 240)
+            {
+                // Handle sprite priority
+                if (behindBackground) {
+                    uint16_t backgroundPixel = buffer[y * 256 + x];
+                    // Only draw sprite if background is transparent
+                    if (backgroundPixel == bgColor16) {
+                        buffer[y * 256 + x] = spritePixel;
+                    }
+                } else {
+                    // Sprite in front, always draw
+                    buffer[y * 256 + x] = spritePixel;
+                }
+            }
+        }
     }
 }

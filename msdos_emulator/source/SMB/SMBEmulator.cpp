@@ -239,15 +239,15 @@ bool SMBEmulator::loadCHRROM(std::ifstream& file)
         chrSize = 8192;
         chrROM = new uint8_t[chrSize];
         memset(chrROM, 0, chrSize);
-        printf("Using CHR RAM (8KB)\n");  // ADD THIS LINE
+        printf("Using CHR RAM (8KB)\n");
         return true;
     }
     
     chrROM = new uint8_t[chrSize];
     file.read(reinterpret_cast<char*>(chrROM), chrSize);
     
-    // ADD THESE DEBUG LINES:
-    printf("Loaded CHR ROM: %d bytes\n", chrSize);
+    printf("Loaded CHR ROM: %d bytes (%d KB, %d x 1KB banks)\n", 
+           chrSize, chrSize/1024, chrSize/0x400);
     
     // Debug: Print first few CHR bytes
     printf("First CHR bytes: ");
@@ -385,13 +385,20 @@ void SMBEmulator::reset()
     } else if (nesHeader.mapper == 3) {
         cnrom = CNROMState();
         printf("CNROM initialized: CHR bank 0\n");
-   }  else if (nesHeader.mapper == 4) {
+    } else if (nesHeader.mapper == 4) {
         mmc3 = MMC3State();
-        // Initialize with default banking
-        mmc3.bankData[6] = 0;  // First PRG bank
-        mmc3.bankData[7] = 1;  // Second PRG bank
+        // MMC3 power-up state according to wiki
+        mmc3.bankData[0] = 0;  // R0: 2KB CHR bank at $0000-$07FF
+        mmc3.bankData[1] = 2;  // R1: 2KB CHR bank at $0800-$0FFF  
+        mmc3.bankData[2] = 4;  // R2: 1KB CHR bank at $1000-$13FF
+        mmc3.bankData[3] = 5;  // R3: 1KB CHR bank at $1400-$17FF
+        mmc3.bankData[4] = 6;  // R4: 1KB CHR bank at $1800-$1BFF
+        mmc3.bankData[5] = 7;  // R5: 1KB CHR bank at $1C00-$1FFF
+        mmc3.bankData[6] = 0;  // R6: 8KB PRG bank (switchable)
+        mmc3.bankData[7] = 1;  // R7: 8KB PRG bank (switchable)
+        mmc3.bankSelect = 0;   // Normal mode
         updateMMC3Banks();
-        printf("MMC3 initialized\n");
+        printf("MMC3 initialized with default banks\n");
     }
     
     // Reset vector at $FFFC-$FFFD
@@ -906,9 +913,24 @@ void SMBEmulator::writeMMC3Register(uint16_t address, uint8_t value)
         case 0x8001: // Bank data ($8001-$9FFF, odd)
             {
                 uint8_t bank = mmc3.bankSelect & 7;
+                uint8_t oldValue = mmc3.bankData[bank];
                 mmc3.bankData[bank] = value;
+                
+                // Check if this is a CHR bank that changed
+                bool chrChanged = false;
+                if (bank <= 5) {  // Banks 0-5 are CHR banks
+                    chrChanged = (oldValue != value);
+                }
+                
                 updateMMC3Banks();
-                printf("MMC3 Bank Data[%d]: $%02X\n", bank, value);
+                
+                // CRITICAL: Invalidate cache immediately when CHR data changes
+                if (chrChanged) {
+                    ppu->invalidateTileCache();
+                    printf("MMC3 CHR Bank Data[%d]: $%02X (cache invalidated)\n", bank, value);
+                } else {
+                    printf("MMC3 PRG Bank Data[%d]: $%02X\n", bank, value);
+                }
             }
             break;
             
@@ -950,59 +972,83 @@ void SMBEmulator::updateMMC3Banks()
     uint8_t totalPRGBanks = prgSize / 0x2000;  // Number of 8KB banks
     uint8_t totalCHRBanks = chrSize / 0x400;   // Number of 1KB banks
     
+    printf("=== MMC3 Bank Update ===\n");
+    printf("CHR ROM Size: %d bytes = %d x 1KB banks\n", chrSize, totalCHRBanks);
+    printf("Bank Select: $%02X (CHR A12=%s, PRG mode=%s)\n", 
+           mmc3.bankSelect,
+           (mmc3.bankSelect & 0x80) ? "invert" : "normal",
+           (mmc3.bankSelect & 0x40) ? "swap" : "normal");
+    
+    printf("Bank Data: R0=%02X R1=%02X R2=%02X R3=%02X R4=%02X R5=%02X R6=%02X R7=%02X\n",
+           mmc3.bankData[0], mmc3.bankData[1], mmc3.bankData[2], mmc3.bankData[3],
+           mmc3.bankData[4], mmc3.bankData[5], mmc3.bankData[6], mmc3.bankData[7]);
+    
     // PRG banking
     bool prgSwap = (mmc3.bankSelect & 0x40) != 0;
-    
     if (prgSwap) {
-        // PRG swap mode: R6 at $8000, fixed -2 at $A000, R7 at $C000, fixed -1 at $E000
-        mmc3.currentPRGBanks[0] = totalPRGBanks - 2;              // Fixed -2 bank
-        mmc3.currentPRGBanks[1] = mmc3.bankData[7] % totalPRGBanks; // R7
-        mmc3.currentPRGBanks[2] = mmc3.bankData[6] % totalPRGBanks; // R6
-        mmc3.currentPRGBanks[3] = totalPRGBanks - 1;              // Fixed -1 bank
+        mmc3.currentPRGBanks[0] = totalPRGBanks - 2;
+        mmc3.currentPRGBanks[1] = mmc3.bankData[7] % totalPRGBanks;
+        mmc3.currentPRGBanks[2] = mmc3.bankData[6] % totalPRGBanks;
+        mmc3.currentPRGBanks[3] = totalPRGBanks - 1;
     } else {
-        // Normal mode: R6 at $8000, R7 at $A000, fixed -2 at $C000, fixed -1 at $E000
-        mmc3.currentPRGBanks[0] = mmc3.bankData[6] % totalPRGBanks; // R6
-        mmc3.currentPRGBanks[1] = mmc3.bankData[7] % totalPRGBanks; // R7
-        mmc3.currentPRGBanks[2] = totalPRGBanks - 2;              // Fixed -2 bank
-        mmc3.currentPRGBanks[3] = totalPRGBanks - 1;              // Fixed -1 bank
+        mmc3.currentPRGBanks[0] = mmc3.bankData[6] % totalPRGBanks;
+        mmc3.currentPRGBanks[1] = mmc3.bankData[7] % totalPRGBanks;
+        mmc3.currentPRGBanks[2] = totalPRGBanks - 2;
+        mmc3.currentPRGBanks[3] = totalPRGBanks - 1;
     }
     
-    // CHR banking
-    bool chrSwap = (mmc3.bankSelect & 0x80) != 0;
+    // CHR banking with proper bounds checking
+    bool chrA12Invert = (mmc3.bankSelect & 0x80) != 0;
     
-    if (chrSwap) {
-        // CHR swap mode: R2,R3,R4,R5 at $0000-$0FFF, R0&~1,R0|1,R1&~1,R1|1 at $1000-$1FFF
+    if (chrA12Invert) {
+        // A12 inversion: 4x1KB banks at $0000, 2x2KB banks at $1000
         mmc3.currentCHRBanks[0] = mmc3.bankData[2] % totalCHRBanks;
         mmc3.currentCHRBanks[1] = mmc3.bankData[3] % totalCHRBanks;
         mmc3.currentCHRBanks[2] = mmc3.bankData[4] % totalCHRBanks;
         mmc3.currentCHRBanks[3] = mmc3.bankData[5] % totalCHRBanks;
-        mmc3.currentCHRBanks[4] = (mmc3.bankData[0] & 0xFE) % totalCHRBanks;
-        mmc3.currentCHRBanks[5] = (mmc3.bankData[0] | 0x01) % totalCHRBanks;
-        mmc3.currentCHRBanks[6] = (mmc3.bankData[1] & 0xFE) % totalCHRBanks;
-        mmc3.currentCHRBanks[7] = (mmc3.bankData[1] | 0x01) % totalCHRBanks;
+        // For 2KB banks, make sure both consecutive banks exist
+        uint8_t bank0_base = (mmc3.bankData[0] & 0xFE) % totalCHRBanks;
+        uint8_t bank1_base = (mmc3.bankData[1] & 0xFE) % totalCHRBanks;
+        mmc3.currentCHRBanks[4] = bank0_base;
+        mmc3.currentCHRBanks[5] = (bank0_base + 1) % totalCHRBanks;
+        mmc3.currentCHRBanks[6] = bank1_base;
+        mmc3.currentCHRBanks[7] = (bank1_base + 1) % totalCHRBanks;
     } else {
-        // Normal mode: R0&~1,R0|1,R1&~1,R1|1 at $0000-$0FFF, R2,R3,R4,R5 at $1000-$1FFF
-        mmc3.currentCHRBanks[0] = (mmc3.bankData[0] & 0xFE) % totalCHRBanks;
-        mmc3.currentCHRBanks[1] = (mmc3.bankData[0] | 0x01) % totalCHRBanks;
-        mmc3.currentCHRBanks[2] = (mmc3.bankData[1] & 0xFE) % totalCHRBanks;
-        mmc3.currentCHRBanks[3] = (mmc3.bankData[1] | 0x01) % totalCHRBanks;
+        // Normal: 2x2KB banks at $0000, 4x1KB banks at $1000
+        uint8_t bank0_base = (mmc3.bankData[0] & 0xFE) % totalCHRBanks;
+        uint8_t bank1_base = (mmc3.bankData[1] & 0xFE) % totalCHRBanks;
+        mmc3.currentCHRBanks[0] = bank0_base;
+        mmc3.currentCHRBanks[1] = (bank0_base + 1) % totalCHRBanks;
+        mmc3.currentCHRBanks[2] = bank1_base;
+        mmc3.currentCHRBanks[3] = (bank1_base + 1) % totalCHRBanks;
         mmc3.currentCHRBanks[4] = mmc3.bankData[2] % totalCHRBanks;
         mmc3.currentCHRBanks[5] = mmc3.bankData[3] % totalCHRBanks;
         mmc3.currentCHRBanks[6] = mmc3.bankData[4] % totalCHRBanks;
         mmc3.currentCHRBanks[7] = mmc3.bankData[5] % totalCHRBanks;
     }
     
-    // Invalidate tile cache when CHR banks change
+    // Verify all banks are valid
+    for (int i = 0; i < 8; i++) {
+        if (mmc3.currentCHRBanks[i] >= totalCHRBanks) {
+            printf("ERROR: Final CHR bank %d = %02X >= %02X total banks!\n", 
+                   i, mmc3.currentCHRBanks[i], totalCHRBanks);
+            mmc3.currentCHRBanks[i] = 0;  // Fallback to bank 0
+        }
+    }
+    
     ppu->invalidateTileCache();
     
-    printf("MMC3 PRG Banks: %d,%d,%d,%d CHR Banks: %d,%d,%d,%d,%d,%d,%d,%d\n",
-           mmc3.currentPRGBanks[0], mmc3.currentPRGBanks[1], 
-           mmc3.currentPRGBanks[2], mmc3.currentPRGBanks[3],
+    printf("Final CHR Banks: [%02X %02X %02X %02X | %02X %02X %02X %02X]\n",
            mmc3.currentCHRBanks[0], mmc3.currentCHRBanks[1], 
            mmc3.currentCHRBanks[2], mmc3.currentCHRBanks[3],
            mmc3.currentCHRBanks[4], mmc3.currentCHRBanks[5], 
            mmc3.currentCHRBanks[6], mmc3.currentCHRBanks[7]);
+    printf("Final PRG Banks: [%02X %02X %02X %02X]\n",
+           mmc3.currentPRGBanks[0], mmc3.currentPRGBanks[1], 
+           mmc3.currentPRGBanks[2], mmc3.currentPRGBanks[3]);
+    printf("=== End MMC3 Update ===\n");
 }
+
 
 void SMBEmulator::stepMMC3IRQ()
 {
@@ -2059,25 +2105,48 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
 {
     if (address >= 0x2000) return 0;
     
-    if (nesHeader.mapper == 66) {
-        // Always use the CURRENT CHR bank, not a captured one
-        uint8_t currentBank = gxrom.chrBank;
-        uint32_t chrAddr = (currentBank * 0x2000) + address;
-        if (chrAddr < chrSize) {
-            return chrROM[chrAddr];
-        }
-    } else if (nesHeader.mapper == 4) {
+    if (nesHeader.mapper == 4) {
         // MMC3 - 1KB CHR banks
         uint8_t bankIndex = address / 0x400;  // 0-7
         uint16_t bankOffset = address % 0x400;
-        uint32_t chrAddr = (mmc3.currentCHRBanks[bankIndex] * 0x400) + bankOffset;
+        uint8_t physicalBank = mmc3.currentCHRBanks[bankIndex];
+        uint32_t chrAddr = (physicalBank * 0x400) + bankOffset;
+        
+        // Debug specific problematic addresses
+        static int debugCount = 0;
+        if (address < 0x20 || (address >= 0x1000 && address < 0x1020)) {
+            debugCount++;
+            if (debugCount % 100 == 0) {  // Less frequent debugging
+                printf("CHR[$%04X] -> slot%d, bank%02X, ROM[$%08X/%08X] = $%02X\n", 
+                       address, bankIndex, physicalBank, chrAddr, chrSize,
+                       (chrAddr < chrSize) ? chrROM[chrAddr] : 0xFF);
+            }
+        }
+        
+        // Critical: Check if CHR bank is valid
+        uint8_t totalCHRBanks = chrSize / 0x400;
+        if (physicalBank >= totalCHRBanks) {
+            printf("ERROR: CHR bank %02X >= total banks %02X (addr=$%04X)\n", 
+                   physicalBank, totalCHRBanks, address);
+            return 0;
+        }
+        
+        if (chrAddr < chrSize) {
+            return chrROM[chrAddr];
+        } else {
+            printf("CHR ADDR OUT OF BOUNDS: $%08X >= $%08X\n", chrAddr, chrSize);
+            return 0;
+        }
+    }
+    
+    // Handle other mappers...
+    if (nesHeader.mapper == 66) {
+        uint32_t chrAddr = (gxrom.chrBank * 0x2000) + address;
         if (chrAddr < chrSize) {
             return chrROM[chrAddr];
         }
     } else if (nesHeader.mapper == 1) {
-        // MMC1 - use current banks
         if (mmc1.control & 0x10) {
-            // 4KB CHR mode
             if (address < 0x1000) {
                 uint32_t chrAddr = (mmc1.currentCHRBank0 * 0x1000) + address;
                 if (chrAddr < chrSize) {
@@ -2090,20 +2159,16 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
                 }
             }
         } else {
-            // 8KB CHR mode
             uint32_t chrAddr = (mmc1.currentCHRBank0 * 0x2000) + address;
             if (chrAddr < chrSize) {
                 return chrROM[chrAddr];
             }
         }
-    }
-    else if (nesHeader.mapper == 0) {
-        // NROM - no banking
+    } else if (nesHeader.mapper == 0) {
         if (address < chrSize) {
             return chrROM[address];
         }
     } else if (nesHeader.mapper == 3) {
-        // CNROM - CHR banking
         uint32_t chrAddr = (cnrom.chrBank * 0x2000) + address;
         if (chrAddr < chrSize) {
             return chrROM[chrAddr];

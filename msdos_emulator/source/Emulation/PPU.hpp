@@ -180,6 +180,9 @@ private:
     uint8_t frameScrollX; 
     uint8_t frameCtrl;     // The control register for this entire frame
     uint8_t frameCHRBank;
+    void renderSimpleDirect16(uint16_t* buffer);
+    void renderTileDirectNoCache(uint16_t* buffer, int index, int xOffset, int yOffset, bool flipX, bool flipY);
+    void renderSpriteDirectNoCache(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, int xOffset, int yOffset, bool flipX, bool flipY,  bool behindBackground, uint16_t bgColor16);
 };
 
 #endif // PPU_HPP
