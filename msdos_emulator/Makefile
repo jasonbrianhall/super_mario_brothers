@@ -1,4 +1,4 @@
-# Makefile for smbc with Windows, Linux, and DOS Support
+# Makefile for smbe with Windows, Linux, and DOS Support
 # Based on Tetrimone Makefile structure
 # Last modification: $(shell date +%m/%d/%Y)
 
@@ -44,10 +44,7 @@ SOURCE_FILES = \
     source/Emulation/Controller.cpp \
     source/Emulation/AllegroMidi.cpp \
     source/Emulation/PPU.cpp \
-    source/SMB/SMBEmulator.cpp \
-    source/Util/Video.cpp \
-    source/Util/VideoFilters.cpp \
-    source/SMBRom.cpp
+    source/SMB/SMBEmulator.cpp
 
 # Object files
 OBJS_LINUX = $(SOURCE_FILES:.cpp=.o)
@@ -58,12 +55,12 @@ OBJS_WIN_DEBUG = $(SOURCE_FILES:.cpp=.win.debug.o)
 OBJS_DOS_DEBUG = $(SOURCE_FILES:.cpp=.dos.debug.o)
 
 # Target executables
-TARGET_LINUX = smbc
-TARGET_WIN = smbc.exe
-TARGET_DOS = smbc.exe
-TARGET_LINUX_DEBUG = smbc_debug
-TARGET_WIN_DEBUG = smbc_debug.exe
-TARGET_DOS_DEBUG = smbc_debug.exe
+TARGET_LINUX = smbe
+TARGET_WIN = smbe.exe
+TARGET_DOS = smbe.exe
+TARGET_LINUX_DEBUG = smbe_debug
+TARGET_WIN_DEBUG = smbe_debug.exe
+TARGET_DOS_DEBUG = smbe_debug.exe
 
 # Build directories
 BUILD_DIR = build
@@ -91,23 +88,23 @@ all: linux
 
 # OS-specific builds
 .PHONY: windows
-windows: smbc-windows
+windows: smbe-windows
 
 .PHONY: linux
-linux: smbc-linux
+linux: smbe-linux
 
 .PHONY: dos
-dos: smbc-dos
+dos: smbe-dos
 
 # Debug targets
 .PHONY: debug
-debug: smbc-linux-debug smbc-windows-debug smbc-dos-debug
+debug: smbe-linux-debug smbe-windows-debug smbe-dos-debug
 
 #
 # Linux build targets
 #
-.PHONY: smbc-linux
-smbc-linux: $(BUILD_DIR_LINUX)/$(TARGET_LINUX)
+.PHONY: smbe-linux
+smbe-linux: $(BUILD_DIR_LINUX)/$(TARGET_LINUX)
 
 $(BUILD_DIR_LINUX)/$(TARGET_LINUX): $(addprefix $(BUILD_DIR_LINUX)/,$(OBJS_LINUX))
 	@echo "Linking Linux executable..."
@@ -122,8 +119,8 @@ $(BUILD_DIR_LINUX)/%.o: %.cpp
 #
 # Linux debug targets
 #
-.PHONY: smbc-linux-debug
-smbc-linux-debug: $(BUILD_DIR_LINUX_DEBUG)/$(TARGET_LINUX_DEBUG)
+.PHONY: smbe-linux-debug
+smbe-linux-debug: $(BUILD_DIR_LINUX_DEBUG)/$(TARGET_LINUX_DEBUG)
 
 $(BUILD_DIR_LINUX_DEBUG)/$(TARGET_LINUX_DEBUG): $(addprefix $(BUILD_DIR_LINUX_DEBUG)/,$(OBJS_LINUX_DEBUG))
 	@echo "Linking Linux debug executable..."
@@ -138,8 +135,8 @@ $(BUILD_DIR_LINUX_DEBUG)/%.debug.o: %.cpp
 #
 # Windows build targets
 #
-.PHONY: smbc-windows
-smbc-windows: $(BUILD_DIR_WIN)/$(TARGET_WIN) smbc-collect-dlls
+.PHONY: smbe-windows
+smbe-windows: $(BUILD_DIR_WIN)/$(TARGET_WIN) smbe-collect-dlls
 
 $(BUILD_DIR_WIN)/$(TARGET_WIN): $(addprefix $(BUILD_DIR_WIN)/,$(OBJS_WIN))
 	@echo "Linking Windows executable..."
@@ -154,8 +151,8 @@ $(BUILD_DIR_WIN)/%.win.o: %.cpp
 #
 # Windows debug targets
 #
-.PHONY: smbc-windows-debug
-smbc-windows-debug: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG) smbc-collect-debug-dlls
+.PHONY: smbe-windows-debug
+smbe-windows-debug: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG) smbe-collect-debug-dlls
 
 $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG): $(addprefix $(BUILD_DIR_WIN_DEBUG)/,$(OBJS_WIN_DEBUG))
 	@echo "Linking Windows debug executable..."
@@ -170,8 +167,8 @@ $(BUILD_DIR_WIN_DEBUG)/%.win.debug.o: %.cpp
 #
 # DOS build targets
 #
-.PHONY: smbc-dos
-smbc-dos: $(BUILD_DIR_DOS)/$(TARGET_DOS)
+.PHONY: smbe-dos
+smbe-dos: $(BUILD_DIR_DOS)/$(TARGET_DOS)
 
 $(BUILD_DIR_DOS)/$(TARGET_DOS): $(addprefix $(BUILD_DIR_DOS)/,$(OBJS_DOS))
 	@echo "Linking DOS executable..."
@@ -186,8 +183,8 @@ $(BUILD_DIR_DOS)/%.dos.o: %.cpp
 #
 # DOS debug targets
 #
-.PHONY: smbc-dos-debug
-smbc-dos-debug: $(BUILD_DIR_DOS_DEBUG)/$(TARGET_DOS_DEBUG)
+.PHONY: smbe-dos-debug
+smbe-dos-debug: $(BUILD_DIR_DOS_DEBUG)/$(TARGET_DOS_DEBUG)
 
 $(BUILD_DIR_DOS_DEBUG)/$(TARGET_DOS_DEBUG): $(addprefix $(BUILD_DIR_DOS_DEBUG)/,$(OBJS_DOS_DEBUG))
 	@echo "Linking DOS debug executable..."
@@ -202,13 +199,13 @@ $(BUILD_DIR_DOS_DEBUG)/%.dos.debug.o: %.cpp
 #
 # DLL collection for Windows builds
 #
-.PHONY: smbc-collect-dlls
-smbc-collect-dlls: $(BUILD_DIR_WIN)/$(TARGET_WIN)
+.PHONY: smbe-collect-dlls
+smbe-collect-dlls: $(BUILD_DIR_WIN)/$(TARGET_WIN)
 	@echo "Collecting DLLs for Windows build..."
 	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN)/$(TARGET_WIN) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN)
 
-.PHONY: smbc-collect-debug-dlls
-smbc-collect-debug-dlls: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG)
+.PHONY: smbe-collect-debug-dlls
+smbe-collect-debug-dlls: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG)
 	@echo "Collecting Debug DLLs for Windows build..."
 	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN_DEBUG)
 
@@ -267,19 +264,19 @@ clean:
 .PHONY: help
 help:
 	@echo "Available targets:"
-	@echo "  make               - Build smbc for Linux (default)"
-	@echo "  make linux         - Build smbc for Linux"
-	@echo "  make windows       - Build smbc for Windows (requires MinGW)"
-	@echo "  make dos           - Build smbc for DOS (requires DJGPP)"
+	@echo "  make               - Build smbe for Linux (default)"
+	@echo "  make linux         - Build smbe for Linux"
+	@echo "  make windows       - Build smbe for Windows (requires MinGW)"
+	@echo "  make dos           - Build smbe for DOS (requires DJGPP)"
 	@echo ""
-	@echo "  make debug         - Build smbc with debug symbols for all platforms"
-	@echo "  make smbc-linux-debug    - Build smbc for Linux with debug symbols"
-	@echo "  make smbc-windows-debug  - Build smbc for Windows with debug symbols"
-	@echo "  make smbc-dos-debug      - Build smbc for DOS with debug symbols"
+	@echo "  make debug         - Build smbe with debug symbols for all platforms"
+	@echo "  make smbe-linux-debug    - Build smbe for Linux with debug symbols"
+	@echo "  make smbe-windows-debug  - Build smbe for Windows with debug symbols"
+	@echo "  make smbe-dos-debug      - Build smbe for DOS with debug symbols"
 	@echo ""
 	@echo "  make check-deps    - Check if required dependencies are installed"
 	@echo "  make create-dll-script   - Create DLL collection script"
-	@echo "  make smbc-collect-dlls   - Collect DLLs for Windows build"
+	@echo "  make smbe-collect-dlls   - Collect DLLs for Windows build"
 	@echo ""
 	@echo "  make clean         - Remove all build files"
 	@echo "  make help          - Show this help message"
