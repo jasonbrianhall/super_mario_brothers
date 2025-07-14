@@ -92,6 +92,7 @@ void setDataBuffer(uint8_t val) { vramBuffer = val; }
     void updateRenderRegisters();
     void captureFrameScroll();
     void invalidateTileCache();
+    uint8_t getFrameCHRBank() const { return frameCHRBank; }
     
 private:
     SMBEmulator& engine;
@@ -178,6 +179,7 @@ private:
     bool ignoreNextScrollWrite;
     uint8_t frameScrollX; 
     uint8_t frameCtrl;     // The control register for this entire frame
+    uint8_t frameCHRBank;
 };
 
 #endif // PPU_HPP

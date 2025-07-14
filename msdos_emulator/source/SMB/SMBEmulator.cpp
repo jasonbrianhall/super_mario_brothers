@@ -1801,44 +1801,25 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
 {
     if (address >= 0x2000) return 0;
     
-    // Debug sprite tile reads (Mario's tiles are typically in the $0000-$0FFF range)
-    static int debugCounter = 0;
-    bool isSpriteTile = (address >= 0x0000 && address < 0x1000);
-    
-    if (nesHeader.mapper == 0) {
-        // NROM - no CHR banking
-        if (address < chrSize) {
-            return chrROM[address];
+    if (nesHeader.mapper == 66) {
+        // Always use the CURRENT CHR bank, not a captured one
+        uint8_t currentBank = gxrom.chrBank;
+        uint32_t chrAddr = (currentBank * 0x2000) + address;
+        if (chrAddr < chrSize) {
+            return chrROM[chrAddr];
         }
     }
     else if (nesHeader.mapper == 1) {
-        // MMC1 CHR banking
+        // MMC1 - use current banks
         if (mmc1.control & 0x10) {
             // 4KB CHR mode
             if (address < 0x1000) {
-                // First 4KB ($0000-$0FFF) - use CHR bank 0
                 uint32_t chrAddr = (mmc1.currentCHRBank0 * 0x1000) + address;
-                
-                // Debug Mario's sprite reads
-                if (isSpriteTile && debugCounter++ < 5) {
-                    printf("SPRITE CHR: $%04X -> Bank %d offset $%04X = ROM[$%05X] = $%02X\n", 
-                           address, mmc1.currentCHRBank0, address, chrAddr, 
-                           (chrAddr < chrSize) ? chrROM[chrAddr] : 0);
-                }
-                
                 if (chrAddr < chrSize) {
                     return chrROM[chrAddr];
                 }
             } else {
-                // Second 4KB ($1000-$1FFF) - use CHR bank 1
                 uint32_t chrAddr = (mmc1.currentCHRBank1 * 0x1000) + (address - 0x1000);
-                
-                if (debugCounter++ < 5) {
-                    printf("BG CHR: $%04X -> Bank %d offset $%04X = ROM[$%05X] = $%02X\n", 
-                           address, mmc1.currentCHRBank1, address - 0x1000, chrAddr,
-                           (chrAddr < chrSize) ? chrROM[chrAddr] : 0);
-                }
-                
                 if (chrAddr < chrSize) {
                     return chrROM[chrAddr];
                 }
@@ -1851,11 +1832,10 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
             }
         }
     }
-    else if (nesHeader.mapper == 66) {
-        // GxROM CHR banking - 8KB banks
-        uint32_t chrAddr = (gxrom.chrBank * 0x2000) + address;
-        if (chrAddr < chrSize) {
-            return chrROM[chrAddr];
+    else if (nesHeader.mapper == 0) {
+        // NROM - no banking
+        if (address < chrSize) {
+            return chrROM[address];
         }
     }
     

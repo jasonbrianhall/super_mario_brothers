@@ -1395,10 +1395,13 @@ void PPU::convertNESToScreen32(uint16_t* nesBuffer, uint32_t* screenBuffer, int 
 void PPU::captureFrameScroll() {
     // Capture the current scroll value AND control register at the start of VBlank
     frameScrollX = ppuScrollX;
-    frameCtrl = ppuCtrl;  // CAPTURE THE CONTROL REGISTER TOO!
-    printf("CAPTURE: Frame scroll=$%02X, Ctrl=$%02X, Nametable=%d\n", 
-           frameScrollX, frameCtrl, (frameCtrl & 0x01));
-}
+    frameCtrl = ppuCtrl;
+    
+    // ALSO CAPTURE CHR BANK STATE
+    if (engine.getMapper() == 66) {
+        frameCHRBank = engine.getCurrentCHRBank();
+    }
+}    
 
 void PPU::invalidateTileCache()
 {

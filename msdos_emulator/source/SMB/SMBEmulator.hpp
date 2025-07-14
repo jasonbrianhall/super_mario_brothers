@@ -75,6 +75,11 @@ public:
     uint8_t readMemory(uint16_t address) const;
     void writeMemory(uint16_t address, uint8_t value);
     uint8_t readCHRData(uint16_t address);
+        uint8_t getCurrentCHRBank() const { 
+        if (nesHeader.mapper == 66) return gxrom.chrBank;
+        return 0; 
+    }
+    uint8_t getMapper() const { return nesHeader.mapper; }
     
 private:
     // 6502 CPU state
