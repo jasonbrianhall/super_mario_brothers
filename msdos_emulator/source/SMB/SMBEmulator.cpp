@@ -385,8 +385,14 @@ void SMBEmulator::reset()
     } else if (nesHeader.mapper == 3) {
         cnrom = CNROMState();
         printf("CNROM initialized: CHR bank 0\n");
-   }
-
+   }  else if (nesHeader.mapper == 4) {
+        mmc3 = MMC3State();
+        // Initialize with default banking
+        mmc3.bankData[6] = 0;  // First PRG bank
+        mmc3.bankData[7] = 1;  // Second PRG bank
+        updateMMC3Banks();
+        printf("MMC3 initialized\n");
+    }
     
     // Reset vector at $FFFC-$FFFD
     regPC = readWord(0xFFFC);
@@ -765,7 +771,27 @@ uint8_t SMBEmulator::readByte(uint16_t address)
             if (romAddr < prgSize) {
                 return prgROM[romAddr];
             }
-} else if (nesHeader.mapper == 1) {
+       } else if (nesHeader.mapper == 4) {
+            // MMC3 mapping - 8KB banks
+            uint8_t bankIndex = (address - 0x8000) / 0x2000;  // 0-3
+            uint16_t bankOffset = (address - 0x8000) % 0x2000;
+            uint32_t romAddr = (mmc3.currentPRGBanks[bankIndex] * 0x2000) + bankOffset;
+            
+            // Debug reset vector reads
+            if (address >= 0xFFFC) {
+                printf("MMC3 reset vector $%04X: bank %d, romAddr=$%08X, ", 
+                       address, mmc3.currentPRGBanks[bankIndex], romAddr);
+                if (romAddr < prgSize) {
+                    printf("value=$%02X\n", prgROM[romAddr]);
+                } else {
+                    printf("OUT OF BOUNDS!\n");
+                }
+            }
+            
+            if (romAddr < prgSize) {
+                return prgROM[romAddr];
+            }
+        } else if (nesHeader.mapper == 1) {
     // MMC1 mapping - CORRECTED VERSION
     uint32_t romAddr;
     uint8_t totalBanks = prgSize / 0x4000;  // Number of 16KB banks
@@ -867,6 +893,138 @@ uint8_t SMBEmulator::readByte(uint16_t address)
     return 0; // Open bus
 }
 
+void SMBEmulator::writeMMC3Register(uint16_t address, uint8_t value)
+{
+    switch (address & 0xE001) {
+        case 0x8000: // Bank select ($8000-$9FFE, even)
+            mmc3.bankSelect = value;
+            updateMMC3Banks();
+            printf("MMC3 Bank Select: $%02X (bank=%d, mode=%s)\n", 
+                   value, value & 7, (value & 0x40) ? "PRG swap" : "PRG normal");
+            break;
+            
+        case 0x8001: // Bank data ($8001-$9FFF, odd)
+            {
+                uint8_t bank = mmc3.bankSelect & 7;
+                mmc3.bankData[bank] = value;
+                updateMMC3Banks();
+                printf("MMC3 Bank Data[%d]: $%02X\n", bank, value);
+            }
+            break;
+            
+        case 0xA000: // Mirroring ($A000-$BFFE, even)
+            mmc3.mirroring = value & 1;
+            // Update PPU mirroring if needed
+            printf("MMC3 Mirroring: %s\n", (value & 1) ? "Horizontal" : "Vertical");
+            break;
+            
+        case 0xA001: // PRG RAM protect ($A001-$BFFF, odd)
+            mmc3.prgRamProtect = value;
+            printf("MMC3 PRG RAM Protect: $%02X\n", value);
+            break;
+            
+        case 0xC000: // IRQ latch ($C000-$DFFE, even)
+            mmc3.irqLatch = value;
+            printf("MMC3 IRQ Latch: $%02X\n", value);
+            break;
+            
+        case 0xC001: // IRQ reload ($C001-$DFFF, odd)
+            mmc3.irqReload = true;
+            printf("MMC3 IRQ Reload\n");
+            break;
+            
+        case 0xE000: // IRQ disable ($E000-$FFFE, even)
+            mmc3.irqEnable = false;
+            printf("MMC3 IRQ Disable\n");
+            break;
+            
+        case 0xE001: // IRQ enable ($E001-$FFFF, odd)
+            mmc3.irqEnable = true;
+            printf("MMC3 IRQ Enable\n");
+            break;
+    }
+}
+
+void SMBEmulator::updateMMC3Banks()
+{
+    uint8_t totalPRGBanks = prgSize / 0x2000;  // Number of 8KB banks
+    uint8_t totalCHRBanks = chrSize / 0x400;   // Number of 1KB banks
+    
+    // PRG banking
+    bool prgSwap = (mmc3.bankSelect & 0x40) != 0;
+    
+    if (prgSwap) {
+        // PRG swap mode: R6 at $8000, fixed -2 at $A000, R7 at $C000, fixed -1 at $E000
+        mmc3.currentPRGBanks[0] = totalPRGBanks - 2;              // Fixed -2 bank
+        mmc3.currentPRGBanks[1] = mmc3.bankData[7] % totalPRGBanks; // R7
+        mmc3.currentPRGBanks[2] = mmc3.bankData[6] % totalPRGBanks; // R6
+        mmc3.currentPRGBanks[3] = totalPRGBanks - 1;              // Fixed -1 bank
+    } else {
+        // Normal mode: R6 at $8000, R7 at $A000, fixed -2 at $C000, fixed -1 at $E000
+        mmc3.currentPRGBanks[0] = mmc3.bankData[6] % totalPRGBanks; // R6
+        mmc3.currentPRGBanks[1] = mmc3.bankData[7] % totalPRGBanks; // R7
+        mmc3.currentPRGBanks[2] = totalPRGBanks - 2;              // Fixed -2 bank
+        mmc3.currentPRGBanks[3] = totalPRGBanks - 1;              // Fixed -1 bank
+    }
+    
+    // CHR banking
+    bool chrSwap = (mmc3.bankSelect & 0x80) != 0;
+    
+    if (chrSwap) {
+        // CHR swap mode: R2,R3,R4,R5 at $0000-$0FFF, R0&~1,R0|1,R1&~1,R1|1 at $1000-$1FFF
+        mmc3.currentCHRBanks[0] = mmc3.bankData[2] % totalCHRBanks;
+        mmc3.currentCHRBanks[1] = mmc3.bankData[3] % totalCHRBanks;
+        mmc3.currentCHRBanks[2] = mmc3.bankData[4] % totalCHRBanks;
+        mmc3.currentCHRBanks[3] = mmc3.bankData[5] % totalCHRBanks;
+        mmc3.currentCHRBanks[4] = (mmc3.bankData[0] & 0xFE) % totalCHRBanks;
+        mmc3.currentCHRBanks[5] = (mmc3.bankData[0] | 0x01) % totalCHRBanks;
+        mmc3.currentCHRBanks[6] = (mmc3.bankData[1] & 0xFE) % totalCHRBanks;
+        mmc3.currentCHRBanks[7] = (mmc3.bankData[1] | 0x01) % totalCHRBanks;
+    } else {
+        // Normal mode: R0&~1,R0|1,R1&~1,R1|1 at $0000-$0FFF, R2,R3,R4,R5 at $1000-$1FFF
+        mmc3.currentCHRBanks[0] = (mmc3.bankData[0] & 0xFE) % totalCHRBanks;
+        mmc3.currentCHRBanks[1] = (mmc3.bankData[0] | 0x01) % totalCHRBanks;
+        mmc3.currentCHRBanks[2] = (mmc3.bankData[1] & 0xFE) % totalCHRBanks;
+        mmc3.currentCHRBanks[3] = (mmc3.bankData[1] | 0x01) % totalCHRBanks;
+        mmc3.currentCHRBanks[4] = mmc3.bankData[2] % totalCHRBanks;
+        mmc3.currentCHRBanks[5] = mmc3.bankData[3] % totalCHRBanks;
+        mmc3.currentCHRBanks[6] = mmc3.bankData[4] % totalCHRBanks;
+        mmc3.currentCHRBanks[7] = mmc3.bankData[5] % totalCHRBanks;
+    }
+    
+    // Invalidate tile cache when CHR banks change
+    ppu->invalidateTileCache();
+    
+    printf("MMC3 PRG Banks: %d,%d,%d,%d CHR Banks: %d,%d,%d,%d,%d,%d,%d,%d\n",
+           mmc3.currentPRGBanks[0], mmc3.currentPRGBanks[1], 
+           mmc3.currentPRGBanks[2], mmc3.currentPRGBanks[3],
+           mmc3.currentCHRBanks[0], mmc3.currentCHRBanks[1], 
+           mmc3.currentCHRBanks[2], mmc3.currentCHRBanks[3],
+           mmc3.currentCHRBanks[4], mmc3.currentCHRBanks[5], 
+           mmc3.currentCHRBanks[6], mmc3.currentCHRBanks[7]);
+}
+
+void SMBEmulator::stepMMC3IRQ()
+{
+    // MMC3 IRQ counter decrements on specific PPU events
+    // This should be called during PPU rendering cycles
+    
+    if (mmc3.irqReload) {
+        mmc3.irqCounter = mmc3.irqLatch;
+        mmc3.irqReload = false;
+    } else if (mmc3.irqCounter > 0) {
+        mmc3.irqCounter--;
+    }
+    
+    // Trigger IRQ when counter reaches 0 and IRQ is enabled
+    if (mmc3.irqCounter == 0 && mmc3.irqEnable) {
+        // Set IRQ pending flag (you'll need to handle this in your main loop)
+        printf("MMC3 IRQ triggered!\n");
+    }
+}
+
+
+
 void SMBEmulator::writeByte(uint16_t address, uint8_t value)
 {
     if (address < 0x2000) {
@@ -898,9 +1056,11 @@ void SMBEmulator::writeByte(uint16_t address, uint8_t value)
             writeMMC1Register(address, value);
         } else if (nesHeader.mapper == 66) {
             writeGxROMRegister(address, value);
-        }else if (nesHeader.mapper == 3) {
+        } else if (nesHeader.mapper == 3) {
             writeCNROMRegister(address, value);
-        }        
+        } else if (nesHeader.mapper == 4) {
+            writeMMC3Register(address, value);
+        }     
         // Other writes to ROM area are ignored
     }
 }
@@ -1906,8 +2066,15 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
         if (chrAddr < chrSize) {
             return chrROM[chrAddr];
         }
-    }
-    else if (nesHeader.mapper == 1) {
+    } else if (nesHeader.mapper == 4) {
+        // MMC3 - 1KB CHR banks
+        uint8_t bankIndex = address / 0x400;  // 0-7
+        uint16_t bankOffset = address % 0x400;
+        uint32_t chrAddr = (mmc3.currentCHRBanks[bankIndex] * 0x400) + bankOffset;
+        if (chrAddr < chrSize) {
+            return chrROM[chrAddr];
+        }
+    } else if (nesHeader.mapper == 1) {
         // MMC1 - use current banks
         if (mmc1.control & 0x10) {
             // 4KB CHR mode

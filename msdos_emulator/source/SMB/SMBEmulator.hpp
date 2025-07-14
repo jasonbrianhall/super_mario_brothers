@@ -284,6 +284,43 @@ struct CNROMState {
 
 void writeGxROMRegister(uint16_t address, uint8_t value);
 
+struct MMC3State {
+    uint8_t bankSelect;          // $8000-$9FFE (even)
+    uint8_t bankData[8];         // Bank data registers
+    uint8_t mirroring;           // $A000-$BFFE (even)
+    uint8_t prgRamProtect;       // $A001-$BFFF (odd)
+    uint8_t irqLatch;            // $C000-$DFFE (even)
+    uint8_t irqCounter;          // Internal counter
+    bool irqEnable;              // $E000-$FFFE (even)
+    bool irqReload;              // Flag to reload counter
+    
+    // Current bank mappings
+    uint8_t currentPRGBanks[4];  // 8KB banks at $8000, $A000, $C000, $E000
+    uint8_t currentCHRBanks[8];  // 1KB banks at $0000-$1FFF
+    
+    MMC3State() {
+        bankSelect = 0;
+        for (int i = 0; i < 8; i++) bankData[i] = 0;
+        mirroring = 0;
+        prgRamProtect = 0;
+        irqLatch = 0;
+        irqCounter = 0;
+        irqEnable = false;
+        irqReload = false;
+        
+        // Initialize bank mappings
+        for (int i = 0; i < 4; i++) currentPRGBanks[i] = 0;
+        for (int i = 0; i < 8; i++) currentCHRBanks[i] = 0;
+    }
+} mmc3;
+
+void writeMMC3Register(uint16_t address, uint8_t value);
+void updateMMC3Banks();
+void stepMMC3IRQ();  // Call this during PPU rendering
+
+bool mmc3IRQPending() const { return mmc3.irqCounter == 0 && mmc3.irqEnable; }
+
+
 };
 
 #endif // SMB_EMULATOR_HPP
