@@ -1,9 +1,11 @@
 #ifndef SMB_EMULATOR_HPP
 #define SMB_EMULATOR_HPP
 
+#include <cstring>
 #include <cstdint>
 #include <string>
 #include <fstream>
+
 
 // Forward declarations
 class APU;
@@ -36,10 +38,15 @@ public:
     void step();    // Execute one instruction
     
     // Rendering
-    void render(uint32_t* buffer);
     void render16(uint16_t* buffer);
     void renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight);
+#ifndef __DJGPP__
+    void render(uint32_t* buffer);
     void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
+#else
+    void render(unsigned int* buffer);
+    void renderScaled32(unsigned int* buffer, int screenWidth, int screenHeight);
+#endif
     void renderDirectFast(uint16_t* buffer, int screenWidth, int screenHeight);
     
     // Audio

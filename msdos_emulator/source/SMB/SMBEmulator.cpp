@@ -1,5 +1,7 @@
-#include <iostream>
 #include <cstring>
+#include <cstdint>
+#include <string>
+#include <fstream>
 #include "SMBEmulator.hpp"
 #include "../Emulation/APU.hpp"
 #include "../Emulation/PPU.hpp"
