@@ -184,7 +184,7 @@ uint8_t PPU::readCHR(int index)
 {
     if (index < 0x2000)
     {
-        return engine.getCHR()[index];
+        return engine.readCHRData(index);
     }
     else
     {
@@ -1398,4 +1398,20 @@ void PPU::captureFrameScroll() {
     frameCtrl = ppuCtrl;  // CAPTURE THE CONTROL REGISTER TOO!
     printf("CAPTURE: Frame scroll=$%02X, Ctrl=$%02X, Nametable=%d\n", 
            frameScrollX, frameCtrl, (frameCtrl & 0x01));
+}
+
+void PPU::invalidateTileCache()
+{
+    if (g_comprehensiveCacheInit) {
+        memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
+        for (int i = 0; i < 512 * 8; i++) {
+            g_comprehensiveCache[i].is_valid = false;
+        }
+        
+        // Clear flip cache too
+        g_flipCache.clear();
+        g_flipCacheIndex.clear();
+        
+        printf("PPU tile cache invalidated due to CHR bank switch\n");
+    }
 }

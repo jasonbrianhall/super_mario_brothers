@@ -90,8 +90,9 @@ void setDataBuffer(uint8_t val) { vramBuffer = val; }
     void setSprite0Hit(bool hit);
     uint8_t getMask() const { return ppuMask; }
     void updateRenderRegisters();
-void captureFrameScroll();
-
+    void captureFrameScroll();
+    void invalidateTileCache();
+    
 private:
     SMBEmulator& engine;
 

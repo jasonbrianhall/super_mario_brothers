@@ -1758,6 +1758,9 @@ void SMBEmulator::updateMMC1Banks()
     }
     
     // Update CHR banking
+    uint8_t oldCHRBank0 = mmc1.currentCHRBank0;
+    uint8_t oldCHRBank1 = mmc1.currentCHRBank1;
+    
     if (mmc1.control & 0x10) {
         // 4KB CHR mode
         mmc1.currentCHRBank0 = mmc1.chrBank0;
@@ -1768,19 +1771,93 @@ void SMBEmulator::updateMMC1Banks()
         mmc1.currentCHRBank1 = mmc1.currentCHRBank0 + 1;
     }
     
+    // INVALIDATE CACHES IF CHR BANKS CHANGED
+    if (oldCHRBank0 != mmc1.currentCHRBank0 || oldCHRBank1 != mmc1.currentCHRBank1) {
+        ppu->invalidateTileCache();
+    }
+    
     printf("MMC1 Banks: PRG=%d, CHR0=%d, CHR1=%d (control=$%02X)\n", 
            mmc1.currentPRGBank, mmc1.currentCHRBank0, mmc1.currentCHRBank1, mmc1.control);
 }
 
 void SMBEmulator::writeGxROMRegister(uint16_t address, uint8_t value)
 {
-    // Mapper 66: Write to $8000-$FFFF sets both PRG and CHR banks
-    // Bits 4-5: PRG bank (32KB)
-    // Bits 0-1: CHR bank (8KB)
+    uint8_t oldCHRBank = gxrom.chrBank;
     
+    // Mapper 66: Write to $8000-$FFFF sets both PRG and CHR banks
     gxrom.prgBank = (value >> 4) & 0x03;  // Bits 4-5
     gxrom.chrBank = value & 0x03;         // Bits 0-1
     
+    // Invalidate cache if CHR bank changed
+    if (oldCHRBank != gxrom.chrBank) {
+        ppu->invalidateTileCache();
+    }
+    
     printf("GxROM Bank Switch: PRG=%d, CHR=%d (value=$%02X)\n", 
            gxrom.prgBank, gxrom.chrBank, value);
+}
+
+uint8_t SMBEmulator::readCHRData(uint16_t address)
+{
+    if (address >= 0x2000) return 0;
+    
+    // Debug sprite tile reads (Mario's tiles are typically in the $0000-$0FFF range)
+    static int debugCounter = 0;
+    bool isSpriteTile = (address >= 0x0000 && address < 0x1000);
+    
+    if (nesHeader.mapper == 0) {
+        // NROM - no CHR banking
+        if (address < chrSize) {
+            return chrROM[address];
+        }
+    }
+    else if (nesHeader.mapper == 1) {
+        // MMC1 CHR banking
+        if (mmc1.control & 0x10) {
+            // 4KB CHR mode
+            if (address < 0x1000) {
+                // First 4KB ($0000-$0FFF) - use CHR bank 0
+                uint32_t chrAddr = (mmc1.currentCHRBank0 * 0x1000) + address;
+                
+                // Debug Mario's sprite reads
+                if (isSpriteTile && debugCounter++ < 5) {
+                    printf("SPRITE CHR: $%04X -> Bank %d offset $%04X = ROM[$%05X] = $%02X\n", 
+                           address, mmc1.currentCHRBank0, address, chrAddr, 
+                           (chrAddr < chrSize) ? chrROM[chrAddr] : 0);
+                }
+                
+                if (chrAddr < chrSize) {
+                    return chrROM[chrAddr];
+                }
+            } else {
+                // Second 4KB ($1000-$1FFF) - use CHR bank 1
+                uint32_t chrAddr = (mmc1.currentCHRBank1 * 0x1000) + (address - 0x1000);
+                
+                if (debugCounter++ < 5) {
+                    printf("BG CHR: $%04X -> Bank %d offset $%04X = ROM[$%05X] = $%02X\n", 
+                           address, mmc1.currentCHRBank1, address - 0x1000, chrAddr,
+                           (chrAddr < chrSize) ? chrROM[chrAddr] : 0);
+                }
+                
+                if (chrAddr < chrSize) {
+                    return chrROM[chrAddr];
+                }
+            }
+        } else {
+            // 8KB CHR mode
+            uint32_t chrAddr = (mmc1.currentCHRBank0 * 0x2000) + address;
+            if (chrAddr < chrSize) {
+                return chrROM[chrAddr];
+            }
+        }
+    }
+    else if (nesHeader.mapper == 66) {
+        // GxROM CHR banking - 8KB banks
+        uint32_t chrAddr = (gxrom.chrBank * 0x2000) + address;
+        if (chrAddr < chrSize) {
+            return chrROM[chrAddr];
+        }
+    }
+    
+    return 0;
 }
