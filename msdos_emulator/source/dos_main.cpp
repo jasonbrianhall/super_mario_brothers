@@ -1014,6 +1014,7 @@ void AllegroMainWindow::run(const char* romFilename)
     static int outlierCount = 0;
     
     while (gameRunning) {
+        engine.update();
         #ifdef __DJGPP__
         // TSC timing with outlier rejection
         if (cpuFreqMHz == 0) {

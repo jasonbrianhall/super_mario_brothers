@@ -193,14 +193,15 @@ void SMBEmulator::handleNMI()
     
     nmiCount++;
     if (debugNMI && nmiCount % 60 == 0) {
-        printf("NMI #%d: PC=$%04X -> NMI vector\n", nmiCount, regPC);
+        printf("NMI #%d: PC=$%04X\n", nmiCount, regPC);
     }
     
-    // NMI is NOT maskable - remove the interrupt flag check
-    
+    // Push PC and status to stack
     pushWord(regPC);
     pushByte(regP & ~FLAG_BREAK);
     setFlag(FLAG_INTERRUPT, true);
+    
+    // Jump to NMI vector
     regPC = readWord(0xFFFA);
     
     if (debugNMI && nmiCount % 60 == 0) {
@@ -214,37 +215,37 @@ void SMBEmulator::handleNMI()
 void SMBEmulator::update()
 {
     if (!romLoaded) return;
-    
+
     static int frameCount = 0;
     frameCycles = 0;
-    
-    // Execute most of the frame
-    while (frameCycles < CYCLES_PER_FRAME - 1000) {
+
+    const int VISIBLE_FRAME_CYCLES = 24100;     // Approximate end of scanline rendering
+    const int CYCLES_PER_FRAME = 29780;         // Total cycles per NTSC frame
+
+    // Emulate visible scanlines (pre-VBlank)
+    while (frameCycles < VISIBLE_FRAME_CYCLES) {
         executeInstruction();
     }
-    
-    // Set VBlank flag BEFORE finishing the frame
+
+    // Begin VBlank
     ppu->setVBlankFlag(true);
-    
-    // Execute remaining cycles with VBlank active
-    while (frameCycles < CYCLES_PER_FRAME) {
-        executeInstruction();
-    }
-    
-    // Generate NMI if enabled
+
+    // Trigger NMI if enabled
     if (ppu->getControl() & 0x80) {
         handleNMI();
     }
-    
-    frameCount++;
-    if (frameCount % 60 == 0) {
-        printf("Frame %d, PC=$%04X, PPUMASK=$%02X\n", frameCount, regPC, ppu->getMask());
+
+    // Emulate VBlank period (non-visible scanlines)
+    while (frameCycles < CYCLES_PER_FRAME) {
+        executeInstruction();
     }
-    
-    // Keep VBlank flag set until next frame starts
-    // Don't clear it here - let $2002 reads clear it
-    
-    // Update APU
+
+    // End VBlank at end of frame
+    ppu->setVBlankFlag(false);
+
+    frameCount++;
+
+    // Advance audio frame
     if (Configuration::getAudioEnabled()) {
         apu->stepFrame();
     }
@@ -277,18 +278,17 @@ void SMBEmulator::step()
 
 void SMBEmulator::executeInstruction()
 {
-    // Debug the stuck PC
-    static bool debugStuckPC = true;
-    /*if (debugStuckPC && (regPC == 0x8012 || regPC == 0x8057)) {
+    // Debug the stuck PC  
+    if (regPC == 0x8150) {
         static int count = 0;
         count++;
-        if (count % 1000 == 0) {  // Every 1000 instructions
-            uint8_t opcode = readByte(regPC);
-            uint8_t operand = readByte(regPC + 1);
-            printf("Stuck at $%04X - count: %d, A=$%02X, P=$%02X, opcode=$%02X $%02X\n", 
-                   regPC, count, regA, regP, opcode, operand);
+        if (count % 1000 == 0) {
+            uint8_t opcode = readByte(0x8150);
+            uint8_t operand = readByte(0x8151);
+            printf("Stuck at $8150 - opcode=$%02X $%02X, A=$%02X, P=$%02X\n", 
+                   opcode, operand, regA, regP);
         }
-    }*/
+    }
     
     uint8_t opcode = fetchByte();
     uint8_t cycles = instructionCycles[opcode];
@@ -624,7 +624,9 @@ uint8_t SMBEmulator::readByte(uint16_t address)
     }
     else if (address < 0x4000) {
         // PPU registers (mirrored every 8 bytes)
-        return ppu->readRegister(0x2000 + (address & 0x7));
+        uint16_t ppuAddr = 0x2000 + (address & 0x7);
+        //printf("Reading PPU register $%04X (mapped to $%04X)\n", address, ppuAddr);
+        return ppu->readRegister(ppuAddr);
     }
     else if (address < 0x4020) {
         // APU and I/O registers

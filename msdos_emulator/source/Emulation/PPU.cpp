@@ -95,10 +95,10 @@ PPU::PPU(SMBEmulator& engine) :
     currentAddress = 0;
     writeToggle = false;
     
-    // Initialize PPU registers to proper reset state
+    // Initialize PPU registers to proper reset state for SMB
     ppuCtrl = 0x00;
     ppuMask = 0x00;
-    ppuStatus = 0xA0;  // VBlank flag set initially
+    ppuStatus = 0x80;  // VBlank flag set initially (IMPORTANT FOR SMB)
     oamAddress = 0x00;
     ppuScrollX = 0x00;
     ppuScrollY = 0x00;
@@ -208,42 +208,41 @@ uint8_t PPU::readDataRegister()
 
 uint8_t PPU::readRegister(uint16_t address)
 {
-    switch(address)
-    {
-    // PPUSTATUS
-    case 0x2002:
-        {
-            uint8_t status = ppuStatus;
-            writeToggle = false;        // Reading $2002 clears write toggle
-            ppuStatus &= 0x7F;         // Clear VBlank flag after reading
-            
-            // DEBUG: Show VBlank reads
-            static bool debugVBlank = true;
-            if (debugVBlank && (status & 0x80)) {
-                printf("VBlank read: $%02X (VBlank cleared)\n", status);
-            }
-            
-            return status;
-        }
-    // OAMDATA
-    case 0x2004:
-        return oam[oamAddress];
-    // PPUDATA
-    case 0x2007:
-        return readDataRegister();
-    default:
-        break;
-    }
+   switch(address)
+   {
+   // PPUSTATUS
+case 0x2002:
+{
+    uint8_t status = ppuStatus;
+    writeToggle = false;
+    
+    // Clear VBlank flag immediately when read
+    ppuStatus &= 0x7F;
+    
+    return status;
+}
 
-    return 0;
+   // OAMDATA
+   case 0x2004:
+       return oam[oamAddress];
+   // PPUDATA
+   case 0x2007:
+       return readDataRegister();
+   default:
+       break;
+   }
+
+   return 0;
 }
 
 void PPU::setVBlankFlag(bool flag)
 {
     if (flag) {
         ppuStatus |= 0x80;  // Set VBlank flag
+        printf("VBlank flag SET - ppuStatus now $%02X\n", ppuStatus);
     } else {
         ppuStatus &= 0x7F;  // Clear VBlank flag
+        printf("VBlank flag CLEARED - ppuStatus now $%02X\n", ppuStatus);
     }
 }
 
