@@ -108,7 +108,7 @@ PPU::PPU(SMBEmulator& engine) :
     memset(palette, 0, sizeof(palette));
     memset(nametable, 0, sizeof(nametable));
     memset(oam, 0, sizeof(oam));
-    
+    sprite0Hit = false;
     // Set default background color (usually black)
     palette[0] = 0x0F;  // Black
 }
@@ -206,28 +206,40 @@ uint8_t PPU::readDataRegister()
     return value;
 }
 
+void PPU::setSprite0Hit(bool hit) {
+    sprite0Hit = hit;
+}
+
 uint8_t PPU::readRegister(uint16_t address)
 {
    switch(address)
    {
-   // PPUSTATUS
-case 0x2002:
-{
-    uint8_t status = ppuStatus;
-    writeToggle = false;
-    
-    // Clear VBlank flag immediately when read
-    ppuStatus &= 0x7F;
-    
-    return status;
-}
+   case 0x2002: // PPUSTATUS
+   {
+       uint8_t status = ppuStatus;
+       
+       // Add sprite 0 hit flag (bit 6)
+       if (sprite0Hit) {
+           status |= 0x40;
+       }
+       
+       writeToggle = false;
+       
+       // Clear VBlank flag AND sprite 0 hit flag after reading
+       if (ppuStatus & 0x80) {
+           ppuStatus &= 0x7F;
+       }
+       sprite0Hit = false;  // Clear sprite 0 hit
+       
+       return status;
+   }
 
-   // OAMDATA
-   case 0x2004:
+   case 0x2004: // OAMDATA
        return oam[oamAddress];
-   // PPUDATA
-   case 0x2007:
+       
+   case 0x2007: // PPUDATA
        return readDataRegister();
+       
    default:
        break;
    }
@@ -239,10 +251,8 @@ void PPU::setVBlankFlag(bool flag)
 {
     if (flag) {
         ppuStatus |= 0x80;  // Set VBlank flag
-        printf("VBlank flag SET - ppuStatus now $%02X\n", ppuStatus);
     } else {
         ppuStatus &= 0x7F;  // Clear VBlank flag
-        printf("VBlank flag CLEARED - ppuStatus now $%02X\n", ppuStatus);
     }
 }
 

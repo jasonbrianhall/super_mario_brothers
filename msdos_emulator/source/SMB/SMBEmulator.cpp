@@ -221,30 +221,30 @@ void SMBEmulator::update()
     static int frameCount = 0;
     frameCycles = 0;
 
-    const int VISIBLE_FRAME_CYCLES = 24100;     // Approximate end of scanline rendering
-    const int VBLANK_FLAG_SET_CYCLES = 24300;   // Small delay before VBlank flag is set
-    const int NMI_TRIGGER_CYCLES = 24400;       // Small delay before NMI triggers
-    const int CYCLES_PER_FRAME = 29780;         // Total cycles per NTSC frame
+    // More precise NTSC timing
+    const int CYCLES_PER_SCANLINE = 113;
+    const int VISIBLE_SCANLINES = 240;
+    const int VBLANK_START_SCANLINE = 241;
+    const int TOTAL_SCANLINES = 262;
 
-    // Emulate visible scanlines (pre-VBlank)
-    while (frameCycles < VISIBLE_FRAME_CYCLES) {
-        executeInstruction();
-        if (frameCycles >= CYCLES_PER_FRAME) break; // Safety check
+    // Execute visible scanlines (0-240)
+    for (int scanline = 0; scanline <= VISIBLE_SCANLINES; scanline++) {
+        for (int cycle = 0; cycle < CYCLES_PER_SCANLINE; cycle++) {
+            executeInstruction();
+        }
+        
+        // Simulate sprite 0 hit around scanline 32 (status bar area)
+        if (scanline == 32 && (ppu->getMask() & 0x18)) { // If rendering enabled
+            ppu->setSprite0Hit(true);
+        }
     }
 
-    // Small gap before VBlank flag is set
-    while (frameCycles < VBLANK_FLAG_SET_CYCLES) {
-        executeInstruction();
-        if (frameCycles >= CYCLES_PER_FRAME) break;
-    }
-
-    // Set VBlank flag
+    // Start VBlank on scanline 241
     ppu->setVBlankFlag(true);
-
-    // Small gap before NMI triggers (this gives polling loops a chance to see the flag)
-    while (frameCycles < NMI_TRIGGER_CYCLES) {
+    
+    // Execute a few cycles to let the game see VBlank before NMI
+    for (int i = 0; i < 3; i++) {
         executeInstruction();
-        if (frameCycles >= CYCLES_PER_FRAME) break;
     }
 
     // Trigger NMI if enabled
@@ -252,13 +252,16 @@ void SMBEmulator::update()
         handleNMI();
     }
 
-    // Continue VBlank period
-    while (frameCycles < CYCLES_PER_FRAME) {
-        executeInstruction();
+    // Execute remaining VBlank scanlines (241-261)
+    for (int scanline = VBLANK_START_SCANLINE; scanline < TOTAL_SCANLINES; scanline++) {
+        for (int cycle = 0; cycle < CYCLES_PER_SCANLINE; cycle++) {
+            executeInstruction();
+        }
     }
 
-    // End VBlank at end of frame
+    // Clear VBlank flag and sprite 0 hit at start of next frame
     ppu->setVBlankFlag(false);
+    ppu->setSprite0Hit(false);
 
     frameCount++;
 
@@ -267,6 +270,7 @@ void SMBEmulator::update()
         apu->stepFrame();
     }
 }
+
 void SMBEmulator::reset()
 {
     if (!romLoaded) return;
@@ -294,15 +298,28 @@ void SMBEmulator::step()
 
 void SMBEmulator::executeInstruction()
 {
-    // Debug the stuck PC  
+    // Debug the stuck PC with more detail
     if (regPC == 0x8150) {
         static int count = 0;
         count++;
         if (count % 1000 == 0) {
             uint8_t opcode = readByte(0x8150);
-            uint8_t operand = readByte(0x8151);
-            printf("Stuck at $8150 - opcode=$%02X $%02X, A=$%02X, P=$%02X\n", 
-                   opcode, operand, regA, regP);
+            uint8_t operand1 = readByte(0x8151);
+            uint8_t operand2 = readByte(0x8152);
+            uint8_t nextOpcode = readByte(0x8153);
+            uint8_t andOperand = readByte(0x8154);
+            
+            printf("At $8150: %02X %02X %02X (AND #$%02X) A=$%02X P=$%02X\n", 
+                   opcode, operand1, operand2, andOperand, regA, regP);
+            
+            // Force VBlank and immediately check it
+            printf("Before force: PPU Status = $%02X\n", ppu->getStatus());
+            ppu->setVBlankFlag(true);
+            printf("After force: PPU Status = $%02X\n", ppu->getStatus());
+            
+            // Test reading $2002 directly
+            uint8_t directRead = readByte(0x2002);
+            printf("Direct read $2002 = $%02X\n", directRead);
         }
     }
     
