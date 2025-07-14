@@ -1,0 +1,19 @@
+docker run --rm -v $(pwd):/src:z -u $(id -u):$(id -g) djfdyuruiry/djgpp /bin/sh -c "\
+mkdir -p /src/build/dos/obj && \
+g++ -c /src/source/Configuration.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/Configuration.o -O2 -fpermissive -w && \
+g++ -c /src/source/Emulation/APU.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/APU.o -O2 -fpermissive -w && \
+g++ -c /src/source/Emulation/Controller.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/Controller.o -O2 -fpermissive -w && \
+g++ -c /src/source/Emulation/MemoryAccess.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/MemoryAccess.o -O2 -fpermissive -w && \
+g++ -c /src/source/Emulation/PPU.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/PPU.o -O2 -fpermissive -w && \
+g++ -c /src/source/Emulation/AllegroMidi.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/AllegroMidi.o -O2 -fpermissive -w && \
+g++ -c /src/source/SMB/SMB.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/SMB.o -O2 -fpermissive -w && \
+g++ -c /src/source/SMB/SMBData.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/SMBData.o -O2 -fpermissive -w && \
+g++ -c /src/source/SMB/SMBEngine.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/SMBEngine.o -O2 -fpermissive -w && \
+g++ -c /src/source/Util/Video.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/Video.o -O2 -fpermissive -w && \
+g++ -c /src/source/Util/VideoFilters.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/VideoFilters.o -O2 -fpermissive -w && \
+g++ -c /src/source/SMBRom.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/SMBRom.o -O2 -fpermissive -w && \
+g++ -c /src/source/dos_main.cpp -I/src/build/dos/source-install/include -o /src/build/dos/obj/Main.o -O2 -fpermissive -w && \
+g++ /src/build/dos/obj/*.o -lalleg -lm -s -O6 -L/src/build/dos/source-install/lib -o /src/build/dos/smb.exe && \
+exe2coff /src/build/dos/smb.exe && \
+cat /src/build/dos/csdpmi/bin/CWSDSTUB.EXE /src/build/dos/smb > /src/build/dos/smb.exe"
+
