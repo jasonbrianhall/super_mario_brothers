@@ -24,43 +24,6 @@ struct FlipCacheEntry {
     uint8_t flip_flags;  // 1=flipX, 2=flipY, 3=flipXY
 };
 
-struct BankTileCache {
-    ComprehensiveTileCache* tiles;      // Array of 512 * 8 cache entries
-    std::vector<FlipCacheEntry> flipCache;
-    std::unordered_map<uint32_t, size_t> flipCacheIndex;
-    uint8_t bank_id;
-    bool is_allocated;
-    
-    BankTileCache() : tiles(nullptr), bank_id(0), is_allocated(false) {}
-    
-    ~BankTileCache() {
-        if (tiles) {
-            delete[] tiles;
-            tiles = nullptr;
-        }
-        is_allocated = false;
-    }
-    
-    void allocate(uint8_t bank) {
-        if (!is_allocated) {
-            tiles = new ComprehensiveTileCache[512 * 8];
-            memset(tiles, 0, sizeof(ComprehensiveTileCache) * 512 * 8);
-            bank_id = bank;
-            is_allocated = true;
-        }
-    }
-    
-    void deallocate() {
-        if (tiles) {
-            delete[] tiles;
-            tiles = nullptr;
-        }
-        flipCache.clear();
-        flipCacheIndex.clear();
-        is_allocated = false;
-    }
-};
-
 class SMBEmulator;  // Forward declaration
 
 /**
@@ -102,21 +65,7 @@ public:
     // Setter methods for load state
     void setVRAM(uint8_t* data) { memcpy(nametable, data, 2048); }
     void setOAM(uint8_t* data) { memcpy(oam, data, 256); }
-void setPaletteRAM(uint8_t* data) { 
-    memcpy(palette, data, 32); 
-    // Invalidate ALL tile caches when palette changes
-    if (g_comprehensiveCacheInit) {
-        memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
-        for (int i = 0; i < 512 * 8; i++) {
-            g_comprehensiveCache[i].is_valid = false;
-        }
-        // Clear old flip cache
-        g_flipCache.clear();
-        g_flipCacheIndex.clear();
-    }
-    // Clear ALL bank caches too
-    clearAllBankCaches();
-}
+    void setPaletteRAM(uint8_t* data);
 
     void setControl(uint8_t val) { ppuCtrl = val; }
     void setMask(uint8_t val) { ppuMask = val; }
@@ -141,13 +90,7 @@ void setPaletteRAM(uint8_t* data) {
     void updateRenderRegisters();
     void captureFrameScroll();
     void invalidateTileCache();
-    uint8_t getFrameCHRBank() const { return frameCHRBank; }
     
-    // Static bank cache management methods
-    static void clearAllBankCaches();
-    static void releaseBankCaches(const std::vector<uint8_t>& banksToKeep);
-    static size_t getBankCacheMemoryUsage();
-    void optimizeCacheMemory();  // Add this method declaration
     
 private:
     SMBEmulator& engine;
@@ -218,19 +161,9 @@ private:
     static bool g_comprehensiveCacheInit;
     static std::vector<FlipCacheEntry> g_flipCache;
     static std::unordered_map<uint32_t, size_t> g_flipCacheIndex;
-
-    // New bank cache system
-    static std::unordered_map<uint8_t, BankTileCache*> g_bankCaches;
-    static bool g_bankCacheInit;
     
-    // Bank cache management methods
-    BankTileCache* getBankCache(uint8_t bank);
-    void ensureBankCacheExists(uint8_t bank);
-    void releaseBankCache(uint8_t bank);
-
     // Tile caching methods - UPDATE SIGNATURES TO INCLUDE CHR BANK
     int getTileCacheIndex(uint16_t tile, uint8_t palette_type, uint8_t attribute);
-    void cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t attribute, uint8_t chr_bank);
     void renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset, bool flipX, bool flipY);
     void renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t palette_idx, int xOffset, int yOffset, bool flipX, bool flipY);
     void renderCachedSpriteWithPriority(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, int xOffset, int yOffset, bool flipX, bool flipY, bool behindBackground);
