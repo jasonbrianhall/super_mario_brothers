@@ -699,6 +699,7 @@ void PPU::renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset
     }
 }
 
+
 void PPU::renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, int xOffset, int yOffset, bool flipX, bool flipY)
 {
     // SAFETY: Check for invalid tile numbers first
@@ -828,7 +829,6 @@ void PPU::renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t sprite_pal
         }
     }
 }
-
 
 void PPU::render16(uint16_t* buffer)
 {
