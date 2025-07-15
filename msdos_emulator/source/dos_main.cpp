@@ -1005,53 +1005,7 @@ void AllegroMainWindow::run(const char* romFilename)
     printf("Resolution: %dx%d\n", SCREEN_W, SCREEN_H);
     printf("Audio: %s\n", dosAudioInitialized ? "Enabled" : "Disabled");
     
-    // TSC timing variables with outlier filtering
-    static unsigned long long frameStart = 0;
-    static double cpuFreqMHz = 0;
-    static double frameTimeHistory[60];
-    static int historyIndex = 0;
-    static double smoothedFrameTime = 1000.0 / Configuration::getFrameRate();
-    static int outlierCount = 0;
-    
     while (gameRunning) {
-        #ifdef __DJGPP__
-        // TSC timing with outlier rejection
-        if (cpuFreqMHz == 0) {
-            // Multi-sample TSC frequency detection
-            double frequencies[3];
-            for (int sample = 0; sample < 3; sample++) {
-                unsigned long long tsc1, tsc2;
-                clock_t c1, c2;
-                
-                c1 = clock();
-                while (clock() == c1); // Wait for tick boundary
-                c1 = clock();
-                asm volatile("rdtsc" : "=A" (tsc1));
-                
-                while (clock() - c1 < 3); // Wait 3 ticks
-                c2 = clock();
-                asm volatile("rdtsc" : "=A" (tsc2));
-                
-                double clockDiff = (double)(c2 - c1) / CLOCKS_PER_SEC;
-                frequencies[sample] = (double)(tsc2 - tsc1) / (clockDiff * 1000000.0);
-            }
-            
-            // Use median frequency
-            std::sort(frequencies, frequencies + 3);
-            cpuFreqMHz = frequencies[1];
-            printf("TSC frequency: %.2f MHz\n", cpuFreqMHz);
-            
-            // Initialize frame time history to target
-            for (int i = 0; i < 60; i++) {
-                frameTimeHistory[i] = smoothedFrameTime;
-            }
-        }
-        
-        asm volatile("rdtsc" : "=A" (frameStart));
-        #else
-        clock_t frameStart = clock();
-        #endif
-        
         handleInput();
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
@@ -1069,101 +1023,11 @@ void AllegroMainWindow::run(const char* romFilename)
             }
             
             engine.render16(renderBuffer);
-            //engine.render(renderBuffer);
-            //engine.renderScaled32(renderBuffer, SCREEN_W, SCREEN_H);  // ✅ Cached hardware rendering
-            
             currentFrameBuffer = renderBuffer;
         }
         
         updateAndDraw();
-        
-        #ifdef __DJGPP__
-        if (cpuFreqMHz > 0) {
-            unsigned long long frameEnd;
-            asm volatile("rdtsc" : "=A" (frameEnd));
-            
-            double actualFrameTime = (double)(frameEnd - frameStart) / (cpuFreqMHz * 1000.0);
-            double targetFrameTime = 1000.0 / Configuration::getFrameRate();
-            
-            // Check for outliers (more than 20% deviation)
-            double deviation = fabs(actualFrameTime - targetFrameTime) / targetFrameTime;
-            
-            if (deviation <= 0.20 && actualFrameTime > 1.0 && actualFrameTime < 50.0) {
-                // Valid frame time - add to history
-                frameTimeHistory[historyIndex] = actualFrameTime;
-                historyIndex = (historyIndex + 1) % 60;
-                
-                // Update smoothed frame time every 10 frames
-                if (historyIndex % 10 == 0) {
-                    double sum = 0;
-                    int validCount = 0;
-                    
-                    // Average only valid samples (within 20% of target)
-                    for (int i = 0; i < 60; i++) {
-                        double sampleDeviation = fabs(frameTimeHistory[i] - targetFrameTime) / targetFrameTime;
-                        if (sampleDeviation <= 0.20) {
-                            sum += frameTimeHistory[i];
-                            validCount++;
-                        }
-                    }
-                    
-                    if (validCount > 10) {
-                        smoothedFrameTime = sum / validCount;
-                    }
-                    
-                    // Debug output every 60 frames
-                    static int debugCounter = 0;
-                    if (++debugCounter >= 6) {
-                        printf("Smoothed: %.2fms (%d valid)\n", smoothedFrameTime, validCount);
-                        debugCounter = 0;
-                    }
-                }
-                
-                outlierCount = 0; // Reset outlier counter
-            } else {
-                // Outlier detected
-                outlierCount++;
-                if (outlierCount % 10 == 0) {
-                    printf("Frame outlier: %.2fms (%.1f%% dev)\n", actualFrameTime, deviation * 100);
-                }
-                
-                // If too many outliers, reset timing
-                if (outlierCount > 30) {
-                    printf("Too many outliers, resetting TSC timing\n");
-                    cpuFreqMHz = 0; // Force recalibration
-                    outlierCount = 0;
-                }
-            }
-            
-            // Wait for target frame time using smoothed average
-            unsigned long long currentTime;
-            double elapsedTime;
-            
-            do {
-                asm volatile("rdtsc" : "=A" (currentTime));
-                elapsedTime = (double)(currentTime - frameStart) / (cpuFreqMHz * 1000.0);
-                
-                // If we still have significant time left, sleep briefly
-                if (elapsedTime < smoothedFrameTime - 2.0) {
-                    rest(1);
-                } else if (elapsedTime < smoothedFrameTime) {
-                    // Busy wait with CPU yield for final precision
-                    __dpmi_yield();
-                }
-            } while (elapsedTime < smoothedFrameTime);
-        } else {
-            rest(1000 / Configuration::getFrameRate());
-        }
-        #else
-        // Non-DOS timing
-        clock_t frameEnd = clock();
-        double frameTime = ((double)(frameEnd - frameStart)) / CLOCKS_PER_SEC * 1000.0;
-        double targetFrameTime = 1000.0 / Configuration::getFrameRate();
-        double sleepTime = targetFrameTime - frameTime;
-        if (sleepTime > 0) {
-            rest(sleepTime);
-        }
-        #endif
+        vsync();
     }
     
     if (dosAudioInitialized) {
