@@ -933,43 +933,35 @@ void PPU::updateRenderRegisters()
 
 void PPU::renderCachedSpriteWithPriority(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, int xOffset, int yOffset, bool flipX, bool flipY, bool behindBackground)
 {
-    uint8_t palette_type = (sprite_palette & 0x03) + 1;
-    uint16_t* pixels;
-    
-    for (int row = 0; row < 8; row++) {
-        uint8_t plane1 = readCHR(tile * 16 + row);
-        uint8_t plane2 = readCHR(tile * 16 + row + 8);
-
-        for (int column = 0; column < 8; column++) {
-            uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + 
-                                   ((plane2 & (1 << column)) ? 2 : 0));
-            
-            if (paletteIndex == 0) continue; // Transparent
-            
-            uint8_t colorIndex = palette[0x10 + ((palette_type - 1) & 0x03) * 4 + paletteIndex];
-            uint32_t pixel32 = paletteRGB[colorIndex];
-            uint16_t pixel16 = ((pixel32 & 0xF80000) >> 8) | ((pixel32 & 0x00FC00) >> 5) | ((pixel32 & 0x0000F8) >> 3);
-            
-            int xPixel = xOffset + (flipX ? column : (7 - column));
-            int yPixel = yOffset + (flipY ? (7 - row) : row);
-            
-            if (xPixel >= 0 && xPixel < 256 && yPixel >= 0 && yPixel < 240) {
-                buffer[yPixel * 256 + xPixel] = pixel16;
-            }
-        }
+    // SAFETY: Check for invalid tile numbers first
+    if (tile >= 512) {
+        return; // Invalid tile, skip rendering
     }
-    return;
+    
+    uint8_t palette_type = (sprite_palette & 0x03) + 1;
+    
+    // SAFETY: Check cache initialization
+    if (!g_comprehensiveCacheInit) {
+        return; // Cache not initialized
+    }
+    
+    uint16_t* pixels;
     
     if (!flipX && !flipY) {
         // Use legacy cache (direct array access)
         int cacheIndex = getTileCacheIndex(tile, palette_type, 0);
-        if (cacheIndex >= 512 * 8) return;
+        
+        // CRITICAL: Bounds check the cache index
+        if (cacheIndex < 0 || cacheIndex >= 512 * 8) {
+            return; // Invalid cache index
+        }
         
         ComprehensiveTileCache& cache = g_comprehensiveCache[cacheIndex];
         
         // Check if already cached
         if (!cache.is_valid || cache.tile_id != tile || cache.palette_type != palette_type) {
-            // Cache the sprite tile (same as renderCachedSprite)
+            
+            // Cache the sprite tile
             for (int row = 0; row < 8; row++) {
                 uint8_t plane1 = readCHR(tile * 16 + row);
                 uint8_t plane2 = readCHR(tile * 16 + row + 8);
@@ -982,34 +974,120 @@ void PPU::renderCachedSpriteWithPriority(uint16_t* buffer, uint16_t tile, uint8_
                     if (paletteIndex == 0) {
                         pixel16 = 0;  // Transparent for sprites
                     } else {
-                        uint8_t colorIndex = palette[0x10 + ((palette_type - 1) & 0x03) * 4 + paletteIndex];
-                        uint32_t pixel32 = paletteRGB[colorIndex];
-                        pixel16 = ((pixel32 & 0xF80000) >> 8) | ((pixel32 & 0x00FC00) >> 5) | ((pixel32 & 0x0000F8) >> 3);
-                        if (pixel16 == 0) pixel16 = 1;  // Avoid confusion with transparency
+                        // SAFETY: Bounds check palette access
+                        int paletteAddr = 0x10 + ((palette_type - 1) & 0x03) * 4 + paletteIndex;
+                        if (paletteAddr >= 32) {
+                            pixel16 = 0; // Invalid palette address
+                        } else {
+                            uint8_t colorIndex = palette[paletteAddr];
+                            if (colorIndex >= 64) {
+                                pixel16 = 0; // Invalid color index
+                            } else {
+                                uint32_t pixel32 = paletteRGB[colorIndex];
+                                pixel16 = ((pixel32 & 0xF80000) >> 8) | ((pixel32 & 0x00FC00) >> 5) | ((pixel32 & 0x0000F8) >> 3);
+                                if (pixel16 == 0) pixel16 = 1;  // Avoid confusion with transparency
+                            }
+                        }
                     }
                     
                     int pixelIndex = row * 8 + (7 - column);
-                    cache.pixels[pixelIndex] = pixel16;
+                    // SAFETY: Bounds check pixel array
+                    if (pixelIndex >= 0 && pixelIndex < 64) {
+                        cache.pixels[pixelIndex] = pixel16;
+                    }
                 }
             }
             
             cache.tile_id = tile;
             cache.palette_type = palette_type;
-            cache.attribute = 0;
+            cache.attribute = 0;  // Sprites don't use attribute
             cache.is_valid = true;
         }
         pixels = cache.pixels;
     } else {
-        // Use legacy flip cache (same logic as renderCachedSprite)
+        // Use legacy flip cache for flipped sprites
         uint8_t flip_flags = (flipY ? 2 : 0) | (flipX ? 1 : 0);
         uint32_t key = getFlipCacheKey(tile, palette_type, 0, flip_flags);
         
         auto it = g_flipCacheIndex.find(key);
         if (it == g_flipCacheIndex.end()) {
-            // Create flip entry (same as above)
-            // ... flip cache creation code ...
+            // Need to create flip entry - first ensure normal version is cached
+            int cacheIndex = getTileCacheIndex(tile, palette_type, 0);
+            if (cacheIndex < 0 || cacheIndex >= 512 * 8) return;
+            
+            ComprehensiveTileCache& normalCache = g_comprehensiveCache[cacheIndex];
+            if (!normalCache.is_valid || normalCache.tile_id != tile || normalCache.palette_type != palette_type) {
+                // Cache normal version first (same code as above)
+                for (int row = 0; row < 8; row++) {
+                    uint8_t plane1 = readCHR(tile * 16 + row);
+                    uint8_t plane2 = readCHR(tile * 16 + row + 8);
+
+                    for (int column = 0; column < 8; column++) {
+                        uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + 
+                                               ((plane2 & (1 << column)) ? 2 : 0));
+                        
+                        uint16_t pixel16;
+                        if (paletteIndex == 0) {
+                            pixel16 = 0;
+                        } else {
+                            int paletteAddr = 0x10 + ((palette_type - 1) & 0x03) * 4 + paletteIndex;
+                            if (paletteAddr >= 32) {
+                                pixel16 = 0;
+                            } else {
+                                uint8_t colorIndex = palette[paletteAddr];
+                                if (colorIndex >= 64) {
+                                    pixel16 = 0;
+                                } else {
+                                    uint32_t pixel32 = paletteRGB[colorIndex];
+                                    pixel16 = ((pixel32 & 0xF80000) >> 8) | ((pixel32 & 0x00FC00) >> 5) | ((pixel32 & 0x0000F8) >> 3);
+                                    if (pixel16 == 0) pixel16 = 1;
+                                }
+                            }
+                        }
+                        
+                        int pixelIndex = row * 8 + (7 - column);
+                        if (pixelIndex >= 0 && pixelIndex < 64) {
+                            normalCache.pixels[pixelIndex] = pixel16;
+                        }
+                    }
+                }
+                
+                normalCache.tile_id = tile;
+                normalCache.palette_type = palette_type;
+                normalCache.attribute = 0;
+                normalCache.is_valid = true;
+            }
+            
+            FlipCacheEntry flipEntry;
+            flipEntry.tile_id = tile;
+            flipEntry.palette_type = palette_type;
+            flipEntry.attribute = 0;
+            flipEntry.flip_flags = flip_flags;
+            
+            // Apply flipping
+            for (int row = 0; row < 8; row++) {
+                for (int column = 0; column < 8; column++) {
+                    int srcIndex = row * 8 + column;
+                    int dstRow = flipY ? (7 - row) : row;
+                    int dstColumn = flipX ? (7 - column) : column;
+                    int dstIndex = dstRow * 8 + dstColumn;
+                    
+                    if (srcIndex >= 0 && srcIndex < 64 && dstIndex >= 0 && dstIndex < 64) {
+                        flipEntry.pixels[dstIndex] = normalCache.pixels[srcIndex];
+                    }
+                }
+            }
+            
+            size_t newIndex = g_flipCache.size();
+            g_flipCache.push_back(flipEntry);
+            g_flipCacheIndex[key] = newIndex;
+            pixels = g_flipCache[newIndex].pixels;
+        } else {
+            if (it->second >= g_flipCache.size()) {
+                return; // Invalid flip cache index
+            }
+            pixels = g_flipCache[it->second].pixels;
         }
-        pixels = g_flipCache[it->second].pixels;
     }
     
     // Draw sprites with background priority checking
@@ -1024,18 +1102,21 @@ void PPU::renderCachedSpriteWithPriority(uint16_t* buffer, uint16_t tile, uint8_
         for (int column = 0; column < 8; column++) {
             int x = xOffset + column;
             if (x >= 0 && x < 256) {
-                uint16_t spritePixel = pixels[pixelIndex];
-                if (spritePixel != 0) {  // Non-transparent sprite pixel
-                    uint16_t backgroundPixel = buffer[y * 256 + x];
-                    uint32_t bgColor32 = paletteRGB[palette[0]];
-                    uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | ((bgColor32 & 0x00FC00) >> 5) | ((bgColor32 & 0x0000F8) >> 3);
-                    
-                    // Check if background pixel is non-transparent
-                    bool backgroundVisible = (backgroundPixel != bgColor16);
-                    
-                    // Priority logic: draw sprite unless it's behind background AND background is visible
-                    if (!behindBackground || !backgroundVisible) {
-                        buffer[y * 256 + x] = spritePixel;
+                // SAFETY: Bounds check pixel array access
+                if (pixelIndex >= 0 && pixelIndex < 64) {
+                    uint16_t spritePixel = pixels[pixelIndex];
+                    if (spritePixel != 0) {  // Non-transparent sprite pixel
+                        uint16_t backgroundPixel = buffer[y * 256 + x];
+                        uint32_t bgColor32 = paletteRGB[palette[0]];
+                        uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | ((bgColor32 & 0x00FC00) >> 5) | ((bgColor32 & 0x0000F8) >> 3);
+                        
+                        // Check if background pixel is non-transparent
+                        bool backgroundVisible = (backgroundPixel != bgColor16);
+                        
+                        // Priority logic: draw sprite unless it's behind background AND background is visible
+                        if (!behindBackground || !backgroundVisible) {
+                            buffer[y * 256 + x] = spritePixel;
+                        }
                     }
                 }
             }
