@@ -1063,7 +1063,13 @@ void AllegroMainWindow::run()
         }
         
         updateAndDraw();
+        #ifdef __DJGPP__
+        // DOS: Let vsync handle all timing
         vsync();
+        #else
+        // Linux: Simple rest
+        rest(1000 / Configuration::getFrameRate());
+        #endif
     }
     
     if (dosAudioInitialized) {
