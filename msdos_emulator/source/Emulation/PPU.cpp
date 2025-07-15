@@ -916,8 +916,10 @@ void PPU::writeByte(uint16_t address, uint8_t value)
 {
     // Mirror all addresses above $3fff
     address &= 0x3fff;
+
     if (address < 0x2000)
     {
+        printf("1\n");
         // CHR-RAM write - CRITICAL FOR UxROM!
         
         // ONLY invalidate cache if the CHR data actually changed
@@ -926,12 +928,12 @@ void PPU::writeByte(uint16_t address, uint8_t value)
             engine.writeCHRData(address, value);
             
             // Only invalidate affected tiles, not entire cache
-            // Calculate which tile this address affects
             uint16_t tileNum = address / 16;
             
-            // Invalidate just this tile in all caches (much more efficient)
+            // Invalidate just this tile in all caches
+            printf("Cache init %i\n", g_comprehensiveCacheInit);
             if (g_comprehensiveCacheInit) {
-                for (int i = 0; i < 8; i++) {  // 8 palette variations per tile
+                for (int i = 0; i < 8; i++) {
                     int cacheIndex = (tileNum * 8) + i;
                     if (cacheIndex < 512 * 8) {
                         g_comprehensiveCache[cacheIndex].is_valid = false;
@@ -939,7 +941,7 @@ void PPU::writeByte(uint16_t address, uint8_t value)
                 }
             }
             
-            // Invalidate in bank caches too (only the affected tile)
+            // Invalidate in bank caches too
             for (auto& pair : g_bankCaches) {
                 BankTileCache* bankCache = pair.second;
                 if (bankCache && bankCache->is_allocated) {
@@ -951,25 +953,64 @@ void PPU::writeByte(uint16_t address, uint8_t value)
                     }
                 }
             }
-            
-            // Also clear flip cache entries for this tile
-            auto flipIt = g_flipCacheIndex.begin();
-            while (flipIt != g_flipCacheIndex.end()) {
-                uint32_t key = flipIt->first;
-                uint16_t cachedTile = (key >> 16) & 0xFFFF;
-                if (cachedTile == tileNum) {
-                    flipIt = g_flipCacheIndex.erase(flipIt);
-                } else {
-                    ++flipIt;
-                }
-            }
-        } else {
-            // Data didn't change, no need to write or invalidate
         }
     }
     else if (address < 0x3f00)
     {
-        nametable[getNametableIndex(address)] = value;
+        // Nametable write
+        uint16_t nametableIndex = getNametableIndex(address);
+        uint8_t oldValue = nametable[nametableIndex];
+        
+        if (oldValue != value) {
+
+            nametable[nametableIndex] = value;
+            
+            // CRITICAL FIX: Invalidate cache when nametable changes!
+            // This is needed for animated tiles (like coin blocks)
+            
+            // The cache is indexed by nametable address, so we need to
+            // invalidate any cached tile at this nametable position
+            
+            // Calculate tile position
+            int tileX = (address & 0x3FF) % 32;
+            int tileY = (address & 0x3FF) / 32;
+            
+            // For safety, invalidate a broader range since tile rendering
+            // might be affected by neighboring tiles (attributes, etc.)
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    int checkY = tileY + dy;
+                    int checkX = tileX + dx;
+                    
+                    if (checkX >= 0 && checkX < 32 && checkY >= 0 && checkY < 30) {
+                        // Calculate the nametable address for this position
+                        uint16_t checkAddr = 0x2000 + (checkY * 32) + checkX;
+                        
+                        // Read what tile ID is now at this position
+                        uint8_t tileId = readByte(checkAddr);
+                        uint16_t fullTile = tileId + (ppuCtrl & (1 << 4) ? 256 : 0);
+                        
+                        // Invalidate all palette variations of this tile
+                        for (int p = 0; p < 8; p++) {
+                            int cacheIndex = (fullTile * 8) + p;
+                            if (cacheIndex < 512 * 8) {
+                                if (g_comprehensiveCacheInit) {
+                                    g_comprehensiveCache[cacheIndex].is_valid = false;
+                                }
+                                
+                                // Also invalidate in bank caches
+                                for (auto& pair : g_bankCaches) {
+                                    BankTileCache* bankCache = pair.second;
+                                    if (bankCache && bankCache->is_allocated) {
+                                        bankCache->tiles[cacheIndex].is_valid = false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     else if (address < 0x3f20)
     {
