@@ -766,7 +766,10 @@ void PPU::render16(uint16_t* buffer)
             if (y >= 0xef || x >= 0xf9) continue;
 
             y++;
-            uint16_t tile = index + (ppuCtrl & (1 << 3) ? 256 : 0);
+            
+            // FIXED: Use the raw sprite index, let readCHR handle pattern table selection
+            uint16_t tile = index;  // Remove the +256 offset!
+            
             bool flipX = attributes & (1 << 6);
             bool flipY = attributes & (1 << 7);
             uint8_t sprite_palette = attributes & 0x03;
