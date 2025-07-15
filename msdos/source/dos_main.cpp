@@ -1063,12 +1063,93 @@ void AllegroMainWindow::run()
         }
         
         updateAndDraw();
+        
         #ifdef __DJGPP__
-        // DOS: Let vsync handle all timing
-        vsync();
+        if (cpuFreqMHz > 0) {
+            unsigned long long frameEnd;
+            asm volatile("rdtsc" : "=A" (frameEnd));
+            
+            double actualFrameTime = (double)(frameEnd - frameStart) / (cpuFreqMHz * 1000.0);
+            double targetFrameTime = 1000.0 / Configuration::getFrameRate();
+            
+            // Check for outliers (more than 20% deviation)
+            double deviation = fabs(actualFrameTime - targetFrameTime) / targetFrameTime;
+            
+            if (deviation <= 0.20 && actualFrameTime > 1.0 && actualFrameTime < 50.0) {
+                // Valid frame time - add to history
+                frameTimeHistory[historyIndex] = actualFrameTime;
+                historyIndex = (historyIndex + 1) % 60;
+                
+                // Update smoothed frame time every 10 frames
+                if (historyIndex % 10 == 0) {
+                    double sum = 0;
+                    int validCount = 0;
+                    
+                    // Average only valid samples (within 20% of target)
+                    for (int i = 0; i < 60; i++) {
+                        double sampleDeviation = fabs(frameTimeHistory[i] - targetFrameTime) / targetFrameTime;
+                        if (sampleDeviation <= 0.20) {
+                            sum += frameTimeHistory[i];
+                            validCount++;
+                        }
+                    }
+                    
+                    if (validCount > 10) {
+                        smoothedFrameTime = sum / validCount;
+                    }
+                    
+                    // Debug output every 60 frames
+                    static int debugCounter = 0;
+                    if (++debugCounter >= 6) {
+                        printf("Smoothed: %.2fms (%d valid)\n", smoothedFrameTime, validCount);
+                        debugCounter = 0;
+                    }
+                }
+                
+                outlierCount = 0; // Reset outlier counter
+            } else {
+                // Outlier detected
+                outlierCount++;
+                if (outlierCount % 10 == 0) {
+                    printf("Frame outlier: %.2fms (%.1f%% dev)\n", actualFrameTime, deviation * 100);
+                }
+                
+                // If too many outliers, reset timing
+                if (outlierCount > 30) {
+                    printf("Too many outliers, resetting TSC timing\n");
+                    cpuFreqMHz = 0; // Force recalibration
+                    outlierCount = 0;
+                }
+            }
+            
+            // Wait for target frame time using smoothed average
+            unsigned long long currentTime;
+            double elapsedTime;
+            
+            do {
+                asm volatile("rdtsc" : "=A" (currentTime));
+                elapsedTime = (double)(currentTime - frameStart) / (cpuFreqMHz * 1000.0);
+                
+                // If we still have significant time left, sleep briefly
+                if (elapsedTime < smoothedFrameTime - 2.0) {
+                    rest(1);
+                } else if (elapsedTime < smoothedFrameTime) {
+                    // Busy wait with CPU yield for final precision
+                    __dpmi_yield();
+                }
+            } while (elapsedTime < smoothedFrameTime);
+        } else {
+            rest(1000 / Configuration::getFrameRate());
+        }
         #else
-        // Linux: Simple rest
-        rest(1000 / Configuration::getFrameRate());
+        // Non-DOS timing
+        clock_t frameEnd = clock();
+        double frameTime = ((double)(frameEnd - frameStart)) / CLOCKS_PER_SEC * 1000.0;
+        double targetFrameTime = 1000.0 / Configuration::getFrameRate();
+        double sleepTime = targetFrameTime - frameTime;
+        if (sleepTime > 0) {
+            rest(sleepTime);
+        }
         #endif
     }
     
