@@ -2173,8 +2173,23 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
         }
     } else if (nesHeader.mapper == 2) {
         // UxROM - uses CHR-RAM (no banking, direct access)
+        static int debugCount = 0;
+        static bool hasNonZeroData = false;
+        
         if (address < chrSize) {
-            return chrROM[address];
+            uint8_t data = chrROM[address];
+            
+            // Debug first few reads and any non-zero data
+            if (debugCount < 20 || (!hasNonZeroData && data != 0)) {
+                printf("UxROM CHR read: addr=$%04X, data=$%02X\n", address, data);
+                debugCount++;
+                if (data != 0) {
+                    hasNonZeroData = true;
+                    printf("*** FOUND NON-ZERO CHR DATA! Game is using CHR-RAM ***\n");
+                }
+            }
+            
+            return data;
         }
     }
     

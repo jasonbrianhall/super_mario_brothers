@@ -82,6 +82,8 @@ public:
     uint8_t getMapper() const { return nesHeader.mapper; }
     void writeCNROMRegister(uint16_t address, uint8_t value);
     uint8_t readCHRDataFromBank(uint16_t address, uint8_t bank);
+    void writeCHRData(uint16_t address, uint8_t value);
+
 
 private:
     // 6502 CPU state
@@ -335,7 +337,6 @@ struct UxROMState {
 } uxrom;
 
 void writeUxROMRegister(uint16_t address, uint8_t value);
-void writeCHRData(uint16_t address, uint8_t value);
 
 };
 

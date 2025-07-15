@@ -909,7 +909,11 @@ void PPU::writeByte(uint16_t address, uint8_t value)
 
     if (address < 0x2000)
     {
-        // CHR (no-op)
+        // CHR-RAM write - CRITICAL FOR UxROM!
+        engine.writeCHRData(address, value);
+        
+        // Also invalidate tile caches when CHR data changes
+        clearAllBankCaches();
     }
     else if (address < 0x3f00)
     {
@@ -921,7 +925,6 @@ void PPU::writeByte(uint16_t address, uint8_t value)
         palette[address - 0x3f00] = value;
 
         // INVALIDATE ALL CACHES when palette changes
-        // 1. Clear old static cache
         if (g_comprehensiveCacheInit) {
             memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
             for (int i = 0; i < 512 * 8; i++) {
@@ -933,7 +936,7 @@ void PPU::writeByte(uint16_t address, uint8_t value)
             g_flipCacheIndex.clear();
         }
         
-        // 2. Clear ALL bank caches (THIS WAS MISSING!)
+        // Clear ALL bank caches
         clearAllBankCaches();
 
         // Mirroring
@@ -943,6 +946,7 @@ void PPU::writeByte(uint16_t address, uint8_t value)
         }
     }
 }
+
 void PPU::writeDataRegister(uint8_t value)
 {
     static bool debugPalette = true;
