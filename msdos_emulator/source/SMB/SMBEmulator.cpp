@@ -77,9 +77,9 @@ void SMBEmulator::writeCNROMRegister(uint16_t address, uint8_t value)
     cnrom.chrBank = value & 0x03;  // Only 2 bits for CHR bank
     
     // Invalidate cache if CHR bank changed
-    if (oldCHRBank != cnrom.chrBank) {
+    /*if (oldCHRBank != cnrom.chrBank) {
         ppu->invalidateTileCache();
-    }
+    }*/
     
 }
 
@@ -944,7 +944,7 @@ void SMBEmulator::updateMMC3Banks()
         mmc3.currentCHRBanks[7] = mmc3.bankData[5] % totalCHRBanks;  // R5 -> $1C00-$1FFF
     }
     
-    ppu->invalidateTileCache();
+    //ppu->invalidateTileCache();
 }
 
 void SMBEmulator::stepMMC3IRQ()
@@ -1965,9 +1965,9 @@ void SMBEmulator::updateMMC1Banks()
     }
     
     // INVALIDATE CACHES IF CHR BANKS CHANGED
-    if (oldCHRBank0 != mmc1.currentCHRBank0 || oldCHRBank1 != mmc1.currentCHRBank1) {
+    /*if (oldCHRBank0 != mmc1.currentCHRBank0 || oldCHRBank1 != mmc1.currentCHRBank1) {
         ppu->invalidateTileCache();
-    }
+    }*/
     
 }
 
@@ -1980,9 +1980,9 @@ void SMBEmulator::writeGxROMRegister(uint16_t address, uint8_t value)
     gxrom.chrBank = value & 0x03;         // Bits 0-1
     
     // Invalidate cache if CHR bank changed
-    if (oldCHRBank != gxrom.chrBank) {
+    /*if (oldCHRBank != gxrom.chrBank) {
         ppu->invalidateTileCache();
-    }
+    }*/
     
 }
 
@@ -2047,6 +2047,38 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
         if (chrAddr < chrSize) {
             return chrROM[chrAddr];
         }
+    }
+    
+    return 0;
+}
+
+uint8_t SMBEmulator::readCHRDataFromBank(uint16_t address, uint8_t bank)
+{
+    if (address >= 0x2000) return 0;
+    
+    // Calculate the address within the specified bank
+    uint32_t chrAddr;
+    
+    if (nesHeader.mapper == 66) {
+        // GxROM uses 8KB CHR banks
+        chrAddr = (bank * 0x2000) + address;
+    } else if (nesHeader.mapper == 4) {
+        // MMC3 uses 1KB CHR banks
+        chrAddr = (bank * 0x400) + (address % 0x400);
+    } else if (nesHeader.mapper == 1) {
+        // MMC1 uses 4KB CHR banks
+        chrAddr = (bank * 0x1000) + (address % 0x1000);
+    } else if (nesHeader.mapper == 3) {
+        // CNROM uses 8KB CHR banks
+        chrAddr = (bank * 0x2000) + address;
+    } else {
+        // Mapper 0 (NROM) - no banking
+        chrAddr = address;
+    }
+    
+    // Bounds check
+    if (chrAddr < chrSize) {
+        return chrROM[chrAddr];
     }
     
     return 0;

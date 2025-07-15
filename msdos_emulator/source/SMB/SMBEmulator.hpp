@@ -81,6 +81,8 @@ public:
     }
     uint8_t getMapper() const { return nesHeader.mapper; }
     void writeCNROMRegister(uint16_t address, uint8_t value);
+    uint8_t readCHRDataFromBank(uint16_t address, uint8_t bank);
+
 private:
     // 6502 CPU state
     uint8_t regA, regX, regY, regSP;
@@ -319,7 +321,6 @@ void updateMMC3Banks();
 void stepMMC3IRQ();  // Call this during PPU rendering
 
 bool mmc3IRQPending() const { return mmc3.irqCounter == 0 && mmc3.irqEnable; }
-
 
 };
 

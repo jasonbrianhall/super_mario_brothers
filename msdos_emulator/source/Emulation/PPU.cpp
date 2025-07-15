@@ -7,7 +7,8 @@ bool PPU::g_comprehensiveCacheInit = false;
 std::vector<FlipCacheEntry> PPU::g_flipCache;
 std::unordered_map<uint32_t, size_t> PPU::g_flipCacheIndex;
 PPU::ScalingCache PPU::g_scalingCache;
-
+std::unordered_map<uint8_t, BankTileCache*> PPU::g_bankCaches;
+bool PPU::g_bankCacheInit = false;
 
 static const uint8_t nametableMirrorLookup[][4] = {
     {0, 0, 1, 1}, // Vertical
@@ -524,17 +525,20 @@ void PPU::render(uint32_t* buffer)
 
 int PPU::getTileCacheIndex(uint16_t tile, uint8_t palette_type, uint8_t attribute)
 {
-    // Create unique index for each tile+palette+attribute combination
-    // tile: 0-511, palette_type: 0-7, attribute: 0-15 (but we only use 0-3 for most)
+    // Back to original indexing since each bank has its own cache array
     return (tile * 8) + (palette_type & 0x7);
 }
 
-void PPU::cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t attribute)
+void PPU::cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t attribute, uint8_t chr_bank)
 {
+    ensureBankCacheExists(chr_bank);
+    BankTileCache* bankCache = getBankCache(chr_bank);
+    if (!bankCache || !bankCache->is_allocated) return;
+    
     int cacheIndex = getTileCacheIndex(tile, palette_type, attribute);
     if (cacheIndex >= 512 * 8) return;
     
-    ComprehensiveTileCache& cache = g_comprehensiveCache[cacheIndex];
+    ComprehensiveTileCache& cache = bankCache->tiles[cacheIndex];
     
     // Check if already cached
     if (cache.is_valid && cache.tile_id == tile && 
@@ -542,10 +546,10 @@ void PPU::cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t at
         return;  // Already cached
     }
     
-    // Cache ONLY normal orientation (no flipping)
+    // Cache the tile data from this specific bank
     for (int row = 0; row < 8; row++) {
-        uint8_t plane1 = readCHR(tile * 16 + row);
-        uint8_t plane2 = readCHR(tile * 16 + row + 8);
+        uint8_t plane1 = readCHRFromBank(tile * 16 + row, chr_bank);
+        uint8_t plane2 = readCHRFromBank(tile * 16 + row + 8, chr_bank);
 
         for (int column = 0; column < 8; column++) {
             uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + 
@@ -573,7 +577,6 @@ void PPU::cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t at
                 }
             }
             
-            // Store in normal orientation (7-column for NES bit order)
             int pixelIndex = row * 8 + (7 - column);
             cache.pixels[pixelIndex] = pixel16;
         }
@@ -587,34 +590,33 @@ void PPU::cacheTileAllVariations(uint16_t tile, uint8_t palette_type, uint8_t at
 
 void PPU::renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset, bool flipX, bool flipY)
 {
-    // Initialize cache
-    if (!g_comprehensiveCacheInit) {
-        memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
-        g_comprehensiveCacheInit = true;
-    }
-    
     uint16_t tile = readByte(index) + (ppuCtrl & (1 << 4) ? 256 : 0);
     uint8_t attribute = getAttributeTableValue(index);
+    uint8_t chr_bank = frameCHRBank;
+    
+    ensureBankCacheExists(chr_bank);
+    BankTileCache* bankCache = getBankCache(chr_bank);
+    if (!bankCache || !bankCache->is_allocated) return;
     
     uint16_t* pixels;
     
     if (!flipX && !flipY) {
         // Use normal cache
-        cacheTileAllVariations(tile, 0, attribute);
+        cacheTileAllVariations(tile, 0, attribute, chr_bank);
         int cacheIndex = getTileCacheIndex(tile, 0, attribute);
         if (cacheIndex >= 512 * 8) return;
-        pixels = g_comprehensiveCache[cacheIndex].pixels;
+        pixels = bankCache->tiles[cacheIndex].pixels;
     } else {
-        // Use flip cache - create if needed
-        cacheFlipVariation(tile, 0, attribute, flipX, flipY);
+        // Use flip cache
+        cacheFlipVariation(tile, 0, attribute, flipX, flipY, chr_bank);
         
         uint8_t flip_flags = (flipY ? 2 : 0) | (flipX ? 1 : 0);
         uint32_t key = getFlipCacheKey(tile, 0, attribute, flip_flags);
         
-        auto it = g_flipCacheIndex.find(key);
-        if (it == g_flipCacheIndex.end()) return; // Should not happen
+        auto it = bankCache->flipCacheIndex.find(key);
+        if (it == bankCache->flipCacheIndex.end()) return;
         
-        pixels = g_flipCache[it->second].pixels;
+        pixels = bankCache->flipCache[it->second].pixels;
     }
     
     // Draw pixels
@@ -639,25 +641,30 @@ void PPU::renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset
 void PPU::renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, int xOffset, int yOffset, bool flipX, bool flipY)
 {
     uint8_t palette_type = (sprite_palette & 0x03) + 1;
+    uint8_t chr_bank = frameCHRBank;  // Use current frame's CHR bank
     uint16_t* pixels;
+    
+    ensureBankCacheExists(chr_bank);
+    BankTileCache* bankCache = getBankCache(chr_bank);
+    if (!bankCache || !bankCache->is_allocated) return;
     
     if (!flipX && !flipY) {
         // Use normal cache
-        cacheTileAllVariations(tile, palette_type, 0);
+        cacheTileAllVariations(tile, palette_type, 0, chr_bank);
         int cacheIndex = getTileCacheIndex(tile, palette_type, 0);
         if (cacheIndex >= 512 * 8) return;
-        pixels = g_comprehensiveCache[cacheIndex].pixels;
+        pixels = bankCache->tiles[cacheIndex].pixels;
     } else {
-        // Use flip cache - create if needed
-        cacheFlipVariation(tile, palette_type, 0, flipX, flipY);
+        // Use flip cache
+        cacheFlipVariation(tile, palette_type, 0, flipX, flipY, chr_bank);
         
         uint8_t flip_flags = (flipY ? 2 : 0) | (flipX ? 1 : 0);
         uint32_t key = getFlipCacheKey(tile, palette_type, 0, flip_flags);
         
-        auto it = g_flipCacheIndex.find(key);
-        if (it == g_flipCacheIndex.end()) return;
+        auto it = bankCache->flipCacheIndex.find(key);
+        if (it == bankCache->flipCacheIndex.end()) return;
         
-        pixels = g_flipCache[it->second].pixels;
+        pixels = bankCache->flipCache[it->second].pixels;
     }
     
     // Draw sprites with transparency
@@ -681,6 +688,7 @@ void PPU::renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t sprite_pal
         }
     }
 }
+
 
 
 void PPU::render16(uint16_t* buffer)
@@ -785,25 +793,30 @@ void PPU::renderCachedSpriteWithPriority(uint16_t* buffer, uint16_t tile, uint8_
 {
     // Cache the sprite tile
     uint8_t palette_type = (sprite_palette & 0x03) + 1;
+    uint8_t chr_bank = frameCHRBank;  // Use current frame's CHR bank
     uint16_t* pixels;
+    
+    ensureBankCacheExists(chr_bank);
+    BankTileCache* bankCache = getBankCache(chr_bank);
+    if (!bankCache || !bankCache->is_allocated) return;
     
     if (!flipX && !flipY) {
         // Use normal cache
-        cacheTileAllVariations(tile, palette_type, 0);
+        cacheTileAllVariations(tile, palette_type, 0, chr_bank);
         int cacheIndex = getTileCacheIndex(tile, palette_type, 0);
         if (cacheIndex >= 512 * 8) return;
-        pixels = g_comprehensiveCache[cacheIndex].pixels;
+        pixels = bankCache->tiles[cacheIndex].pixels;
     } else {
-        // Use flip cache - create if needed
-        cacheFlipVariation(tile, palette_type, 0, flipX, flipY);
+        // Use flip cache
+        cacheFlipVariation(tile, palette_type, 0, flipX, flipY, chr_bank);
         
         uint8_t flip_flags = (flipY ? 2 : 0) | (flipX ? 1 : 0);
         uint32_t key = getFlipCacheKey(tile, palette_type, 0, flip_flags);
         
-        auto it = g_flipCacheIndex.find(key);
-        if (it == g_flipCacheIndex.end()) return;
+        auto it = bankCache->flipCacheIndex.find(key);
+        if (it == bankCache->flipCacheIndex.end()) return;
         
-        pixels = g_flipCache[it->second].pixels;
+        pixels = bankCache->flipCache[it->second].pixels;
     }
     
     // Draw sprites with background priority checking
@@ -907,17 +920,21 @@ void PPU::writeByte(uint16_t address, uint8_t value)
         // Palette data
         palette[address - 0x3f00] = value;
 
-        // INVALIDATE THE ENTIRE CACHE when palette changes
+        // INVALIDATE ALL CACHES when palette changes
+        // 1. Clear old static cache
         if (g_comprehensiveCacheInit) {
             memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
             for (int i = 0; i < 512 * 8; i++) {
                 g_comprehensiveCache[i].is_valid = false;
             }
             
-            // ALSO CLEAR THE FLIP CACHE
+            // Clear old flip cache
             g_flipCache.clear();
             g_flipCacheIndex.clear();
         }
+        
+        // 2. Clear ALL bank caches (THIS WAS MISSING!)
+        clearAllBankCaches();
 
         // Mirroring
         if (address == 0x3f10 || address == 0x3f14 || address == 0x3f18 || address == 0x3f1c)
@@ -926,7 +943,6 @@ void PPU::writeByte(uint16_t address, uint8_t value)
         }
     }
 }
-
 void PPU::writeDataRegister(uint8_t value)
 {
     static bool debugPalette = true;
@@ -1020,39 +1036,43 @@ case 0x2005:
 
 uint32_t PPU::getFlipCacheKey(uint16_t tile, uint8_t palette_type, uint8_t attribute, uint8_t flip_flags)
 {
+    // No need to include bank in key since each bank has its own flip cache
     return (tile << 16) | (palette_type << 8) | (attribute << 4) | flip_flags;
 }
 
-void PPU::cacheFlipVariation(uint16_t tile, uint8_t palette_type, uint8_t attribute, bool flipX, bool flipY)
+void PPU::cacheFlipVariation(uint16_t tile, uint8_t palette_type, uint8_t attribute, bool flipX, bool flipY, uint8_t chr_bank)
 {
     uint8_t flip_flags = (flipY ? 2 : 0) | (flipX ? 1 : 0);
-    if (flip_flags == 0) return; // Normal orientation already cached
+    if (flip_flags == 0) return;
+    
+    ensureBankCacheExists(chr_bank);
+    BankTileCache* bankCache = getBankCache(chr_bank);
+    if (!bankCache || !bankCache->is_allocated) return;
     
     uint32_t key = getFlipCacheKey(tile, palette_type, attribute, flip_flags);
     
-    // Check if this flip variation is already cached
-    if (g_flipCacheIndex.find(key) != g_flipCacheIndex.end()) {
-        return; // Already cached
+    // Check if this flip variation is already cached in this bank
+    if (bankCache->flipCacheIndex.find(key) != bankCache->flipCacheIndex.end()) {
+        return;
     }
     
-    // First, make sure we have the normal version cached
-    cacheTileAllVariations(tile, palette_type, attribute);
+    // Make sure we have the normal version cached
+    cacheTileAllVariations(tile, palette_type, attribute, chr_bank);
     
-    // Get the normal cached version
     int normalCacheIndex = getTileCacheIndex(tile, palette_type, attribute);
     if (normalCacheIndex >= 512 * 8) return;
     
-    ComprehensiveTileCache& normalCache = g_comprehensiveCache[normalCacheIndex];
+    ComprehensiveTileCache& normalCache = bankCache->tiles[normalCacheIndex];
     if (!normalCache.is_valid) return;
     
-    // Create new flip cache entry
+    // Create flip cache entry
     FlipCacheEntry flipEntry;
     flipEntry.tile_id = tile;
     flipEntry.palette_type = palette_type;
     flipEntry.attribute = attribute;
     flipEntry.flip_flags = flip_flags;
     
-    // Copy pixels from normal cache and apply flipping
+    // Apply flipping
     for (int row = 0; row < 8; row++) {
         for (int column = 0; column < 8; column++) {
             int srcIndex = row * 8 + column;
@@ -1065,10 +1085,10 @@ void PPU::cacheFlipVariation(uint16_t tile, uint8_t palette_type, uint8_t attrib
         }
     }
     
-    // Add to dynamic cache
-    size_t newIndex = g_flipCache.size();
-    g_flipCache.push_back(flipEntry);
-    g_flipCacheIndex[key] = newIndex;
+    // Add to this bank's flip cache
+    size_t newIndex = bankCache->flipCache.size();
+    bankCache->flipCache.push_back(flipEntry);
+    bankCache->flipCacheIndex[key] = newIndex;
 }
 
 PPU::ScalingCache::ScalingCache() 
@@ -1365,14 +1385,97 @@ void PPU::captureFrameScroll() {
 
 void PPU::invalidateTileCache()
 {
-    if (g_comprehensiveCacheInit) {
-        memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
-        for (int i = 0; i < 512 * 8; i++) {
-            g_comprehensiveCache[i].is_valid = false;
-        }
-        
-        // Clear flip cache too
-        g_flipCache.clear();
-        g_flipCacheIndex.clear();
+    clearAllBankCaches();
+}
+
+BankTileCache* PPU::getBankCache(uint8_t bank)
+{
+    if (!g_bankCacheInit) {
+        g_bankCacheInit = true;
+    }
+    
+    auto it = g_bankCaches.find(bank);
+    if (it != g_bankCaches.end()) {
+        return it->second;
+    }
+    
+    return nullptr;
+}
+
+void PPU::ensureBankCacheExists(uint8_t bank)
+{
+    if (g_bankCaches.find(bank) == g_bankCaches.end()) {
+        BankTileCache* cache = new BankTileCache();
+        cache->allocate(bank);
+        g_bankCaches[bank] = cache;
     }
 }
+
+void PPU::releaseBankCache(uint8_t bank)
+{
+    auto it = g_bankCaches.find(bank);
+    if (it != g_bankCaches.end()) {
+        delete it->second;
+        g_bankCaches.erase(it);
+    }
+}
+
+void PPU::clearAllBankCaches()
+{
+    for (auto& pair : g_bankCaches) {
+        delete pair.second;
+    }
+    g_bankCaches.clear();
+}
+
+void PPU::releaseBankCaches(const std::vector<uint8_t>& banksToKeep)
+{
+    std::unordered_set<uint8_t> keepSet(banksToKeep.begin(), banksToKeep.end());
+    
+    auto it = g_bankCaches.begin();
+    while (it != g_bankCaches.end()) {
+        if (keepSet.find(it->first) == keepSet.end()) {
+            delete it->second;
+            it = g_bankCaches.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+size_t PPU::getBankCacheMemoryUsage()
+{
+    size_t total = 0;
+    for (const auto& pair : g_bankCaches) {
+        total += sizeof(ComprehensiveTileCache) * 512 * 8;  // Main cache
+        total += pair.second->flipCache.size() * sizeof(FlipCacheEntry);  // Flip cache
+        total += pair.second->flipCacheIndex.size() * (sizeof(uint32_t) + sizeof(size_t));  // Index map
+    }
+    return total;
+}
+
+void PPU::optimizeCacheMemory()
+{
+    // Keep only the current and recently used banks
+    std::vector<uint8_t> banksToKeep;
+    banksToKeep.push_back(frameCHRBank);  // Current bank
+    // Add any other banks you want to keep cached
+    
+    releaseBankCaches(banksToKeep);
+}
+
+uint8_t PPU::readCHRFromBank(int index, uint8_t chr_bank)
+{
+    if (index < 0x2000)
+    {
+        // If mapper supports banking, get data from specific bank
+        if (engine.getMapper() == 66) {
+            return engine.readCHRDataFromBank(index, chr_bank);
+        } else {
+            // Fallback to normal CHR read
+            return engine.readCHRData(index);
+        }
+    }
+    return 0;
+}
+
