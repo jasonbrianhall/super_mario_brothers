@@ -326,6 +326,16 @@ void stepMMC3IRQ();  // Call this during PPU rendering
 
 bool mmc3IRQPending() const { return mmc3.irqCounter == 0 && mmc3.irqEnable; }
 
+struct UxROMState {
+    uint8_t prgBank;    // Current switchable PRG bank (16KB)
+    
+    UxROMState() {
+        prgBank = 0;    // Start with bank 0
+    }
+} uxrom;
+
+void writeUxROMRegister(uint16_t address, uint8_t value);
+
 };
 
 #endif // SMB_EMULATOR_HPP

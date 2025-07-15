@@ -364,7 +364,10 @@ void SMBEmulator::reset()
                 uint16_t resetVector = low | (high << 8);
             }
         }
-    } else if (nesHeader.mapper == 3) {
+    } else if (nesHeader.mapper == 2) {
+        // UxROM initialization
+        uxrom = UxROMState();
+        printf("UxROM mapper initialized\n");    } else if (nesHeader.mapper == 3) {
         cnrom = CNROMState();
     } else if (nesHeader.mapper == 4) {
         mmc3 = MMC3State();
@@ -773,6 +776,23 @@ uint8_t SMBEmulator::readByte(uint16_t address)
             if (romAddr < prgSize) {
                 return prgROM[romAddr];
             }
+        } else if (nesHeader.mapper == 2) {
+            // UxROM mapping
+            uint32_t romAddr;
+            
+            if (address < 0xC000) {
+                // $8000-$BFFF: Switchable 16KB PRG bank
+                romAddr = (uxrom.prgBank * 0x4000) + (address - 0x8000);
+            } else {
+                // $C000-$FFFF: Fixed to LAST 16KB PRG bank
+                uint8_t totalBanks = prgSize / 0x4000;
+                uint8_t lastBank = totalBanks - 1;
+                romAddr = (lastBank * 0x4000) + (address - 0xC000);
+            }
+            
+            if (romAddr < prgSize) {
+                return prgROM[romAddr];
+            }
        } else if (nesHeader.mapper == 4) {
             // MMC3 mapping - 8KB banks
             uint8_t bankIndex = (address - 0x8000) / 0x2000;  // 0-3
@@ -1017,9 +1037,11 @@ void SMBEmulator::writeByte(uint16_t address, uint8_t value)
             writeCNROMRegister(address, value);
         } else if (nesHeader.mapper == 4) {
             writeMMC3Register(address, value);
-        }     
+        } else if (nesHeader.mapper == 2) {
+            writeUxROMRegister(address, value);  
         // Other writes to ROM area are ignored
-    }
+        }
+   }  
 }
 
 
@@ -2142,4 +2164,17 @@ uint8_t SMBEmulator::readCHRDataFromBank(uint16_t address, uint8_t bank)
     }
     
     return 0;
+}
+
+void SMBEmulator::writeUxROMRegister(uint16_t address, uint8_t value)
+{
+    // UxROM: Any write to $8000-$FFFF sets the PRG bank
+    // Only the lower bits are used (depends on ROM size)
+    uint8_t totalBanks = prgSize / 0x4000;  // Number of 16KB banks
+    uint8_t bankMask = totalBanks - 1;      // Create mask for valid banks
+    
+    uxrom.prgBank = value & bankMask;
+    
+    // Debug output
+    printf("UxROM: Set PRG bank to %d (total banks: %d)\n", uxrom.prgBank, totalBanks);
 }
