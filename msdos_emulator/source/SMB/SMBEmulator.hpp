@@ -177,7 +177,11 @@ private:
     void SED(); void SEI(); void STA(uint16_t addr); void STX(uint16_t addr);
     void STY(uint16_t addr); void TAX(); void TAY(); void TSX();
     void TXA(); void TXS(); void TYA();
-    
+    void SHA(uint16_t addr);  // A & X & (high byte of address + 1)
+    void SHX(uint16_t addr);  // X & (high byte of address + 1)  
+    void SHY(uint16_t addr);  // Y & (high byte of address + 1)
+    void TAS(uint16_t addr);  // A & X -> SP, then A & X & (high byte + 1)
+    void LAS(uint16_t addr);  // Load A,X,SP from memory & SP
     // Special addressing mode versions
     void ASL_ACC(); void LSR_ACC(); void ROL_ACC(); void ROR_ACC();
     

@@ -697,6 +697,21 @@ void SMBEmulator::executeInstruction()
         case 0x77: RRA(addrZeroPageX()); break;
         case 0x7B: RRA(addrAbsoluteY()); break;
         case 0x7F: RRA(addrAbsoluteX()); break;
+
+        case 0x93: SHA(addrIndirectY()); break;     // SHA (A&X&H) indirect,Y
+        case 0x9F: SHA(addrAbsoluteY()); break;     // SHA (A&X&H) absolute,Y
+
+        // SHX (X & high byte)
+        case 0x9E: SHX(addrAbsoluteY()); break;     // SHX (X&H) absolute,Y
+
+        // SHY (Y & high byte)  
+        case 0x9C: SHY(addrAbsoluteX()); break;     // SHY (Y&H) absolute,X
+
+        // TAS (A & X -> SP, then A & X & H)
+        case 0x9B: TAS(addrAbsoluteY()); break;     // TAS absolute,Y
+
+        // LAS (load A,X,SP from memory & SP)
+        case 0xBB: LAS(addrAbsoluteY()); break;     // LAS absolute,Y
         
         // NOPs (various forms)
         case 0x1A: case 0x3A: case 0x5A: case 0x7A: 
@@ -1558,6 +1573,51 @@ void SMBEmulator::TYA()
 {
     regA = regY;
     updateZN(regA);
+}
+
+void SMBEmulator::SHA(uint16_t addr)
+{
+    // SHA: Store A & X & (high byte of address + 1)
+    // This is an unstable instruction - the high byte interaction is complex
+    uint8_t highByte = (addr >> 8) + 1;
+    uint8_t result = regA & regX & highByte;
+    writeByte(addr, result);
+}
+
+void SMBEmulator::SHX(uint16_t addr) 
+{
+    // SHX: Store X & (high byte of address + 1)
+    uint8_t highByte = (addr >> 8) + 1;
+    uint8_t result = regX & highByte;
+    writeByte(addr, result);
+}
+
+void SMBEmulator::SHY(uint16_t addr)
+{
+    // SHY: Store Y & (high byte of address + 1) 
+    uint8_t highByte = (addr >> 8) + 1;
+    uint8_t result = regY & highByte;
+    writeByte(addr, result);
+}
+
+void SMBEmulator::TAS(uint16_t addr)
+{
+    // TAS: Transfer A & X to SP, then store A & X & (high byte + 1)
+    regSP = regA & regX;
+    uint8_t highByte = (addr >> 8) + 1;
+    uint8_t result = regA & regX & highByte;
+    writeByte(addr, result);
+}
+
+void SMBEmulator::LAS(uint16_t addr)
+{
+    // LAS: Load A, X, and SP with memory value & SP
+    uint8_t value = readByte(addr);
+    uint8_t result = value & regSP;
+    regA = result;
+    regX = result;
+    regSP = result;
+    updateZN(result);
 }
 
 // Rendering functions (delegate to PPU)
