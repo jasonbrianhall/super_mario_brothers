@@ -85,7 +85,7 @@ private:
   int statusMessageTimer;
 
   // Game frame buffer pointer
-  uint32_t *currentFrameBuffer;
+  uint16_t *currentFrameBuffer;
 
   // Key mappings for players
   struct PlayerKeys {

@@ -25,7 +25,7 @@ static AUDIOSTREAM* audiostream = NULL;
 
 // Global variables for DOS compatibility
 static SMBEmulator* smbEngine = NULL;
-static uint32_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
+static uint16_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
 AllegroMainWindow* g_mainWindow = NULL;
 
 // Audio streaming variables for DOS
@@ -1068,7 +1068,10 @@ void AllegroMainWindow::run(const char* romFilename)
                 }
             }
             
-            engine.render(renderBuffer);
+            engine.render16(renderBuffer);
+            //engine.render(renderBuffer);
+            //engine.renderScaled32(renderBuffer, SCREEN_W, SCREEN_H);  // ✅ Cached hardware rendering
+            
             currentFrameBuffer = renderBuffer;
         }
         
@@ -2340,8 +2343,9 @@ void AllegroMainWindow::drawGameBuffered(BITMAP* target)
             convertScreenBuffer16ToBitmap(tempBuffer, target);
         } else {
             // Fallback only for huge screens
-            smbEngine->render(renderBuffer);
-            convertScreenBuffer32ToBitmap(renderBuffer, target);
+            printf("Fallback should never be reached\n");
+            //smbEngine->render(renderBuffer);
+            //convertScreenBuffer32ToBitmap(renderBuffer, target);
         }
     }
 }
