@@ -83,6 +83,19 @@ void SMBEmulator::writeCNROMRegister(uint16_t address, uint8_t value)
     
 }
 
+void SMBEmulator::writeCHRData(uint16_t address, uint8_t value)
+{
+    if (address >= 0x2000) return;
+    
+    // Only allow writes for mappers that use CHR-RAM
+    if (nesHeader.mapper == 2) {  // UxROM uses CHR-RAM
+        if (address < chrSize) {
+            chrROM[address] = value;  // Note: chrROM is actually CHR-RAM for UxROM
+        }
+    }
+    // Add other CHR-RAM mappers here if needed
+}
+
 
 bool SMBEmulator::loadROM(const std::string& filename)
 {
@@ -198,10 +211,36 @@ bool SMBEmulator::parseNESHeader(std::ifstream& file)
     std::cout << "Mirroring: " << (nesHeader.mirroring ? "Vertical" : "Horizontal") << std::endl;
     std::cout << "Battery: " << (nesHeader.battery ? "Yes" : "No") << std::endl;
     std::cout << "Trainer: " << (nesHeader.trainer ? "Yes" : "No") << std::endl;
-        
+    
     // Check for unsupported features
-    if (nesHeader.mapper != 0) {
-        std::cout << "WARNING: Mapper " << (int)nesHeader.mapper << " not fully supported (only mapper 0 implemented)" << std::endl;
+    if (nesHeader.mapper != 0 && nesHeader.mapper != 1 && nesHeader.mapper != 2 && 
+        nesHeader.mapper != 3 && nesHeader.mapper != 4 && nesHeader.mapper != 66) {
+        std::cout << "WARNING: Mapper " << (int)nesHeader.mapper << " not supported" << std::endl;
+    }
+    
+    // Mapper-specific notes
+    switch (nesHeader.mapper) {
+        case 0:
+            std::cout << "Mapper: NROM (simple)" << std::endl;
+            break;
+        case 1:
+            std::cout << "Mapper: MMC1 (complex)" << std::endl;
+            break;
+        case 2:
+            std::cout << "Mapper: UxROM (Contra, Mega Man, Duck Tales)" << std::endl;
+            break;
+        case 3:
+            std::cout << "Mapper: CNROM (simple CHR banking)" << std::endl;
+            break;
+        case 4:
+            std::cout << "Mapper: MMC3 (complex)" << std::endl;
+            break;
+        case 66:
+            std::cout << "Mapper: GxROM" << std::endl;
+            break;
+        default:
+            std::cout << "Mapper: Unknown/Unsupported (" << (int)nesHeader.mapper << ")" << std::endl;
+            break;
     }
     
     if (isINES2) {
@@ -229,12 +268,15 @@ bool SMBEmulator::loadCHRROM(std::ifstream& file)
         chrSize = 8192;
         chrROM = new uint8_t[chrSize];
         memset(chrROM, 0, chrSize);
-        printf("Using CHR RAM (8KB)\n");
+        printf("Using CHR RAM (8KB) for mapper %d\n", nesHeader.mapper);
         return true;
     }
     
     chrROM = new uint8_t[chrSize];
     file.read(reinterpret_cast<char*>(chrROM), chrSize);
+    
+    // Debug output
+    printf("Loaded CHR ROM: %d bytes for mapper %d\n", chrSize, nesHeader.mapper);
     
     // CRITICAL DEBUG INFO
     uint32_t totalCHRBanks = chrSize / 0x400;  // Number of 1KB banks
@@ -2129,6 +2171,11 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
         if (chrAddr < chrSize) {
             return chrROM[chrAddr];
         }
+    } else if (nesHeader.mapper == 2) {
+        // UxROM - uses CHR-RAM (no banking, direct access)
+        if (address < chrSize) {
+            return chrROM[address];
+        }
     }
     
     return 0;
@@ -2153,6 +2200,9 @@ uint8_t SMBEmulator::readCHRDataFromBank(uint16_t address, uint8_t bank)
     } else if (nesHeader.mapper == 3) {
         // CNROM uses 8KB CHR banks
         chrAddr = (bank * 0x2000) + address;
+    } else if (nesHeader.mapper == 2) {
+        // UxROM uses CHR-RAM (no banking) - ignore bank parameter
+        chrAddr = address;
     } else {
         // Mapper 0 (NROM) - no banking
         chrAddr = address;
@@ -2176,5 +2226,5 @@ void SMBEmulator::writeUxROMRegister(uint16_t address, uint8_t value)
     uxrom.prgBank = value & bankMask;
     
     // Debug output
-    printf("UxROM: Set PRG bank to %d (total banks: %d)\n", uxrom.prgBank, totalBanks);
+    //printf("UxROM: Set PRG bank to %d (total banks: %d)\n", uxrom.prgBank, totalBanks);
 }
