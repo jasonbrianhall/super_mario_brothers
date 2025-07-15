@@ -243,6 +243,14 @@ The Allegro version is specifically optimized for older hardware:
 - Automatic aspect ratio correction
 - VSync support for tear-free rendering
 
+## Emulator
+
+In the msdos_emulator directory, there's a basic emulator that I developed as a learning exercise. It successfully emulates Super Mario Brothers, Mario Brothers, Popeye, Donkey Kong, and several other games, but mapper support is limited to the most basic implementations. This project was my way of teaching myself 6502 emulation from the ground up.
+
+The emulator is not cycle-accurate, which creates challenges with proper mapper handling, causing many games to not work correctly. A good example is DuckTales, which uses bank switching. The current architecture reads character data at the end of each frame and renders everything at once, but DuckTales changes banks mid-frame. This results in some sprites being rendered incorrectly - the game is playable, but you'll notice wrong sprites in the hearts section and other parts where the bank switching occurs.
+
+To properly handle this would require catching sprite changes every time the game switches banks during the frame, which isn't technically difficult but would require significant architectural changes that I haven't implemented. So for now, it is what it is - a functional learning project that demonstrates the complexities of NES emulation.
+
 ## License
 
 MIT License - The code is freely available under MIT License. However, **the original Super Mario Brothers ROM remains copyrighted by Nintendo**. You must legally own the original game to use this software.
