@@ -122,6 +122,13 @@ PPU::PPU(SMBEmulator& engine) :
     ignoreNextScrollWrite = false;
     frameScrollX = 0;
     frameCtrl = 0;
+    if (!g_comprehensiveCacheInit) {
+        memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
+        for (int i = 0; i < 512 * 8; i++) {
+            g_comprehensiveCache[i].is_valid = false;
+        }
+        g_comprehensiveCacheInit = true;
+    }
 }
 
 uint8_t PPU::getAttributeTableValue(uint16_t nametableAddress)
@@ -909,14 +916,56 @@ void PPU::writeByte(uint16_t address, uint8_t value)
 {
     // Mirror all addresses above $3fff
     address &= 0x3fff;
-
     if (address < 0x2000)
     {
         // CHR-RAM write - CRITICAL FOR UxROM!
-        engine.writeCHRData(address, value);
         
-        // Also invalidate tile caches when CHR data changes
-        clearAllBankCaches();
+        // ONLY invalidate cache if the CHR data actually changed
+        uint8_t oldValue = engine.readCHRData(address);
+        if (oldValue != value) {
+            engine.writeCHRData(address, value);
+            
+            // Only invalidate affected tiles, not entire cache
+            // Calculate which tile this address affects
+            uint16_t tileNum = address / 16;
+            
+            // Invalidate just this tile in all caches (much more efficient)
+            if (g_comprehensiveCacheInit) {
+                for (int i = 0; i < 8; i++) {  // 8 palette variations per tile
+                    int cacheIndex = (tileNum * 8) + i;
+                    if (cacheIndex < 512 * 8) {
+                        g_comprehensiveCache[cacheIndex].is_valid = false;
+                    }
+                }
+            }
+            
+            // Invalidate in bank caches too (only the affected tile)
+            for (auto& pair : g_bankCaches) {
+                BankTileCache* bankCache = pair.second;
+                if (bankCache && bankCache->is_allocated) {
+                    for (int i = 0; i < 8; i++) {
+                        int cacheIndex = (tileNum * 8) + i;
+                        if (cacheIndex < 512 * 8) {
+                            bankCache->tiles[cacheIndex].is_valid = false;
+                        }
+                    }
+                }
+            }
+            
+            // Also clear flip cache entries for this tile
+            auto flipIt = g_flipCacheIndex.begin();
+            while (flipIt != g_flipCacheIndex.end()) {
+                uint32_t key = flipIt->first;
+                uint16_t cachedTile = (key >> 16) & 0xFFFF;
+                if (cachedTile == tileNum) {
+                    flipIt = g_flipCacheIndex.erase(flipIt);
+                } else {
+                    ++flipIt;
+                }
+            }
+        } else {
+            // Data didn't change, no need to write or invalidate
+        }
     }
     else if (address < 0x3f00)
     {
@@ -924,28 +973,73 @@ void PPU::writeByte(uint16_t address, uint8_t value)
     }
     else if (address < 0x3f20)
     {
-        // Palette data
-        palette[address - 0x3f00] = value;
+        // Palette data - ONLY invalidate if the palette actually changed
+        uint8_t paletteIndex = address - 0x3f00;
+        uint8_t oldPaletteValue = palette[paletteIndex];
+        
+        if (oldPaletteValue != value) {
+            palette[paletteIndex] = value;
 
-        // INVALIDATE ALL CACHES when palette changes
-        if (g_comprehensiveCacheInit) {
-            memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
-            for (int i = 0; i < 512 * 8; i++) {
-                g_comprehensiveCache[i].is_valid = false;
+            // SMART INVALIDATION: Only invalidate cache entries that use this palette
+            if (g_comprehensiveCacheInit) {
+                // Determine which palette group changed (background vs sprite)
+                bool isSpritePalette = (paletteIndex >= 0x10);
+                uint8_t paletteGroup = isSpritePalette ? ((paletteIndex - 0x10) / 4) + 1 : (paletteIndex / 4);
+                
+                // Only invalidate tiles that use this specific palette
+                for (int i = 0; i < 512 * 8; i++) {
+                    ComprehensiveTileCache& cache = g_comprehensiveCache[i];
+                    if (cache.is_valid && cache.palette_type == paletteGroup) {
+                        cache.is_valid = false;
+                    }
+                }
+                
+                // Clear flip cache entries that use this palette
+                auto flipIt = g_flipCacheIndex.begin();
+                while (flipIt != g_flipCacheIndex.end()) {
+                    size_t entryIndex = flipIt->second;
+                    if (entryIndex < g_flipCache.size() && 
+                        g_flipCache[entryIndex].palette_type == paletteGroup) {
+                        flipIt = g_flipCacheIndex.erase(flipIt);
+                    } else {
+                        ++flipIt;
+                    }
+                }
             }
             
-            // Clear old flip cache
-            g_flipCache.clear();
-            g_flipCacheIndex.clear();
-        }
-        
-        // Clear ALL bank caches
-        clearAllBankCaches();
-
-        // Mirroring
-        if (address == 0x3f10 || address == 0x3f14 || address == 0x3f18 || address == 0x3f1c)
-        {
-            palette[address - 0x3f10] = value;
+            // Do the same for bank caches
+            for (auto& pair : g_bankCaches) {
+                BankTileCache* bankCache = pair.second;
+                if (bankCache && bankCache->is_allocated) {
+                    bool isSpritePalette = (paletteIndex >= 0x10);
+                    uint8_t paletteGroup = isSpritePalette ? ((paletteIndex - 0x10) / 4) + 1 : (paletteIndex / 4);
+                    
+                    for (int i = 0; i < 512 * 8; i++) {
+                        ComprehensiveTileCache& cache = bankCache->tiles[i];
+                        if (cache.is_valid && cache.palette_type == paletteGroup) {
+                            cache.is_valid = false;
+                        }
+                    }
+                    
+                    // Clear affected flip cache entries
+                    auto flipIt = bankCache->flipCacheIndex.begin();
+                    while (flipIt != bankCache->flipCacheIndex.end()) {
+                        size_t entryIndex = flipIt->second;
+                        if (entryIndex < bankCache->flipCache.size() && 
+                            bankCache->flipCache[entryIndex].palette_type == paletteGroup) {
+                            flipIt = bankCache->flipCacheIndex.erase(flipIt);
+                        } else {
+                            ++flipIt;
+                        }
+                    }
+                }
+            }
+            
+            // Handle mirroring
+            if (address == 0x3f10 || address == 0x3f14 || address == 0x3f18 || address == 0x3f1c)
+            {
+                palette[address - 0x3f10] = value;
+            }
         }
     }
 }
