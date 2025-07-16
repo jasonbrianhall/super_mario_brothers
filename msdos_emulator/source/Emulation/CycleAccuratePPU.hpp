@@ -61,7 +61,7 @@ public:
     void renderScaled(uint16_t* buffer, int screenWidth, int screenHeight);
     void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
     void writeByte(uint16_t address, uint8_t value);
-
+    void renderCompleteFrame();
 
 private:
     // Helper methods

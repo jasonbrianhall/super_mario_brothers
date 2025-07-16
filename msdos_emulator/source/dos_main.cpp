@@ -985,47 +985,43 @@ void AllegroMainWindow::run(const char* romFilename) {
     SMBEmulator engine;
     smbEngine = &engine;
     
-    printf("Loading ROM: %s\n", romFilename);
     if (!engine.loadROM(romFilename)) {
         printf("Failed to load ROM file: %s\n", romFilename);
-        setStatusMessage("ROM loading failed");
         return;
     }
     
-    printf("ROM loaded successfully\n");
     engine.reset();
-    
     gameRunning = true;
-    setStatusMessage("Game started - Press ESC for menu");
     
-    printf("Starting cycle-accurate main game loop...\n");
+    printf("Starting frame-based game loop...\n");
     
     while (gameRunning) {
         handleInput();
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
-            // CRITICAL CHANGE: update() now renders internally
+            // Run emulator until frame is complete
             engine.update();
             
-            // Audio processing (only when frame is ready)
-            if (engine.isFrameReady() && dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
-                void* audiobuf = get_audio_stream_buffer(audiostream);
-                if (audiobuf) {
-                    int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
-                    if (samplesNeeded > 1024) samplesNeeded = 1024;
-                    
-                    engine.audioCallback((uint8_t*)audiobuf, samplesNeeded);
-                    free_audio_stream_buffer(audiostream);
-                }
-            }
-            
-            // Get the rendered frame (already complete from update())
+            // Only get the frame data when it's actually ready
             if (engine.isFrameReady()) {
                 engine.render16(renderBuffer);
                 currentFrameBuffer = renderBuffer;
+                
+                // Audio processing
+                if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
+                    void* audiobuf = get_audio_stream_buffer(audiostream);
+                    if (audiobuf) {
+                        int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
+                        if (samplesNeeded > 1024) samplesNeeded = 1024;
+                        
+                        engine.audioCallback((uint8_t*)audiobuf, samplesNeeded);
+                        free_audio_stream_buffer(audiostream);
+                    }
+                }
             }
         }
         
+        // Display the completed frame
         updateAndDraw();
         
         #ifdef __DJGPP__
@@ -1034,10 +1030,7 @@ void AllegroMainWindow::run(const char* romFilename) {
         rest(1000 / Configuration::getFrameRate());
         #endif
     }
-    
-    printf("Cycle-accurate game loop ended normally\n");
 }
-
 
 void AllegroMainWindow::showJoystickStatus()
 {

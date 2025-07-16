@@ -67,7 +67,8 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
     // Scanline 261: pre-render
     
     if (currentScanline >= 0 && currentScanline <= 239) {
-        // Visible scanlines
+        // Visible scanlines - DON'T render to display buffer yet
+        // Just update internal state
         executeVisibleScanline();
     } else if (currentScanline == 240) {
         // Post-render scanline - do nothing
@@ -76,11 +77,21 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
         ppuStatus |= 0x80;  // Set VBlank flag
         frameScrollX = ppuScrollX;  // Capture scroll for this frame
         frameCtrl = ppuCtrl;        // Capture control for this frame
+        
+        // Generate NMI if enabled
+        if (ppuCtrl & 0x80) {
+            engine.triggerNMI();
+        }
     } else if (currentScanline == 261) {
         // Pre-render scanline
         if (currentCycle == 1) {
             ppuStatus &= 0x7F;  // Clear VBlank flag
             sprite0Hit = false; // Clear sprite 0 hit flag
+            
+            // CLEAR the frame buffer at the START of the new frame
+            if (frameBuffer) {
+                memset(frameBuffer, 0, 256 * 240 * sizeof(uint16_t));
+            }
         }
     }
     
@@ -93,21 +104,61 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
         if (currentScanline >= 262) {
             currentScanline = 0;
             frameComplete = true;
+            
+            // RENDER the entire frame NOW - at the very end
+            if (frameBuffer && (ppuMask & 0x08)) {  // Only if background enabled
+                renderCompleteFrame();
+            }
         }
     }
     
     return frameComplete;
 }
 
+void CycleAccuratePPU::renderCompleteFrame()
+{
+    if (!frameBuffer) return;
+    
+    // NOW render the entire frame at once
+    for (int y = 0; y < 240; y++) {
+        for (int x = 0; x < 256; x++) {
+            uint16_t backgroundColor = getBackgroundColor16();
+            uint16_t finalColor = backgroundColor;
+            
+            // Render background pixel if enabled
+            if (ppuMask & 0x08) {  // Background enabled
+                uint16_t bgPixel = renderBackgroundPixel(x, y);
+                if (bgPixel != 0) {
+                    finalColor = bgPixel;
+                }
+            }
+            
+            // Render sprite pixel if enabled
+            if (ppuMask & 0x10) {  // Sprites enabled
+                uint16_t spritePixel = renderSpritePixel(x, y);
+                if (spritePixel != 0) {
+                    // Check sprite 0 hit
+                    if (isSpriteZeroAtPixel(x, y) && (finalColor != backgroundColor)) {
+                        sprite0Hit = true;
+                    }
+                    
+                    // Apply sprite priority (simplified)
+                    finalColor = spritePixel;
+                }
+            }
+            
+            frameBuffer[y * 256 + x] = finalColor;
+        }
+    }
+}
+
 void CycleAccuratePPU::executeVisibleScanline()
 {
-    // Only render during active drawing cycles (1-256)
-    if (currentCycle >= 1 && currentCycle <= 256) {
-        int x = currentCycle - 1;  // Convert to 0-255 pixel position
-        int y = currentScanline;
-        
-        renderPixel(x, y);
-    }
+    // Don't render to display buffer during scanline execution
+    // This method now just tracks state for later rendering
+    
+    // You can still do sprite 0 hit detection here if needed
+    // But don't call renderPixel() or update frameBuffer
 }
 
 void CycleAccuratePPU::renderPixel(int x, int y)
