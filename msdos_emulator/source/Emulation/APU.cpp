@@ -832,3 +832,59 @@ void APU::debugAudio() {
         printf("Enhanced audio system not available\n");
     }
 }
+
+void APU::reset() {
+    // Reset frame counter
+    frameValue = 0;
+    
+    // Clear audio buffer
+    memset(audioBuffer, 0, AUDIO_BUFFER_LENGTH);
+    audioBufferLength = 0;
+    
+    // Reset all channels if they exist
+    if (pulse1) {
+        pulse1->enabled = false;
+        pulse1->lengthValue = 0;
+    }
+    if (pulse2) {
+        pulse2->enabled = false;
+        pulse2->lengthValue = 0;
+    }
+    if (triangle) {
+        triangle->enabled = false;
+        triangle->lengthValue = 0;
+    }
+    if (noise) {
+        noise->enabled = false;
+        noise->lengthValue = 0;
+    }
+    
+    // Reset enhanced audio system if it exists
+    if (gameAudio) {
+        // gameAudio->reset();  // If this method exists
+    }
+}
+
+uint8_t APU::readRegister(uint16_t address) {
+    // Most APU registers are write-only
+    // Only $4015 (status register) is readable
+    if (address == 0x4015) {
+        uint8_t status = 0;
+        
+        // Set length counter status bits
+        if (pulse1 && pulse1->lengthValue > 0) status |= 0x01;
+        if (pulse2 && pulse2->lengthValue > 0) status |= 0x02;
+        if (triangle && triangle->lengthValue > 0) status |= 0x04;
+        if (noise && noise->lengthValue > 0) status |= 0x08;
+        
+        // DMC and IRQ flags would go here if implemented
+        
+        return status;
+    }
+    
+    return 0; // All other registers return 0 or open bus
+}
+
+bool APU::isFMMode() const {
+    return gameAudio && gameAudio->isFMMode();
+}

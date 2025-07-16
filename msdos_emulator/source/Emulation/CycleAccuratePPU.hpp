@@ -57,8 +57,16 @@ public:
     uint8_t* getPaletteRAM() { return palette; }
     uint8_t* getOAM() { return oam; }
     uint8_t* getVRAM() { return nametable; }
-    
+    void render(uint32_t* buffer);
+    void renderScaled(uint16_t* buffer, int screenWidth, int screenHeight);
+    void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
+
 private:
+    // Helper methods
+    uint32_t convert16BitTo32Bit(uint16_t color16);
+    void scaleBuffer16(uint16_t* nesBuffer, uint16_t* outputBuffer, int screenWidth, int screenHeight);
+    void scaleBuffer32(uint32_t* nesBuffer, uint32_t* outputBuffer, int screenWidth, int screenHeight);    
+
     void executeVisibleScanline();
     void renderPixel(int x, int y);
     uint16_t renderBackgroundPixel(int x, int y);

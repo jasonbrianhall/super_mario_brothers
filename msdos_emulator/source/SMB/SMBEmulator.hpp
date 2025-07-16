@@ -176,6 +176,8 @@ public:
     // Timing
     static const int CYCLES_PER_FRAME = 29780;
     static const uint8_t instructionCycles[256];
+    uint8_t getControl() const;
+    uint8_t getMask() const;    
     
 private:
     // Core components

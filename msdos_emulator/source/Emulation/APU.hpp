@@ -52,8 +52,9 @@ public:
      * Debug audio channels.
      */
     void debugAudio();
-
-
+    bool isFMMode() const;
+    void reset();
+    uint8_t readRegister(uint16_t address);
 
 private:
     uint8_t audioBuffer[AUDIO_BUFFER_LENGTH];

@@ -505,3 +505,167 @@ void CycleAccuratePPU::writeDMA(uint8_t page)
         oamAddress++;
     }
 }
+
+void CycleAccuratePPU::render(uint32_t* buffer) {
+    if (!buffer) return;
+    
+    // Render the full frame
+    for (int y = 0; y < 240; y++) {
+        for (int x = 0; x < 256; x++) {
+            uint16_t backgroundColor = getBackgroundColor16();
+            uint16_t finalColor = backgroundColor;
+            
+            // Render background pixel if enabled
+            if (ppuMask & 0x08) {
+                uint16_t bgPixel = renderBackgroundPixel(x, y);
+                if (bgPixel != 0) {
+                    finalColor = bgPixel;
+                }
+            }
+            
+            // Render sprite pixel if enabled
+            if (ppuMask & 0x10) {
+                uint16_t spritePixel = renderSpritePixel(x, y);
+                if (spritePixel != 0) {
+                    finalColor = spritePixel;
+                }
+            }
+            
+            // Convert 16-bit to 32-bit color
+            uint32_t color32 = convert16BitTo32Bit(finalColor);
+            buffer[y * 256 + x] = 0xFF000000 | color32;
+        }
+    }
+}
+
+void CycleAccuratePPU::renderScaled(uint16_t* buffer, int screenWidth, int screenHeight) {
+    if (!buffer) return;
+    
+    // First render to temporary NES buffer
+    static uint16_t nesBuffer[256 * 240];
+    
+    for (int y = 0; y < 240; y++) {
+        for (int x = 0; x < 256; x++) {
+            uint16_t backgroundColor = getBackgroundColor16();
+            uint16_t finalColor = backgroundColor;
+            
+            // Render background pixel if enabled
+            if (ppuMask & 0x08) {
+                uint16_t bgPixel = renderBackgroundPixel(x, y);
+                if (bgPixel != 0) {
+                    finalColor = bgPixel;
+                }
+            }
+            
+            // Render sprite pixel if enabled
+            if (ppuMask & 0x10) {
+                uint16_t spritePixel = renderSpritePixel(x, y);
+                if (spritePixel != 0) {
+                    finalColor = spritePixel;
+                }
+            }
+            
+            nesBuffer[y * 256 + x] = finalColor;
+        }
+    }
+    
+    // Scale to output buffer
+    scaleBuffer16(nesBuffer, buffer, screenWidth, screenHeight);
+}
+
+void CycleAccuratePPU::renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight) {
+    if (!buffer) return;
+    
+    // First render to temporary 32-bit buffer
+    static uint32_t nesBuffer[256 * 240];
+    render(nesBuffer);
+    
+    // Scale to output buffer
+    scaleBuffer32(nesBuffer, buffer, screenWidth, screenHeight);
+}
+
+uint32_t CycleAccuratePPU::convert16BitTo32Bit(uint16_t color16) {
+    // Extract RGB565 components
+    int r = (color16 >> 11) & 0x1F;
+    int g = (color16 >> 5) & 0x3F;
+    int b = color16 & 0x1F;
+    
+    // Scale to 8-bit
+    r = (r << 3) | (r >> 2);
+    g = (g << 2) | (g >> 4);
+    b = (b << 3) | (b >> 2);
+    
+    return (r << 16) | (g << 8) | b;
+}
+
+void CycleAccuratePPU::scaleBuffer16(uint16_t* nesBuffer, uint16_t* outputBuffer, int screenWidth, int screenHeight) {
+    // Clear output buffer
+    for (int i = 0; i < screenWidth * screenHeight; i++) {
+        outputBuffer[i] = 0x0000;
+    }
+    
+    // Calculate scaling
+    int scale_x = screenWidth / 256;
+    int scale_y = screenHeight / 240;
+    int scale = (scale_x < scale_y) ? scale_x : scale_y;
+    if (scale < 1) scale = 1;
+    
+    int dest_w = 256 * scale;
+    int dest_h = 240 * scale;
+    int dest_x = (screenWidth - dest_w) / 2;
+    int dest_y = (screenHeight - dest_h) / 2;
+    
+    // Scale pixels
+    for (int y = 0; y < 240; y++) {
+        for (int x = 0; x < 256; x++) {
+            uint16_t pixel = nesBuffer[y * 256 + x];
+            
+            for (int sy = 0; sy < scale; sy++) {
+                for (int sx = 0; sx < scale; sx++) {
+                    int out_x = dest_x + x * scale + sx;
+                    int out_y = dest_y + y * scale + sy;
+                    
+                    if (out_x >= 0 && out_x < screenWidth && out_y >= 0 && out_y < screenHeight) {
+                        outputBuffer[out_y * screenWidth + out_x] = pixel;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void CycleAccuratePPU::scaleBuffer32(uint32_t* nesBuffer, uint32_t* outputBuffer, int screenWidth, int screenHeight) {
+    // Clear output buffer
+    for (int i = 0; i < screenWidth * screenHeight; i++) {
+        outputBuffer[i] = 0xFF000000;
+    }
+    
+    // Calculate scaling
+    int scale_x = screenWidth / 256;
+    int scale_y = screenHeight / 240;
+    int scale = (scale_x < scale_y) ? scale_x : scale_y;
+    if (scale < 1) scale = 1;
+    
+    int dest_w = 256 * scale;
+    int dest_h = 240 * scale;
+    int dest_x = (screenWidth - dest_w) / 2;
+    int dest_y = (screenHeight - dest_h) / 2;
+    
+    // Scale pixels
+    for (int y = 0; y < 240; y++) {
+        for (int x = 0; x < 256; x++) {
+            uint32_t pixel = nesBuffer[y * 256 + x];
+            
+            for (int sy = 0; sy < scale; sy++) {
+                for (int sx = 0; sx < scale; sx++) {
+                    int out_x = dest_x + x * scale + sx;
+                    int out_y = dest_y + y * scale + sy;
+                    
+                    if (out_x >= 0 && out_x < screenWidth && out_y >= 0 && out_y < screenHeight) {
+                        outputBuffer[out_y * screenWidth + out_x] = pixel;
+                    }
+                }
+            }
+        }
+    }
+}
