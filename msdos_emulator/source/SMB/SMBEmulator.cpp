@@ -1571,13 +1571,7 @@ void SMBEmulator::render16(uint16_t* buffer) {
     // just copy it when frame is ready
     if (frameReady && buffer) {
         memcpy(buffer, renderBuffer, 256 * 240 * sizeof(uint16_t));
-    } else if (buffer) {
-        // If frame not ready, fill with background color
-        uint16_t bgColor = 0x0000;  // Black
-        for (int i = 0; i < 256 * 240; i++) {
-            buffer[i] = bgColor;
-        }
-    }
+    } 
 }
 
 void SMBEmulator::renderDirectFast(uint16_t* buffer, int screenWidth, int screenHeight)
@@ -1588,9 +1582,6 @@ void SMBEmulator::renderDirectFast(uint16_t* buffer, int screenWidth, int screen
 
 void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight) {
     if (!frameReady || !buffer) return;
-    
-    // DON'T clear screen to black - we'll overwrite relevant pixels
-    // Removing: for (int i = 0; i < screenWidth * screenHeight; i++) { buffer[i] = 0x0000; }
     
     // Calculate scaling
     int scale_x = screenWidth / 256;
@@ -1603,40 +1594,21 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
     int dest_x = (screenWidth - dest_w) / 2;
     int dest_y = (screenHeight - dest_h) / 2;
     
-    // Clear only the letterbox areas (borders), not the entire screen
-    if (dest_x > 0) {
-        // Clear left border
+    // Only clear letterbox areas if they exist
+    if (dest_x > 0 || dest_y > 0) {
+        // Clear borders only
         for (int y = 0; y < screenHeight; y++) {
-            for (int x = 0; x < dest_x; x++) {
-                buffer[y * screenWidth + x] = 0x0000;
-            }
-        }
-        // Clear right border  
-        for (int y = 0; y < screenHeight; y++) {
-            for (int x = dest_x + dest_w; x < screenWidth; x++) {
-                buffer[y * screenWidth + x] = 0x0000;
+            for (int x = 0; x < screenWidth; x++) {
+                if (x < dest_x || x >= dest_x + dest_w || 
+                    y < dest_y || y >= dest_y + dest_h) {
+                    buffer[y * screenWidth + x] = 0x0000;
+                }
             }
         }
     }
     
-    if (dest_y > 0) {
-        // Clear top border
-        for (int y = 0; y < dest_y; y++) {
-            for (int x = 0; x < screenWidth; x++) {
-                buffer[y * screenWidth + x] = 0x0000;
-            }
-        }
-        // Clear bottom border
-        for (int y = dest_y + dest_h; y < screenHeight; y++) {
-            for (int x = 0; x < screenWidth; x++) {
-                buffer[y * screenWidth + x] = 0x0000;
-            }
-        }
-    }
-    
-    // Scale the rendered frame (this overwrites the game area)
+    // Scale the pixels from renderBuffer to output buffer
     if (scale == 1) {
-        // 1:1 copy
         for (int y = 0; y < 240; y++) {
             int screen_y = y + dest_y;
             if (screen_y >= 0 && screen_y < screenHeight) {
@@ -1649,7 +1621,6 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
             }
         }
     } else if (scale == 2) {
-        // 2x scaling
         for (int y = 0; y < 240; y++) {
             int dest_y1 = y * 2 + dest_y;
             int dest_y2 = dest_y1 + 1;
@@ -1672,7 +1643,6 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
             }
         }
     } else {
-        // Generic scaling
         for (int y = 0; y < 240; y++) {
             uint16_t* src_row = &renderBuffer[y * 256];
             

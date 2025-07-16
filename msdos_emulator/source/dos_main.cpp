@@ -2108,44 +2108,15 @@ void AllegroMainWindow::drawControlsDialog(BITMAP* target, Player player)
 
 void AllegroMainWindow::updateAndDraw()
 {
-    #ifdef DEBUG_SCALING_CACHE
-    static clock_t lastTime = 0;
-    static int frameCount = 0;
-    static double totalRenderTime = 0;
-    
-    clock_t renderStart = clock();
-    #endif
-    
-    // Clear the back buffer
-    clear_to_color(back_buffer, makecol(0, 0, 0));
-    
     // Draw everything to the back buffer
     if (currentDialog != DIALOG_NONE) {
         drawDialog(back_buffer);
     } else if (showingMenu) {
         drawMenu(back_buffer);
     } else {
-        // Draw the game
+        // Draw the game - this will fill the entire buffer
         drawGameBuffered(back_buffer);
     }
-    
-    #ifdef DEBUG_SCALING_CACHE
-    clock_t renderEnd = clock();
-    double renderTime = ((double)(renderEnd - renderStart)) / CLOCKS_PER_SEC * 1000.0;
-    totalRenderTime += renderTime;
-    frameCount++;
-    
-    // Print performance stats every 5 seconds
-    if (frameCount % 300 == 0) {
-        double avgRenderTime = totalRenderTime / frameCount;
-        printf("Avg render time: %.2fms (%.1f FPS capability)\n", 
-               avgRenderTime, 1000.0 / avgRenderTime);
-        
-        // Reset counters
-        totalRenderTime = 0;
-        frameCount = 0;
-    }
-    #endif
     
     // Only draw status message temporarily (3 seconds) as overlay on the game
     if (statusMessageTimer > 0) {
@@ -2185,10 +2156,8 @@ void AllegroMainWindow::drawGameDirect(BITMAP* target)
 void AllegroMainWindow::drawGameBuffered(BITMAP* target) {
     if (!smbEngine) return;
     
-    //clear_to_color(target, makecol(0, 0, 0));
-    
     if (bitmap_color_depth(target) == 16) {
-        // Direct 16-bit rendering with new system
+        // Direct 16-bit rendering
         smbEngine->renderScaled16((uint16_t*)target->line[0], SCREEN_W, SCREEN_H);
     } else {
         // Convert from cycle-accurate buffer

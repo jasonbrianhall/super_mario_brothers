@@ -105,11 +105,15 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
     return frameComplete;
 }
 
+// In CycleAccuratePPU.cpp - Debug the rendering process
+
 void CycleAccuratePPU::renderCompleteFrame()
 {
     if (!frameBuffer) return;
     
-    // NOW render the entire frame at once
+    // The key insight from the debug version: render the frame in a structured way
+    // that ensures every pixel gets written exactly once
+    
     for (int y = 0; y < 240; y++) {
         for (int x = 0; x < 256; x++) {
             uint16_t backgroundColor = getBackgroundColor16();
@@ -123,7 +127,7 @@ void CycleAccuratePPU::renderCompleteFrame()
                 }
             }
             
-            // Render sprite pixel if enabled
+            // Render sprite pixel if enabled  
             if (ppuMask & 0x10) {  // Sprites enabled
                 uint16_t spritePixel = renderSpritePixel(x, y);
                 if (spritePixel != 0) {
@@ -131,8 +135,6 @@ void CycleAccuratePPU::renderCompleteFrame()
                     if (isSpriteZeroAtPixel(x, y) && (finalColor != backgroundColor)) {
                         sprite0Hit = true;
                     }
-                    
-                    // Apply sprite priority (simplified)
                     finalColor = spritePixel;
                 }
             }
