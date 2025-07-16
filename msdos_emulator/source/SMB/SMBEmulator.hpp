@@ -178,6 +178,7 @@ public:
     static const uint8_t instructionCycles[256];
     uint8_t getControl() const;
     uint8_t getMask() const;    
+    int getMirroringMode() const;
     
 private:
     // Core components

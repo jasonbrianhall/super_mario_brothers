@@ -240,12 +240,33 @@ uint16_t CycleAccuratePPU::renderTilePixel(uint16_t nametableAddr, int pixelX, i
     // Get tile index from nametable
     uint8_t tileIndex = readByte(nametableAddr);
     
-    // Get pattern table base (use captured control register)
-    uint16_t tile = tileIndex + ((frameCtrl & 0x10) ? 256 : 0);
+    // DEBUGGING: Print tile info for first few tiles
+    static int debugCount = 0;
+    if (debugCount < 10) {
+        printf("Tile render: addr=$%04X, tile=$%02X, x=%d, y=%d\n", 
+               nametableAddr, tileIndex, pixelX, pixelY);
+        debugCount++;
+    }
     
-    // Read pattern data
-    uint8_t plane1 = readByte(tile * 16 + pixelY);
-    uint8_t plane2 = readByte(tile * 16 + pixelY + 8);
+    // Get pattern table base - FIXED LOGIC
+    uint16_t patternTableBase;
+    if (frameCtrl & 0x10) {
+        patternTableBase = 0x1000;  // Pattern table 1 ($1000-$1FFF)
+    } else {
+        patternTableBase = 0x0000;  // Pattern table 0 ($0000-$0FFF)
+    }
+    
+    uint16_t tileAddress = patternTableBase + (tileIndex * 16) + pixelY;
+    
+    // Read pattern data using mapper-aware reading
+    uint8_t plane1 = readByte(tileAddress);
+    uint8_t plane2 = readByte(tileAddress + 8);
+    
+    // DEBUGGING: Print pattern data for first few reads
+    if (debugCount < 10) {
+        printf("Pattern data: addr=$%04X, plane1=$%02X, plane2=$%02X\n", 
+               tileAddress, plane1, plane2);
+    }
     
     // Extract 2-bit color index
     uint8_t paletteIndex = (((plane1 >> (7 - pixelX)) & 1) | 
@@ -268,8 +289,8 @@ uint8_t CycleAccuratePPU::readByte(uint16_t address)
     address &= 0x3fff;
 
     if (address < 0x2000) {
-        // CHR data - this is where mappers can change banks mid-frame
-        return engine.getCHR()[address];
+        // CHR data - USE MAPPER-AWARE READING
+        return engine.readCHRData(address);  // Changed from engine.getCHR()[address]
     } else if (address < 0x3f00) {
         // Nametable
         return nametable[getNametableIndex(address)];
@@ -306,7 +327,10 @@ uint16_t CycleAccuratePPU::getNametableIndex(uint16_t address)
     address = (address - 0x2000) % 0x1000;
     int table = address / 0x400;
     int offset = address % 0x400;
-    int mode = 1; // Mirroring mode (should be configurable for different mappers)
+    
+    // GET MIRRORING MODE FROM ENGINE/ROM HEADER
+    int mode = engine.getMirroringMode();  // You'll need to add this method
+    
     return (nametableMirrorLookup[mode][table] * 0x400 + offset) % 2048;
 }
 

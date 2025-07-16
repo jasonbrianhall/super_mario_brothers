@@ -379,15 +379,44 @@ void SMBEmulator::update() {
 }
 
 void SMBEmulator::reset() {
+    // Reset CPU state
+    regA = regX = regY = 0;
+    regSP = 0xFD;
+    regP = 0x34;
+    regPC = readWord(0xFFFC);  // Read reset vector
+    totalCycles = 0;
+    frameCycles = 0;
+    
+    // Reset PPU state
+    if (ppu) {
+        // Reset PPU registers to power-up state
+        ppu->writeRegister(0x2000, 0x00);  // PPUCTRL
+        ppu->writeRegister(0x2001, 0x00);  // PPUMASK
+        ppu->writeRegister(0x2003, 0x00);  // OAMADDR
+        ppu->writeRegister(0x2005, 0x00);  // PPUSCROLL X
+        ppu->writeRegister(0x2005, 0x00);  // PPUSCROLL Y
+        
+        // Clear nametables
+        for (int addr = 0x2000; addr < 0x3000; addr++) {
+            ppu->writeByte(addr, 0x00);
+        }
+        
+        // Initialize default palette
+        ppu->writeByte(0x3F00, 0x09);  // Universal background (dark blue)
+        ppu->writeByte(0x3F01, 0x01);  // Background palette 0, color 1
+        ppu->writeByte(0x3F02, 0x00);  // Background palette 0, color 2  
+        ppu->writeByte(0x3F03, 0x01);  // Background palette 0, color 3
+    }
+    
+    // Reset APU
     apu->reset();
     
-    // NEW: Reset cycle-accurate state
+    // Reset cycle-accurate state
     frameReady = false;
     currentCHRBank = 0;
     memset(renderBuffer, 0, sizeof(renderBuffer));
     
-    //controller1->reset();
-    //controller2->reset();
+    printf("System reset complete. PC=$%04X\n", regPC);
 }
 
 void SMBEmulator::step()
@@ -737,6 +766,11 @@ void SMBEmulator::executeInstruction()
     totalCycles += cycles;
     frameCycles += cycles;
 }
+
+int SMBEmulator::getMirroringMode() const {
+    return nesHeader.mirroring ? 0 : 1;  // 0 = vertical, 1 = horizontal
+}
+
 
 // Memory access functions
 uint8_t SMBEmulator::readByte(uint16_t address)
