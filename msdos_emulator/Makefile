@@ -42,7 +42,7 @@ SOURCE_FILES = \
     source/Emulation/APU.cpp \
     source/Emulation/Controller.cpp \
     source/Emulation/AllegroMidi.cpp \
-    source/Emulation/PPU.cpp \
+    source/Emulation/CycleAccuratePPU.cpp \
     source/SMB/SMBEmulator.cpp
 
 # Object files
