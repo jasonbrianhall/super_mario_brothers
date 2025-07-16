@@ -179,6 +179,7 @@ public:
     uint8_t getControl() const;
     uint8_t getMask() const;    
     int getMirroringMode() const;
+    void setFrameRendered();
     
 private:
     // Core components

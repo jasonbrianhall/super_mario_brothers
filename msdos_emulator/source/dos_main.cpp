@@ -996,20 +996,15 @@ void AllegroMainWindow::run(const char* romFilename) {
     printf("Starting simplified game loop...\n");
     
     while (gameRunning) {
+        handleInput();
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
             // Run emulator for one frame
-            engine.update();
             
             // Audio processing - only when frame is ready
             if(engine.isFrameReady()) {
                 updateAndDraw();
-                handleInput();
-#ifdef __DJGPP__
-               vsync();  // This ensures we wait for vertical retrace
-#else
-              rest(1000 / Configuration::getFrameRate());
-#endif
+                engine.setFrameRendered();
 
 
               if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
@@ -1022,10 +1017,16 @@ void AllegroMainWindow::run(const char* romFilename) {
                       free_audio_stream_buffer(audiostream);
                   }
               }
-           }   
-            // The currentFrameBuffer now points to the engine's internal renderBuffer
-            // which is updated directly by the PPU
-            currentFrameBuffer = engine.isFrameReady() ? renderBuffer : nullptr;
+#ifdef __DJGPP__
+               vsync();  // This ensures we wait for vertical retrace
+#else
+              //rest(1000 / Configuration::getFrameRate());
+#endif
+
+           } else {
+               engine.update();
+           }
+
     
         }
         

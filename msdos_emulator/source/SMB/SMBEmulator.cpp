@@ -347,6 +347,12 @@ void SMBEmulator::handleNMI()
     frameCycles += 7;
 }
 
+void SMBEmulator::setFrameRendered()
+{
+    frameReady = false;
+}
+
+
 void SMBEmulator::update() {
     frameReady = false;
     
