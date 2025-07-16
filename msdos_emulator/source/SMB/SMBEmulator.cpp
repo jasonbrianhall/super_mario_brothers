@@ -45,34 +45,55 @@ const uint8_t SMBEmulator::instructionCycles[256] = {
 };
 
 SMBEmulator::SMBEmulator() {
-    cpu = new CPU(*this);
-    cycleAccuratePPU = new CycleAccuratePPU(*this);  // CHANGED: From ppu = new PPU(*this)
-    apu = new APU(*this);
+    ppu = new CycleAccuratePPU();  
+    apu = new APU();
     mapper = nullptr;
     controller1 = new Controller();
     controller2 = new Controller();
     
-    prg = nullptr;
-    chr = nullptr;
+    prgROM = nullptr;  // Changed from prg
+    chrROM = nullptr;  // Changed from chr
+    prg = nullptr;     // Keep this too if needed
+    chr = nullptr;     // Keep this too if needed
     prgSize = 0;
     chrSize = 0;
+    romLoaded = false;
     
     mapperNumber = 0;
     hasBattery = false;
     hasTrainer = false;
     verticalMirroring = false;
     
-    // NEW: Initialize cycle-accurate state
+    // Initialize cycle-accurate state
     frameReady = false;
     currentCHRBank = 0;
     memset(renderBuffer, 0, sizeof(renderBuffer));
     
     usingMIDIAudio = false;
+    
+    // Initialize CPU state
+    regA = regX = regY = 0;
+    regSP = 0xFD;
+    regP = 0x34;
+    regPC = 0;
+    totalCycles = 0;
+    frameCycles = 0;
+    
+    // Initialize RAM
+    memset(ram, 0, sizeof(ram));
+    
+    // Initialize mapper states
+    memset(&mmc1, 0, sizeof(mmc1));
+    memset(&mmc3, 0, sizeof(mmc3));
+    memset(&cnrom, 0, sizeof(cnrom));
+    memset(&gxrom, 0, sizeof(gxrom));
+    memset(&uxrom, 0, sizeof(uxrom));
+    memset(&nesHeader, 0, sizeof(nesHeader));
 }
 
 SMBEmulator::~SMBEmulator() {
     delete cpu;
-    delete cycleAccuratePPU;  // CHANGED: From delete ppu
+    delete ppu;
     delete apu;
     delete mapper;
     delete controller1;
@@ -340,7 +361,7 @@ void SMBEmulator::update() {
         // Execute corresponding PPU cycles (3 PPU cycles per CPU cycle)
         for (int i = 0; i < cpuCycles * 3; i++) {
             // This renders pixel-by-pixel using current CHR bank state
-            bool frameComplete = cycleAccuratePPU->executeCycle(renderBuffer);
+            bool frameComplete = ppu->executeCycle(renderBuffer);
             
             cyclesExecuted++;
             
@@ -362,7 +383,7 @@ void SMBEmulator::update() {
 
 void SMBEmulator::reset() {
     cpu->reset();
-    cycleAccuratePPU->reset();  // CHANGED: From ppu->reset() (if this method exists)
+    ppu->reset();  // CHANGED: From ppu->reset() (if this method exists)
     apu->reset();
     
     if (mapper) {
@@ -2286,4 +2307,118 @@ void SMBEmulator::writeUxROMRegister(uint16_t address, uint8_t value)
     
     // Debug output
     //printf("UxROM: Set PRG bank to %d (total banks: %d)\n", uxrom.prgBank, totalBanks);
+}
+
+void SMBEmulator::cleanupROM() {
+    if (prgROM) {
+        delete[] prgROM;
+        prgROM = nullptr;
+    }
+    if (chrROM) {
+        delete[] chrROM;
+        chrROM = nullptr;
+    }
+    if (prg) {
+        delete[] prg;
+        prg = nullptr;
+    }
+    if (chr) {
+        delete[] chr;
+        chr = nullptr;
+    }
+    prgSize = chrSize = 0;
+    romLoaded = false;
+}
+
+uint8_t SMBEmulator::readPRG(uint16_t address) {
+    // This is the same logic as in readByte for PRG ROM area
+    if (address >= 0x8000) {
+        if (nesHeader.mapper == 0) {
+            uint32_t romAddr = address - 0x8000;
+            if (prgSize == 16384) {
+                romAddr &= 0x3FFF;
+            }
+            if (romAddr < prgSize) {
+                return prgROM[romAddr];
+            }
+        }
+        // Add other mapper logic here...
+    }
+    return 0;
+}
+
+void SMBEmulator::writePRG(uint16_t address, uint8_t value) {
+    // Handle mapper writes
+    if (address >= 0x8000) {
+        if (nesHeader.mapper == 1) {
+            writeMMC1Register(address, value);
+        } else if (nesHeader.mapper == 2) {
+            writeUxROMRegister(address, value);
+        } else if (nesHeader.mapper == 3) {
+            writeCNROMRegister(address, value);
+        } else if (nesHeader.mapper == 4) {
+            writeMMC3Register(address, value);
+        } else if (nesHeader.mapper == 66) {
+            writeGxROMRegister(address, value);
+        }
+    }
+}
+
+// Fix PPU register access
+uint8_t SMBEmulator::readPPURegister(uint16_t address) {
+    // You'll need to implement this or delegate to ppu
+    if (ppu) {
+        return ppu->readRegister(address);
+    }
+    return 0;
+}
+
+void SMBEmulator::writePPURegister(uint16_t address, uint8_t value) {
+    // You'll need to implement this or delegate to ppu
+    if (ppu) {
+        ppu->writeRegister(address, value);
+    }
+}
+
+void SMBEmulator::writePPUDMA(uint8_t page) {
+    // You'll need to implement this or delegate to ppu
+    if (ppu) {
+        ppu->writeDMA(page);
+    }
+}
+
+// Add missing PPU state access methods
+uint8_t* SMBEmulator::getPaletteRAM() {
+    if (ppu) {
+        return ppu->getPaletteRAM();
+    }
+    return nullptr;
+}
+
+uint8_t* SMBEmulator::getOAM() {
+    if (ppu) {
+        return ppu->getOAM();
+    }
+    return nullptr;
+}
+
+uint8_t* SMBEmulator::getVRAM() {
+    if (ppu) {
+        return ppu->getVRAM();
+    }
+    return nullptr;
+}
+
+uint8_t SMBEmulator::getPPUControl() const {
+    if (ppu) {
+        return ppu->getPPUControl();
+    }
+    return 0;
+}
+
+uint8_t SMBEmulator::getPPUMask() const {
+    if (ppu) {
+        return ppu->getPPUMask();
+    }
+    return 0;
 }

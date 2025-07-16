@@ -180,7 +180,7 @@ public:
 private:
     // Core components
     CPU* cpu;
-    CycleAccuratePPU* cycleAccuratePPU;
+    CycleAccuratePPU* ppu;
     APU* apu;
     Mapper* mapper;
     Controller* controller1;
