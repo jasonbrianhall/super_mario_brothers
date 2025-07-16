@@ -975,19 +975,16 @@ void AllegroMainWindow::setupMenu()
     menuCount++;
 }
 
-void AllegroMainWindow::run(const char* romFilename) 
-{
-    printf("=== Starting Super Mario Bros ===\n");
+void AllegroMainWindow::run(const char* romFilename) {
+    printf("=== Starting Super Mario Bros (Cycle-Accurate) ===\n");
     
     gamePaused = false;
     showingMenu = false;
     currentDialog = DIALOG_NONE;
     
-    // Create and initialize emulator
     SMBEmulator engine;
     smbEngine = &engine;
     
-    // Load ROM file
     printf("Loading ROM: %s\n", romFilename);
     if (!engine.loadROM(romFilename)) {
         printf("Failed to load ROM file: %s\n", romFilename);
@@ -1001,17 +998,17 @@ void AllegroMainWindow::run(const char* romFilename)
     gameRunning = true;
     setStatusMessage("Game started - Press ESC for menu");
     
-    printf("Starting main game loop...\n");
-    printf("Resolution: %dx%d\n", SCREEN_W, SCREEN_H);
-    printf("Audio: %s\n", dosAudioInitialized ? "Enabled" : "Disabled");
+    printf("Starting cycle-accurate main game loop...\n");
     
     while (gameRunning) {
         handleInput();
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
+            // CRITICAL CHANGE: update() now renders internally
             engine.update();
             
-            if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
+            // Audio processing (only when frame is ready)
+            if (engine.isFrameReady() && dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
                 void* audiobuf = get_audio_stream_buffer(audiostream);
                 if (audiobuf) {
                     int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
@@ -1022,26 +1019,25 @@ void AllegroMainWindow::run(const char* romFilename)
                 }
             }
             
-            engine.render16(renderBuffer);
-            currentFrameBuffer = renderBuffer;
+            // Get the rendered frame (already complete from update())
+            if (engine.isFrameReady()) {
+                engine.render16(renderBuffer);
+                currentFrameBuffer = renderBuffer;
+            }
         }
         
         updateAndDraw();
+        
         #ifdef __DJGPP__
-        // DOS: Let vsync handle all timing
         vsync();
         #else
-        // Linux: Simple rest
         rest(1000 / Configuration::getFrameRate());
         #endif
     }
     
-    if (dosAudioInitialized) {
-        printf("Cleaning up audio...\n");
-    }
-    
-    printf("Game loop ended normally\n");
+    printf("Cycle-accurate game loop ended normally\n");
 }
+
 
 void AllegroMainWindow::showJoystickStatus()
 {
@@ -2195,28 +2191,19 @@ void AllegroMainWindow::drawGameDirect(BITMAP* target)
     drawGameBuffered(target);
 }
 
-void AllegroMainWindow::drawGameBuffered(BITMAP* target)
-{
+void AllegroMainWindow::drawGameBuffered(BITMAP* target) {
     if (!smbEngine) return;
-    clear_to_color(target, makecol(0, 0, 0)); // Use black instead of blue
+    
+    clear_to_color(target, makecol(0, 0, 0));
+    
     if (bitmap_color_depth(target) == 16) {
-        // Direct 16-bit rendering - this SHOULD use your cached PPU scaling
+        // Direct 16-bit rendering with new system
         smbEngine->renderScaled16((uint16_t*)target->line[0], SCREEN_W, SCREEN_H);
     } else {
-        // For non-16-bit targets, use temporary buffer
-        static uint16_t tempBuffer[1024 * 768];
-        
-        if (SCREEN_W * SCREEN_H <= 1024 * 768) {
-            // Render with PPU cached scaling to temp buffer
-            smbEngine->renderScaled16(tempBuffer, SCREEN_W, SCREEN_H);
-            // Then convert to target format
-            convertScreenBuffer16ToBitmap(tempBuffer, target);
-        } else {
-            // Fallback only for huge screens
-            printf("Fallback should never be reached\n");
-            //smbEngine->render(renderBuffer);
-            //convertScreenBuffer32ToBitmap(renderBuffer, target);
-        }
+        // Convert from cycle-accurate buffer
+        static uint16_t tempBuffer[256 * 240];
+        smbEngine->render16(tempBuffer);
+        convertScreenBuffer16ToBitmap(tempBuffer, target);
     }
 }
 
@@ -2470,6 +2457,7 @@ void AllegroMainWindow::convertBuffer16ToBitmapScaled(uint16_t* buffer16, BITMAP
         }
     }
 }
+
 void AllegroMainWindow::drawGameUltraFast(BITMAP* target)
 {
     // This version requires the screen bitmap to be 16-bit and accessible
@@ -2477,11 +2465,11 @@ void AllegroMainWindow::drawGameUltraFast(BITMAP* target)
         // Get pointer to screen memory
         uint16_t* screenMem = (uint16_t*)target->line[0];
         
-        // Render directly to screen memory with centering
-        smbEngine->renderDirectFast(screenMem, SCREEN_W, SCREEN_H);
+        // CHANGED: Use the new cycle-accurate rendering
+        smbEngine->renderScaled16(screenMem, SCREEN_W, SCREEN_H);
     } else {
         // Fall back to buffered method
-        drawGameDirect(target);
+        drawGameBuffered(target);
     }
 }
 

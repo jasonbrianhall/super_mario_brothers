@@ -4,7 +4,7 @@
 #include <fstream>
 #include "SMBEmulator.hpp"
 #include "../Emulation/APU.hpp"
-#include "../Emulation/PPU.hpp"
+#include "../Emulation/CycleAccuratePPU.hpp"
 #include "../Emulation/Controller.hpp"
 #include "../Configuration.hpp"
 
@@ -44,29 +44,41 @@ const uint8_t SMBEmulator::instructionCycles[256] = {
     2, 5, 0, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7
 };
 
-SMBEmulator::SMBEmulator() 
-    : regA(0), regX(0), regY(0), regSP(0xFF), regPC(0), regP(0x24),
-      totalCycles(0), frameCycles(0), prgROM(nullptr), chrROM(nullptr),
-      prgSize(0), chrSize(0), romLoaded(false)
-{
-    // Initialize RAM
-    memset(ram, 0, sizeof(ram));
-    memset(&nesHeader, 0, sizeof(nesHeader));
-    
-    // Create components - they'll get CHR data when ROM is loaded
-    apu = new APU();
-    ppu = new PPU(*this);
+SMBEmulator::SMBEmulator() {
+    cpu = new CPU(*this);
+    cycleAccuratePPU = new CycleAccuratePPU(*this);  // CHANGED: From ppu = new PPU(*this)
+    apu = new APU(*this);
+    mapper = nullptr;
     controller1 = new Controller();
     controller2 = new Controller();
+    
+    prg = nullptr;
+    chr = nullptr;
+    prgSize = 0;
+    chrSize = 0;
+    
+    mapperNumber = 0;
+    hasBattery = false;
+    hasTrainer = false;
+    verticalMirroring = false;
+    
+    // NEW: Initialize cycle-accurate state
+    frameReady = false;
+    currentCHRBank = 0;
+    memset(renderBuffer, 0, sizeof(renderBuffer));
+    
+    usingMIDIAudio = false;
 }
 
-SMBEmulator::~SMBEmulator()
-{
+SMBEmulator::~SMBEmulator() {
+    delete cpu;
+    delete cycleAccuratePPU;  // CHANGED: From delete ppu
     delete apu;
-    delete ppu;
+    delete mapper;
     delete controller1;
     delete controller2;
-    unloadROM();
+    
+    cleanupROM();
 }
 
 void SMBEmulator::writeCNROMRegister(uint16_t address, uint8_t value)
@@ -314,125 +326,56 @@ void SMBEmulator::handleNMI()
     frameCycles += 7;
 }
 
-void SMBEmulator::update()
-{
-    if (!romLoaded) return;
-    static int frameCount = 0;
-    frameCycles = 0;
+void SMBEmulator::update() {
+    frameReady = false;
     
-    // More precise NTSC timing
-    const int CYCLES_PER_SCANLINE = 113;
-    const int VISIBLE_SCANLINES = 240;
-    const int VBLANK_START_SCANLINE = 241;
-    const int TOTAL_SCANLINES = 262;
-
-    // Execute visible scanlines (0-240)
-    for (int scanline = 0; scanline <= VISIBLE_SCANLINES; scanline++) {
-        for (int cycle = 0; cycle < CYCLES_PER_SCANLINE; cycle++) {
-            executeInstruction();
+    // Execute exactly one frame worth of cycles
+    const int TOTAL_FRAME_CYCLES = 29780;  // NTSC frame cycles
+    int cyclesExecuted = 0;
+    
+    while (cyclesExecuted < TOTAL_FRAME_CYCLES && !frameReady) {
+        // Execute one CPU instruction
+        int cpuCycles = cpu->executeInstruction();
+        
+        // Execute corresponding PPU cycles (3 PPU cycles per CPU cycle)
+        for (int i = 0; i < cpuCycles * 3; i++) {
+            // This renders pixel-by-pixel using current CHR bank state
+            bool frameComplete = cycleAccuratePPU->executeCycle(renderBuffer);
+            
+            cyclesExecuted++;
+            
+            if (frameComplete) {
+                frameReady = true;
+                break;
+            }
         }
         
-        // Simulate sprite 0 hit around scanline 32 (status bar area)
-        if (scanline == 32 && (ppu->getMask() & 0x18)) { // If rendering enabled
-            ppu->setSprite0Hit(true);
+        // Execute APU cycles
+        apu->executeCycles(cpuCycles);
+        
+        // CRITICAL: Mapper updates can change CHR banks mid-frame!
+        if (mapper) {
+            mapper->update(cpuCycles);
         }
-    }
-
-    // CAPTURE SCROLL VALUE RIGHT BEFORE VBLANK
-    ppu->captureFrameScroll();
-
-    // Start VBlank on scanline 241
-    ppu->setVBlankFlag(true);
-    
-    // Execute a few cycles to let the game see VBlank before NMI
-    for (int i = 0; i < 3; i++) {
-        executeInstruction();
-    }
-
-    // Trigger NMI if enabled
-    if (ppu->getControl() & 0x80) {
-        handleNMI();
-    }
-
-    // Execute remaining VBlank scanlines (241-261)
-    for (int scanline = VBLANK_START_SCANLINE; scanline < TOTAL_SCANLINES; scanline++) {
-        for (int cycle = 0; cycle < CYCLES_PER_SCANLINE; cycle++) {
-            executeInstruction();
-        }
-    }
-
-    // Clear VBlank flag and sprite 0 hit at start of next frame
-    ppu->setVBlankFlag(false);
-    ppu->setSprite0Hit(false);
-
-    frameCount++;
-
-    // Advance audio frame
-    if (Configuration::getAudioEnabled()) {
-        apu->stepFrame();
     }
 }
 
-void SMBEmulator::reset()
-{
-    if (!romLoaded) return;
+void SMBEmulator::reset() {
+    cpu->reset();
+    cycleAccuratePPU->reset();  // CHANGED: From ppu->reset() (if this method exists)
+    apu->reset();
     
-    // Reset CPU state
-    regA = regX = regY = 0;
-    regSP = 0xFF;
-    regP = 0x24;
-    totalCycles = frameCycles = 0;
-    
-    // Initialize mapper state
-    if (nesHeader.mapper == 1) {
-        mmc1 = MMC1State();
-        mmc1.control = 0x08;
-        mmc1.prgBank = 0;     
-        mmc1.currentPRGBank = 0;
-        updateMMC1Banks();
-    } else if (nesHeader.mapper == 66) {
-        gxrom = GxROMState();
-        
-        // Debug: Check all PRG banks for reset vectors
-        uint8_t totalBanks = prgSize / 0x8000;  // 32KB banks
-        for (int bank = 0; bank < totalBanks; bank++) {
-            uint32_t bankOffset = bank * 0x8000;
-            uint32_t resetLow = bankOffset + 0x7FFC;   // $FFFC relative to bank
-            uint32_t resetHigh = bankOffset + 0x7FFD;  // $FFFD relative to bank
-            
-            if (resetLow < prgSize && resetHigh < prgSize) {
-                uint8_t low = prgROM[resetLow];
-                uint8_t high = prgROM[resetHigh];
-                uint16_t resetVector = low | (high << 8);
-            }
-        }
-    } else if (nesHeader.mapper == 2) {
-        // UxROM initialization
-        uxrom = UxROMState();
-        printf("UxROM mapper initialized\n");    } else if (nesHeader.mapper == 3) {
-        cnrom = CNROMState();
-    } else if (nesHeader.mapper == 4) {
-        mmc3 = MMC3State();
-        // MMC3 power-up state according to wiki
-        mmc3.bankData[0] = 0;  // R0: 2KB CHR bank at $0000-$07FF
-        mmc3.bankData[1] = 2;  // R1: 2KB CHR bank at $0800-$0FFF  
-        mmc3.bankData[2] = 4;  // R2: 1KB CHR bank at $1000-$13FF
-        mmc3.bankData[3] = 5;  // R3: 1KB CHR bank at $1400-$17FF
-        mmc3.bankData[4] = 6;  // R4: 1KB CHR bank at $1800-$1BFF
-        mmc3.bankData[5] = 7;  // R5: 1KB CHR bank at $1C00-$1FFF
-        mmc3.bankData[6] = 0;  // R6: 8KB PRG bank (switchable)
-        mmc3.bankData[7] = 1;  // R7: 8KB PRG bank (switchable)
-        mmc3.bankSelect = 0;   // Normal mode
-        updateMMC3Banks();
+    if (mapper) {
+        mapper->reset();
     }
     
-    // Reset vector at $FFFC-$FFFD
-    regPC = readWord(0xFFFC);
+    // NEW: Reset cycle-accurate state
+    frameReady = false;
+    currentCHRBank = 0;
+    memset(renderBuffer, 0, sizeof(renderBuffer));
     
-    // Clear RAM
-    memset(ram, 0, sizeof(ram));
-    
-    std::cout << "Emulator reset, PC = $" << std::hex << regPC << std::dec << std::endl;
+    controller1->reset();
+    controller2->reset();
 }
 
 void SMBEmulator::step()
@@ -1690,9 +1633,10 @@ void SMBEmulator::render(uint32_t* buffer)
     ppu->render(buffer);
 }
 
-void SMBEmulator::render16(uint16_t* buffer)
-{
-    ppu->render16(buffer);
+void SMBEmulator::render16(uint16_t* buffer) {
+    if (frameReady && buffer) {
+        memcpy(buffer, renderBuffer, 256 * 240 * sizeof(uint16_t));
+    }
 }
 
 void SMBEmulator::renderDirectFast(uint16_t* buffer, int screenWidth, int screenHeight)
@@ -1701,9 +1645,86 @@ void SMBEmulator::renderDirectFast(uint16_t* buffer, int screenWidth, int screen
 }
 
 
-void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight)
-{
-    ppu->renderScaled(buffer, screenWidth, screenHeight);
+void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight) {
+    if (!frameReady || !buffer) return;
+    
+    // Clear screen
+    for (int i = 0; i < screenWidth * screenHeight; i++) {
+        buffer[i] = 0x0000;  // Black
+    }
+    
+    // Calculate scaling
+    int scale_x = screenWidth / 256;
+    int scale_y = screenHeight / 240;
+    int scale = (scale_x < scale_y) ? scale_x : scale_y;
+    if (scale < 1) scale = 1;
+    
+    int dest_w = 256 * scale;
+    int dest_h = 240 * scale;
+    int dest_x = (screenWidth - dest_w) / 2;
+    int dest_y = (screenHeight - dest_h) / 2;
+    
+    // Scale the rendered frame
+    if (scale == 1) {
+        // 1:1 copy
+        for (int y = 0; y < 240; y++) {
+            int screen_y = y + dest_y;
+            if (screen_y >= 0 && screen_y < screenHeight) {
+                uint16_t* src_row = &renderBuffer[y * 256];
+                uint16_t* dest_row = &buffer[screen_y * screenWidth + dest_x];
+                int copy_width = (dest_x + 256 > screenWidth) ? screenWidth - dest_x : 256;
+                if (copy_width > 0) {
+                    memcpy(dest_row, src_row, copy_width * sizeof(uint16_t));
+                }
+            }
+        }
+    } else if (scale == 2) {
+        // 2x scaling
+        for (int y = 0; y < 240; y++) {
+            int dest_y1 = y * 2 + dest_y;
+            int dest_y2 = dest_y1 + 1;
+            
+            if (dest_y2 >= screenHeight) break;
+            if (dest_y1 < 0) continue;
+            
+            uint16_t* src_row = &renderBuffer[y * 256];
+            uint16_t* dest_row1 = &buffer[dest_y1 * screenWidth + dest_x];
+            uint16_t* dest_row2 = &buffer[dest_y2 * screenWidth + dest_x];
+            
+            for (int x = 0; x < 256; x++) {
+                if ((x * 2 + dest_x + 1) >= screenWidth) break;
+                
+                uint16_t pixel = src_row[x];
+                int dest_base = x * 2;
+                
+                dest_row1[dest_base] = dest_row1[dest_base + 1] = pixel;
+                dest_row2[dest_base] = dest_row2[dest_base + 1] = pixel;
+            }
+        }
+    } else {
+        // Generic scaling
+        for (int y = 0; y < 240; y++) {
+            uint16_t* src_row = &renderBuffer[y * 256];
+            
+            for (int scale_y = 0; scale_y < scale; scale_y++) {
+                int dest_row_idx = y * scale + scale_y + dest_y;
+                if (dest_row_idx >= screenHeight || dest_row_idx < 0) continue;
+                
+                uint16_t* dest_row = &buffer[dest_row_idx * screenWidth];
+                
+                for (int x = 0; x < 256; x++) {
+                    uint16_t pixel = src_row[x];
+                    
+                    for (int scale_x = 0; scale_x < scale; scale_x++) {
+                        int dest_col = x * scale + scale_x + dest_x;
+                        if (dest_col >= 0 && dest_col < screenWidth) {
+                            dest_row[dest_col] = pixel;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 void SMBEmulator::renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight)
@@ -1876,14 +1897,57 @@ uint8_t* SMBEmulator::getCHR()
     return chrROM;
 }
 
-uint8_t SMBEmulator::readData(uint16_t address)
-{
-    return readByte(address);
+uint8_t SMBEmulator::readData(uint16_t address) {
+    // CPU memory map
+    if (address < 0x2000) {
+        // RAM (with mirroring)
+        return ram[address & 0x7FF];
+    } else if (address < 0x4000) {
+        // PPU registers (with mirroring)
+        return readPPURegister(0x2000 + (address & 0x7));  // CHANGED: Use new method
+    } else if (address == 0x4014) {
+        // OAM DMA - write only
+        return 0;
+    } else if (address == 0x4016) {
+        // Controller 1
+        return controller1->read();
+    } else if (address == 0x4017) {
+        // Controller 2
+        return controller2->read();
+    } else if (address >= 0x4000 && address < 0x4020) {
+        // APU registers
+        return apu->readRegister(address);
+    } else if (address >= 0x8000) {
+        // PRG ROM
+        return readPRG(address);
+    }
+    
+    return 0;
 }
 
-void SMBEmulator::writeData(uint16_t address, uint8_t value)
-{
-    writeByte(address, value);
+
+void SMBEmulator::writeData(uint16_t address, uint8_t value) {
+    // CPU memory map
+    if (address < 0x2000) {
+        // RAM (with mirroring)
+        ram[address & 0x7FF] = value;
+    } else if (address < 0x4000) {
+        // PPU registers (with mirroring)
+        writePPURegister(0x2000 + (address & 0x7), value);  // CHANGED: Use new method
+    } else if (address == 0x4014) {
+        // OAM DMA
+        writePPUDMA(value);  // CHANGED: Use new method
+    } else if (address == 0x4016) {
+        // Controller strobe
+        controller1->write(value);
+        controller2->write(value);
+    } else if (address >= 0x4000 && address < 0x4020) {
+        // APU registers
+        apu->writeRegister(address, value);
+    } else if (address >= 0x8000) {
+        // PRG ROM area - let mapper handle it
+        writePRG(address, value);
+    }
 }
 
 // Illegal opcode implementations
@@ -2196,36 +2260,16 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
     return 0;
 }
 
-uint8_t SMBEmulator::readCHRDataFromBank(uint16_t address, uint8_t bank)
-{
-    if (address >= 0x2000) return 0;
-    
-    // Calculate the address within the specified bank
-    uint32_t chrAddr;
-    
-    if (nesHeader.mapper == 66) {
-        // GxROM uses 8KB CHR banks
-        chrAddr = (bank * 0x2000) + address;
-    } else if (nesHeader.mapper == 4) {
-        // MMC3 uses 1KB CHR banks
-        chrAddr = (bank * 0x400) + (address % 0x400);
-    } else if (nesHeader.mapper == 1) {
-        // MMC1 uses 4KB CHR banks
-        chrAddr = (bank * 0x1000) + (address % 0x1000);
-    } else if (nesHeader.mapper == 3) {
-        // CNROM uses 8KB CHR banks
-        chrAddr = (bank * 0x2000) + address;
-    } else if (nesHeader.mapper == 2) {
-        // UxROM uses CHR-RAM (no banking) - ignore bank parameter
-        chrAddr = address;
-    } else {
-        // Mapper 0 (NROM) - no banking
-        chrAddr = address;
+uint8_t SMBEmulator::readCHRDataFromBank(uint16_t address, uint8_t bank) {
+    // For mapper 2 (UNROM), CHR is actually CHR-RAM, not banked
+    // But implement this based on your mapper system
+    if (mapper) {
+        return mapper->readCHR(address, bank);
     }
     
-    // Bounds check
-    if (chrAddr < chrSize) {
-        return chrROM[chrAddr];
+    // Fallback to direct CHR access
+    if (address < chrSize) {
+        return chr[address];
     }
     
     return 0;
