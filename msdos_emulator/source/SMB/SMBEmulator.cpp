@@ -354,13 +354,15 @@ void SMBEmulator::update() {
     const int TOTAL_FRAME_CYCLES = 29780;  // NTSC frame cycles
     int cyclesExecuted = 0;
     int cpuCycles;
+    
     while (cyclesExecuted < TOTAL_FRAME_CYCLES && !frameReady) {
         // Execute one CPU instruction
         executeInstruction();
-        cpuCycles=5;
+        cpuCycles = 5;  // You had this hardcoded
+        
         // Execute corresponding PPU cycles (3 PPU cycles per CPU cycle)
         for (int i = 0; i < cpuCycles * 3; i++) {
-            // This renders pixel-by-pixel using current CHR bank state
+            // CRITICAL: Pass renderBuffer directly to PPU
             bool frameComplete = ppu->executeCycle(renderBuffer);
             
             cyclesExecuted++;
@@ -370,12 +372,10 @@ void SMBEmulator::update() {
                 break;
             }
         }
-        
-        // Remove mapper update call since Mapper is incomplete type
-        // if (mapper) {
-        //     mapper->update(cpuCycles);
-        // }
     }
+    
+    // DON'T copy from PPU buffer since we're passing renderBuffer directly
+    // The PPU writes directly to renderBuffer now
 }
 
 void SMBEmulator::reset() {
@@ -1567,8 +1567,16 @@ void SMBEmulator::render(uint32_t* buffer)
 }
 
 void SMBEmulator::render16(uint16_t* buffer) {
+    // Since renderBuffer is now updated directly by the PPU,
+    // just copy it when frame is ready
     if (frameReady && buffer) {
         memcpy(buffer, renderBuffer, 256 * 240 * sizeof(uint16_t));
+    } else if (buffer) {
+        // If frame not ready, fill with background color
+        uint16_t bgColor = 0x0000;  // Black
+        for (int i = 0; i < 256 * 240; i++) {
+            buffer[i] = bgColor;
+        }
     }
 }
 
@@ -1581,10 +1589,8 @@ void SMBEmulator::renderDirectFast(uint16_t* buffer, int screenWidth, int screen
 void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight) {
     if (!frameReady || !buffer) return;
     
-    // Clear screen
-    for (int i = 0; i < screenWidth * screenHeight; i++) {
-        buffer[i] = 0x0000;  // Black
-    }
+    // DON'T clear screen to black - we'll overwrite relevant pixels
+    // Removing: for (int i = 0; i < screenWidth * screenHeight; i++) { buffer[i] = 0x0000; }
     
     // Calculate scaling
     int scale_x = screenWidth / 256;
@@ -1597,7 +1603,38 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
     int dest_x = (screenWidth - dest_w) / 2;
     int dest_y = (screenHeight - dest_h) / 2;
     
-    // Scale the rendered frame
+    // Clear only the letterbox areas (borders), not the entire screen
+    if (dest_x > 0) {
+        // Clear left border
+        for (int y = 0; y < screenHeight; y++) {
+            for (int x = 0; x < dest_x; x++) {
+                buffer[y * screenWidth + x] = 0x0000;
+            }
+        }
+        // Clear right border  
+        for (int y = 0; y < screenHeight; y++) {
+            for (int x = dest_x + dest_w; x < screenWidth; x++) {
+                buffer[y * screenWidth + x] = 0x0000;
+            }
+        }
+    }
+    
+    if (dest_y > 0) {
+        // Clear top border
+        for (int y = 0; y < dest_y; y++) {
+            for (int x = 0; x < screenWidth; x++) {
+                buffer[y * screenWidth + x] = 0x0000;
+            }
+        }
+        // Clear bottom border
+        for (int y = dest_y + dest_h; y < screenHeight; y++) {
+            for (int x = 0; x < screenWidth; x++) {
+                buffer[y * screenWidth + x] = 0x0000;
+            }
+        }
+    }
+    
+    // Scale the rendered frame (this overwrites the game area)
     if (scale == 1) {
         // 1:1 copy
         for (int y = 0; y < 240; y++) {

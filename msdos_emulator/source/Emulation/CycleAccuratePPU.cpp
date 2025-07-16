@@ -60,25 +60,17 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
     frameBuffer = buffer;
     frameComplete = false;
     
-    // NES PPU timing: 341 cycles per scanline, 262 scanlines per frame
-    // Scanlines 0-239: visible area
-    // Scanline 240: post-render 
-    // Scanlines 241-260: VBlank
-    // Scanline 261: pre-render
-    
     if (currentScanline >= 0 && currentScanline <= 239) {
-        // Visible scanlines - DON'T render to display buffer yet
-        // Just update internal state
+        // Visible scanlines - don't render yet
         executeVisibleScanline();
     } else if (currentScanline == 240) {
         // Post-render scanline - do nothing
     } else if (currentScanline == 241 && currentCycle == 1) {
         // Start of VBlank
         ppuStatus |= 0x80;  // Set VBlank flag
-        frameScrollX = ppuScrollX;  // Capture scroll for this frame
-        frameCtrl = ppuCtrl;        // Capture control for this frame
+        frameScrollX = ppuScrollX;
+        frameCtrl = ppuCtrl;
         
-        // Generate NMI if enabled
         if (ppuCtrl & 0x80) {
             engine.triggerNMI();
         }
@@ -86,12 +78,10 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
         // Pre-render scanline
         if (currentCycle == 1) {
             ppuStatus &= 0x7F;  // Clear VBlank flag
-            sprite0Hit = false; // Clear sprite 0 hit flag
+            sprite0Hit = false;
             
-            // CLEAR the frame buffer at the START of the new frame
-            if (frameBuffer) {
-                memset(frameBuffer, 0, 256 * 240 * sizeof(uint16_t));
-            }
+            // DON'T clear the frame buffer - we'll overwrite every pixel anyway
+            // Removing: memset(frameBuffer, 0, 256 * 240 * sizeof(uint16_t));
         }
     }
     
@@ -105,8 +95,8 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
             currentScanline = 0;
             frameComplete = true;
             
-            // RENDER the entire frame NOW - at the very end
-            if (frameBuffer && (ppuMask & 0x08)) {  // Only if background enabled
+            // Render the entire frame NOW - every pixel will be written
+            if (frameBuffer) {
                 renderCompleteFrame();
             }
         }
@@ -674,10 +664,8 @@ uint32_t CycleAccuratePPU::convert16BitTo32Bit(uint16_t color16) {
 }
 
 void CycleAccuratePPU::scaleBuffer16(uint16_t* nesBuffer, uint16_t* outputBuffer, int screenWidth, int screenHeight) {
-    // Clear output buffer
-    for (int i = 0; i < screenWidth * screenHeight; i++) {
-        outputBuffer[i] = 0x0000;
-    }
+    // DON'T clear output buffer to black - we'll overwrite the relevant areas
+    // Removing: for (int i = 0; i < screenWidth * screenHeight; i++) { outputBuffer[i] = 0x0000; }
     
     // Calculate scaling
     int scale_x = screenWidth / 256;
@@ -690,7 +678,20 @@ void CycleAccuratePPU::scaleBuffer16(uint16_t* nesBuffer, uint16_t* outputBuffer
     int dest_x = (screenWidth - dest_w) / 2;
     int dest_y = (screenHeight - dest_h) / 2;
     
-    // Scale pixels
+    // Clear only letterbox areas if needed
+    if (dest_x > 0 || dest_y > 0) {
+        // Clear borders only, not the entire screen
+        for (int y = 0; y < screenHeight; y++) {
+            for (int x = 0; x < screenWidth; x++) {
+                if (x < dest_x || x >= dest_x + dest_w || 
+                    y < dest_y || y >= dest_y + dest_h) {
+                    outputBuffer[y * screenWidth + x] = 0x0000;
+                }
+            }
+        }
+    }
+    
+    // Scale pixels (overwrites the game area)
     for (int y = 0; y < 240; y++) {
         for (int x = 0; x < 256; x++) {
             uint16_t pixel = nesBuffer[y * 256 + x];
@@ -710,10 +711,8 @@ void CycleAccuratePPU::scaleBuffer16(uint16_t* nesBuffer, uint16_t* outputBuffer
 }
 
 void CycleAccuratePPU::scaleBuffer32(uint32_t* nesBuffer, uint32_t* outputBuffer, int screenWidth, int screenHeight) {
-    // Clear output buffer
-    for (int i = 0; i < screenWidth * screenHeight; i++) {
-        outputBuffer[i] = 0xFF000000;
-    }
+    // DON'T clear output buffer
+    // Removing: for (int i = 0; i < screenWidth * screenHeight; i++) { outputBuffer[i] = 0xFF000000; }
     
     // Calculate scaling
     int scale_x = screenWidth / 256;
@@ -725,6 +724,18 @@ void CycleAccuratePPU::scaleBuffer32(uint32_t* nesBuffer, uint32_t* outputBuffer
     int dest_h = 240 * scale;
     int dest_x = (screenWidth - dest_w) / 2;
     int dest_y = (screenHeight - dest_h) / 2;
+    
+    // Clear only letterbox areas if needed
+    if (dest_x > 0 || dest_y > 0) {
+        for (int y = 0; y < screenHeight; y++) {
+            for (int x = 0; x < screenWidth; x++) {
+                if (x < dest_x || x >= dest_x + dest_w || 
+                    y < dest_y || y >= dest_y + dest_h) {
+                    outputBuffer[y * screenWidth + x] = 0xFF000000;
+                }
+            }
+        }
+    }
     
     // Scale pixels
     for (int y = 0; y < 240; y++) {

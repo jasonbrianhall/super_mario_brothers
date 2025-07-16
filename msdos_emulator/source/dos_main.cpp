@@ -993,39 +993,37 @@ void AllegroMainWindow::run(const char* romFilename) {
     engine.reset();
     gameRunning = true;
     
-    printf("Starting frame-based game loop...\n");
+    printf("Starting simplified game loop...\n");
     
     while (gameRunning) {
         handleInput();
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
-            // Run emulator until frame is complete
+            // Run emulator for one frame
             engine.update();
             
-            // Only get the frame data when it's actually ready
-            if (engine.isFrameReady()) {
-                engine.render16(renderBuffer);
-                currentFrameBuffer = renderBuffer;
-                
-                // Audio processing
-                if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
-                    void* audiobuf = get_audio_stream_buffer(audiostream);
-                    if (audiobuf) {
-                        int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
-                        if (samplesNeeded > 1024) samplesNeeded = 1024;
-                        
-                        engine.audioCallback((uint8_t*)audiobuf, samplesNeeded);
-                        free_audio_stream_buffer(audiostream);
-                    }
+            // Audio processing - only when frame is ready
+            if (engine.isFrameReady() && dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
+                void* audiobuf = get_audio_stream_buffer(audiostream);
+                if (audiobuf) {
+                    int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
+                    if (samplesNeeded > 1024) samplesNeeded = 1024;
+                    
+                    engine.audioCallback((uint8_t*)audiobuf, samplesNeeded);
+                    free_audio_stream_buffer(audiostream);
                 }
             }
+            
+            // The currentFrameBuffer now points to the engine's internal renderBuffer
+            // which is updated directly by the PPU
+            currentFrameBuffer = engine.isFrameReady() ? renderBuffer : nullptr;
         }
         
-        // Display the completed frame
+        // Display whatever frame is available
         updateAndDraw();
         
         #ifdef __DJGPP__
-        vsync();
+        vsync();  // This ensures we wait for vertical retrace
         #else
         rest(1000 / Configuration::getFrameRate());
         #endif
@@ -2187,7 +2185,7 @@ void AllegroMainWindow::drawGameDirect(BITMAP* target)
 void AllegroMainWindow::drawGameBuffered(BITMAP* target) {
     if (!smbEngine) return;
     
-    clear_to_color(target, makecol(0, 0, 0));
+    //clear_to_color(target, makecol(0, 0, 0));
     
     if (bitmap_color_depth(target) == 16) {
         // Direct 16-bit rendering with new system
