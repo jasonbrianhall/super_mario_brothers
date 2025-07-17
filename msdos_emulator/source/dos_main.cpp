@@ -996,20 +996,75 @@ void AllegroMainWindow::run(const char* romFilename)
     }
     
     printf("ROM loaded successfully\n");
+    
+    // NEW: Add mapper detection and update method selection
+    uint8_t mapper = engine.getMapper();
+    printf("Detected mapper: %d\n", mapper);
+    
+    // Determine which update method will be used
+    const char* updateMethod = "Fast Frame-Based";
+    if (mapper == 2) updateMethod = "Cycle-Accurate (UxROM CHR-RAM)";
+    else if (mapper == 4) updateMethod = "Cycle-Accurate (MMC3 IRQ)";
+    else if (mapper == 66) updateMethod = "Cycle-Accurate (GxROM banking)";
+    
+    printf("Update method: %s\n", updateMethod);
+    
+    // Show specific mapper info
+    switch (mapper) {
+        case 0:
+            printf("NROM: No banking, optimal performance\n");
+            break;
+        case 1:
+            printf("MMC1: Banking but no mid-frame effects\n");
+            break;
+        case 2:
+            printf("UxROM: CHR-RAM can be updated mid-frame\n");
+            break;
+        case 3:
+            printf("CNROM: Simple CHR banking\n");
+            break;
+        case 4:
+            printf("MMC3: IRQ timing requires cycle accuracy\n");
+            break;
+        case 66:
+            printf("GxROM: CHR banking can happen mid-frame\n");
+            break;
+        default:
+            printf("Unknown mapper: Using cycle-accurate for safety\n");
+            break;
+    }
+    
     engine.reset();
     
     gameRunning = true;
     setStatusMessage("Game started - Press ESC for menu");
     
-    printf("Starting main game loop...\n");
+    printf("Starting main game loop with %s...\n", updateMethod);
     printf("Resolution: %dx%d\n", SCREEN_W, SCREEN_H);
     printf("Audio: %s\n", dosAudioInitialized ? "Enabled" : "Disabled");
+    
+    // Performance tracking for different update methods
+    static int frameCount = 0;
+    static clock_t lastTime = clock();
     
     while (gameRunning) {
         handleInput();
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
+            // This call will now automatically choose the right update method
             engine.update();
+            
+            // Performance monitoring
+            frameCount++;
+            if (frameCount % 300 == 0) {  // Every 5 seconds
+                clock_t currentTime = clock();
+                double elapsed = ((double)(currentTime - lastTime)) / CLOCKS_PER_SEC;
+                double fps = 300.0 / elapsed;
+                
+                printf("Performance: %.1f FPS using %s\n", fps, updateMethod);
+                
+                lastTime = currentTime;
+            }
             
             if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
                 void* audiobuf = get_audio_stream_buffer(audiostream);
@@ -3188,6 +3243,60 @@ void AllegroMainWindow::convertBuffer16ToBitmap16_2x(uint16_t* buffer16, BITMAP*
     }
 }
 
+void debugMapperInfo(const char* romFilename) 
+{
+    printf("\n=== ROM Analysis ===\n");
+    printf("ROM file: %s\n", romFilename);
+    
+    // Quick NES header analysis
+    FILE* f = fopen(romFilename, "rb");
+    if (f) {
+        uint8_t header[16];
+        if (fread(header, 1, 16, f) == 16) {
+            if (header[0] == 'N' && header[1] == 'E' && header[2] == 'S' && header[3] == 0x1A) {
+                uint8_t mapper = (header[6] >> 4) | (header[7] & 0xF0);
+                uint8_t prgPages = header[4];
+                uint8_t chrPages = header[5];
+                
+                printf("Mapper: %d\n", mapper);
+                printf("PRG ROM: %d pages (16KB each)\n", prgPages);
+                printf("CHR ROM: %d pages (8KB each)\n", chrPages);
+                
+                // Predict update method
+                bool needsCycleAccuracy = false;
+                const char* reason = "";
+                
+                switch (mapper) {
+                    case 2:
+                        needsCycleAccuracy = true;
+                        reason = "UxROM uses CHR-RAM";
+                        break;
+                    case 4:
+                        needsCycleAccuracy = true;
+                        reason = "MMC3 has IRQ timing";
+                        break;
+                    case 66:
+                        needsCycleAccuracy = true;
+                        reason = "GxROM has CHR banking";
+                        break;
+                    default:
+                        needsCycleAccuracy = false;
+                        reason = "No mid-frame banking";
+                        break;
+                }
+                
+                printf("Will use: %s (%s)\n", 
+                       needsCycleAccuracy ? "Cycle-Accurate" : "Fast Frame-Based", 
+                       reason);
+            } else {
+                printf("Invalid NES ROM format\n");
+            }
+        }
+        fclose(f);
+    }
+    printf("===================\n\n");
+}
+
 // Main function for DOS
 int main(int argc, char** argv) 
 {
@@ -3208,6 +3317,9 @@ int main(int argc, char** argv)
         return -1;
     }
     fclose(romTest);
+    
+    // NEW: Add ROM analysis before starting
+    debugMapperInfo(argv[1]);
     
     printf("ROM file: %s\n", argv[1]);
     printf("Initializing...\n");

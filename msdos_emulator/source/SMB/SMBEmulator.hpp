@@ -20,7 +20,7 @@ class SMBEmulator {
 public:
     SMBEmulator();
     ~SMBEmulator();
-
+    void checkSprite0Hit(int scanline, int cycle);
     uint8_t* getCHR();
     
     // Add these methods that PPU needs (same as SMBEngine)
@@ -83,6 +83,19 @@ public:
     void writeCNROMRegister(uint16_t address, uint8_t value);
     uint8_t readCHRDataFromBank(uint16_t address, uint8_t bank);
     void writeCHRData(uint16_t address, uint8_t value);
+    void updateCycleAccurate();  // For mappers that can change banks mid-frame
+    void stepPPUCycle();         // Step PPU one cycle
+    void checkMMC3IRQ();         // Check for MMC3 IRQ timing
+
+    struct PPUCycleState {
+        int scanline;
+        int cycle;
+        bool renderingEnabled;
+        bool inVBlank;
+        bool sprite0HitPending;
+        int sprite0HitCycle;
+        int sprite0HitScanline;
+    } ppuCycleState;
 
 
 private:
@@ -337,6 +350,8 @@ struct UxROMState {
 } uxrom;
 
 void writeUxROMRegister(uint16_t address, uint8_t value);
+bool needsCycleAccuracy() const;
+void updateFrameBased();
 
 };
 

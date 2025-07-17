@@ -278,5 +278,6 @@ void resetVideoDefaults();
     void convertScreenBuffer32ToBitmap(uint32_t* buffer32, BITMAP* bitmap);
 };
 
+void debugMapperInfo(const char* romFilename);
 
 #endif // ALLEGRO_MAIN_WINDOW_HPP

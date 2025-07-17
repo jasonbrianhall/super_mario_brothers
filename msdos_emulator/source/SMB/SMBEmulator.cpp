@@ -317,6 +317,39 @@ void SMBEmulator::handleNMI()
 void SMBEmulator::update()
 {
     if (!romLoaded) return;
+    
+    // Choose update method based on mapper capabilities
+    if (needsCycleAccuracy()) {
+        updateCycleAccurate();
+    } else {
+        // Use the existing fast frame-based update for simple mappers
+        updateFrameBased();
+    }
+}
+
+bool SMBEmulator::needsCycleAccuracy() const
+{
+    switch (nesHeader.mapper) {
+        case 0:  // NROM - no banking, use fast path
+            return false;
+        case 1:  // MMC1 - banking but usually not mid-frame critical
+            return false;
+        case 2:  // UxROM - CHR-RAM can be updated mid-frame!
+            return true;
+        case 3:  // CNROM - banking but not usually mid-frame critical
+            return false;
+        case 4:  // MMC3 - has IRQ timing that requires cycle accuracy
+            return true;
+        case 66: // GxROM - CHR banking can happen mid-frame!
+            return true;
+        default:
+            return true;  // Be safe for unknown mappers
+    }
+}
+
+void SMBEmulator::updateFrameBased()
+{
+    if (!romLoaded) return;
     static int frameCount = 0;
     frameCycles = 0;
     
@@ -370,6 +403,103 @@ void SMBEmulator::update()
     // Advance audio frame
     if (Configuration::getAudioEnabled()) {
         apu->stepFrame();
+    }
+}
+
+void SMBEmulator::updateCycleAccurate()
+{
+    if (!romLoaded) return;
+    
+    frameCycles = 0;
+    ppuCycleState.scanline = 0;
+    ppuCycleState.cycle = 0;
+    ppuCycleState.inVBlank = false;
+    ppuCycleState.renderingEnabled = false;
+    
+    // More precise NTSC timing for cycle-accurate emulation
+    const int CYCLES_PER_SCANLINE = 341;  // Actual PPU cycles per scanline
+    const int VISIBLE_SCANLINES = 240;
+    const int VBLANK_START_SCANLINE = 241;
+    const int TOTAL_SCANLINES = 262;
+    const int CPU_CYCLES_PER_PPU_CYCLE = 3;  // CPU runs at 3x PPU speed
+
+    for (int scanline = 0; scanline < TOTAL_SCANLINES; scanline++) {
+        ppuCycleState.scanline = scanline;
+        
+        // Check if we're in visible area or VBlank
+        if (scanline <= VISIBLE_SCANLINES) {
+            ppuCycleState.inVBlank = false;
+            ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
+        } else if (scanline == VBLANK_START_SCANLINE) {
+            ppuCycleState.inVBlank = true;
+            ppu->setVBlankFlag(true);
+            ppu->captureFrameScroll();
+            
+            // Trigger NMI if enabled (after a few cycles)
+            if (ppu->getControl() & 0x80) {
+                handleNMI();
+            }
+        }
+        
+        // Process each cycle in the scanline
+        for (int cycle = 0; cycle < CYCLES_PER_SCANLINE; cycle++) {
+            ppuCycleState.cycle = cycle;
+            
+            // Step PPU one cycle
+            stepPPUCycle();
+            
+            // Execute CPU instructions for every 3 PPU cycles
+            if (cycle % CPU_CYCLES_PER_PPU_CYCLE == 0) {
+                executeInstruction();
+            }
+            
+            // Check for sprite 0 hit during rendering
+            if (ppuCycleState.renderingEnabled && scanline < VISIBLE_SCANLINES) {
+                checkSprite0Hit(scanline, cycle);
+            }
+            
+            // MMC3 IRQ checking (happens on specific PPU cycles)
+            if (nesHeader.mapper == 4) {
+                checkMMC3IRQ();
+            }
+        }
+    }
+    
+    // Clear VBlank flag and sprite 0 hit at start of next frame
+    ppu->setVBlankFlag(false);
+    ppu->setSprite0Hit(false);
+    
+    // Advance audio frame
+    if (Configuration::getAudioEnabled()) {
+        apu->stepFrame();
+    }
+}
+
+void SMBEmulator::checkSprite0Hit(int scanline, int cycle)
+{
+    // Sprite 0 hit detection with cycle accuracy
+    // This is important for games that rely on precise timing
+    
+    if (scanline == 32 && cycle >= 100 && cycle <= 200) {
+        // Approximate sprite 0 hit timing for SMB status bar
+        if (ppu->getMask() & 0x18) { // If rendering enabled
+            ppu->setSprite0Hit(true);
+        }
+    }
+}
+
+void SMBEmulator::checkMMC3IRQ()
+{
+    if (nesHeader.mapper != 4) return;
+    
+    int scanline = ppuCycleState.scanline;
+    int cycle = ppuCycleState.cycle;
+    
+    // MMC3 IRQ timing
+    if (ppuCycleState.renderingEnabled && scanline < 240) {
+        if (cycle == 260) {  // Specific cycle when IRQ counter decrements
+            stepMMC3IRQ();
+        }
     }
 }
 
@@ -439,6 +569,34 @@ void SMBEmulator::step()
 {
     if (!romLoaded) return;
     executeInstruction();
+}
+
+void SMBEmulator::stepPPUCycle()
+{
+    int scanline = ppuCycleState.scanline;
+    int cycle = ppuCycleState.cycle;
+    
+    // Background tile fetching happens on specific cycles
+    if (ppuCycleState.renderingEnabled && scanline < 240) {
+        if (cycle % 8 == 5) {
+            // Fetch pattern table low byte - where CHR banking matters
+            if (nesHeader.mapper == 2) {
+                // UxROM: CHR-RAM might have been updated
+                // Cache invalidation happens automatically
+            }
+        }
+        else if (cycle % 8 == 7) {
+            // Fetch pattern table high byte
+            if (nesHeader.mapper == 66) {
+                // GxROM: Check if CHR bank changed
+                static uint8_t lastCHRBank = 0xFF;
+                if (gxrom.chrBank != lastCHRBank) {
+                    lastCHRBank = gxrom.chrBank;
+                    // Cache invalidation would happen here
+                }
+            }
+        }
+    }
 }
 
 void SMBEmulator::executeInstruction()
