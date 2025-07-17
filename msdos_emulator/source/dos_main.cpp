@@ -1007,9 +1007,9 @@ void AllegroMainWindow::run(const char* romFilename) {
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
             if(engine.isFrameReady()) {
-                updateAndDraw();
+                //updateAndDraw();
                 engine.setFrameRendered();
-                
+                engine.clearRenderBuffer();
                 if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
                     void* audiobuf = get_audio_stream_buffer(audiostream);
                     if (audiobuf) {
@@ -1028,7 +1028,7 @@ void AllegroMainWindow::run(const char* romFilename) {
                 
                 if (sleepTimeMS > 0) {
 #ifdef __DJGPP__
-                    vsync();  // On DOS, just use vsync
+                    vsync();  // On DOS, just use vsync since this is easiest
 #else
                     rest(sleepTimeMS);  // Sleep for remaining time
 #endif
@@ -1038,11 +1038,9 @@ void AllegroMainWindow::run(const char* romFilename) {
                     if (++overrunCount % 60 == 0) {  // Print once per second
                         printf("Frame overrun: %.2f ms (target: %d ms)\n", workTimeMS, targetFrameTimeMS);
                     }
-                    rest(1);  // Minimal sleep to yield CPU
                 }
             } else {
                 engine.update();
-                rest(1);  // Sleep 1ms between updates
             }
         } else {
             updateAndDraw();
@@ -1050,7 +1048,6 @@ void AllegroMainWindow::run(const char* romFilename) {
         }
     }
 }
-
 
 void AllegroMainWindow::showJoystickStatus()
 {

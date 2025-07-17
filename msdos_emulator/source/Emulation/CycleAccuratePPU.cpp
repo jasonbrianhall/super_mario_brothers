@@ -113,16 +113,28 @@ void CycleAccuratePPU::renderCompleteFrame()
     
     uint16_t backgroundColor = getBackgroundColor16();
     
-    // OPTIMIZATION 1: Render by tiles instead of pixels
-    // This reduces calculations from 61,440 to ~960 tiles
-    
-    for (int tileY = 0; tileY < 30; tileY++) {
-        for (int tileX = 0; tileX < 32; tileX++) {
-            renderTileBlock(tileX, tileY, backgroundColor);
+    // FAST CLEAR: Fill entire buffer with background color
+    // This assumes backgroundColor is the same for all pixels
+    if (backgroundColor == 0) {
+        // If background is black, use fast memset
+        memset(frameBuffer, 0, 256 * 240 * sizeof(uint16_t));
+    } else {
+        // For non-zero background colors, need to set each pixel
+        for (int i = 0; i < 256 * 240; i++) {
+            frameBuffer[i] = backgroundColor;
         }
     }
     
-    // OPTIMIZATION 2: Render sprites last (only where they exist)
+    // Only render background if enabled
+    if (ppuMask & 0x08) {
+        for (int tileY = 0; tileY < 30; tileY++) {
+            for (int tileX = 0; tileX < 32; tileX++) {
+                renderTileBlock(tileX, tileY, backgroundColor);
+            }
+        }
+    }
+    
+    // Only render sprites if enabled
     if (ppuMask & 0x10) {
         renderAllSprites();
     }
@@ -201,8 +213,9 @@ void CycleAccuratePPU::renderSingleSprite(const VisibleSprite& sprite)
 
 void CycleAccuratePPU::renderTileBlock(int tileX, int tileY, uint16_t backgroundColor)
 {
+    // If background is disabled, tiles should render as background color
     if (!(ppuMask & 0x08)) {
-        // Background disabled - fill with background color
+        // Fill this tile area with background color (redundant if we cleared above, but safe)
         for (int py = 0; py < 8; py++) {
             for (int px = 0; px < 8; px++) {
                 int screenX = tileX * 8 + px;
@@ -215,12 +228,15 @@ void CycleAccuratePPU::renderTileBlock(int tileX, int tileY, uint16_t background
         return;
     }
     
-    // Calculate tile address ONCE per tile (not per pixel)
+    // ... rest of your existing renderTileBlock code ...
+    // The tile rendering logic can stay the same
+    
+    // Calculate tile address ONCE per tile
     uint16_t nametableAddr;
     int scrolledTileX = tileX;
     
-    // Handle scrolling logic ONCE per tile
-    if (tileY >= 4) { // Game area scrolls (below status bar)
+    // Handle scrolling logic
+    if (tileY >= 4) { // Game area scrolls
         int scrollX = frameScrollX + ((frameCtrl & 0x01) ? 256 : 0);
         scrolledTileX = (tileX * 8 + scrollX) / 8;
         
@@ -235,7 +251,7 @@ void CycleAccuratePPU::renderTileBlock(int tileX, int tileY, uint16_t background
         nametableAddr = 0x2000 + (tileY * 32) + tileX;
     }
     
-    // Get tile data ONCE
+    // Get tile data
     uint8_t tileIndex = readByte(nametableAddr);
     uint8_t attribute = getAttributeTableValue(nametableAddr);
     
@@ -243,14 +259,14 @@ void CycleAccuratePPU::renderTileBlock(int tileX, int tileY, uint16_t background
     uint16_t patternTableBase = (frameCtrl & 0x10) ? 0x1000 : 0x0000;
     uint16_t tileAddress = patternTableBase + (tileIndex * 16);
     
-    // Read all 8 rows of pattern data ONCE
+    // Read pattern data
     uint8_t plane1Data[8], plane2Data[8];
     for (int row = 0; row < 8; row++) {
         plane1Data[row] = readByte(tileAddress + row);
         plane2Data[row] = readByte(tileAddress + row + 8);
     }
     
-    // Now render all 64 pixels of this tile
+    // Render all pixels of this tile
     for (int py = 0; py < 8; py++) {
         uint8_t plane1 = plane1Data[py];
         uint8_t plane2 = plane2Data[py];
@@ -267,7 +283,7 @@ void CycleAccuratePPU::renderTileBlock(int tileX, int tileY, uint16_t background
             
             uint16_t pixelColor;
             if (paletteIndex == 0) {
-                pixelColor = backgroundColor;
+                pixelColor = backgroundColor;  // Transparent pixels use background
             } else {
                 uint8_t colorIndex = palette[attribute * 4 + paletteIndex];
                 pixelColor = convertColorTo16Bit(colorIndex);

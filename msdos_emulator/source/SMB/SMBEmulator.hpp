@@ -180,7 +180,7 @@ public:
     uint8_t getMask() const;    
     int getMirroringMode() const;
     void setFrameRendered();
-    
+    void clearRenderBuffer();
 private:
     // Core components
     CPU* cpu;

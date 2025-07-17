@@ -1571,6 +1571,12 @@ void SMBEmulator::render(uint32_t* buffer)
     ppu->render(buffer);
 }
 
+void SMBEmulator::clearRenderBuffer() {
+    if (renderBuffer) {
+        memset(renderBuffer, 0, 256 * 240 * sizeof(uint16_t));
+    }
+}
+
 void SMBEmulator::render16(uint16_t* buffer) {
     // Since renderBuffer is now updated directly by the PPU,
     // just copy it when frame is ready
