@@ -539,7 +539,8 @@ void PPU::renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset
 {
     uint16_t tile = readByte(index) + (ppuCtrl & (1 << 4) ? 256 : 0);
     uint8_t attribute = getAttributeTableValue(index);
-
+    renderTile16(buffer, index, xOffset, yOffset);
+    return;
     // CRITICAL: Add bounds checking
     if (tile >= 512) {
         // Tile ID out of range, fall back to non-cached rendering

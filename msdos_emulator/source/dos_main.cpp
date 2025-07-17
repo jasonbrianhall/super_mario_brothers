@@ -980,7 +980,8 @@ void AllegroMainWindow::setupMenu()
 
 void AllegroMainWindow::run(const char* romFilename)
 {
-    printf("Welcome to WarpNES\n");
+
+    printf("\n\nWelcome to WarpNES\n\n");
 
     gamePaused = false;
     showingMenu = false;
