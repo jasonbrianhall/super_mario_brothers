@@ -442,20 +442,10 @@ void SMBEmulator::reset() {
         
         updateMMC3Banks();
         
-        printf("MMC3 Power-up state:\n");
-        printf("  PRG banks: [%02X,%02X,%02X,%02X]\n", 
-               mmc3.currentPRGBanks[0], mmc3.currentPRGBanks[1],
-               mmc3.currentPRGBanks[2], mmc3.currentPRGBanks[3]);
-        printf("  Bank mapping: $8000=%02X, $A000=%02X, $C000=%02X, $E000=%02X\n",
-               mmc3.currentPRGBanks[0], mmc3.currentPRGBanks[1],
-               mmc3.currentPRGBanks[2], mmc3.currentPRGBanks[3]);
     }
     
     // Read reset vector AFTER mapper is initialized
     regPC = readWord(0xFFFC);
-    printf("Reset vector: $%04X\n", regPC);
-    
-    printf("System reset complete. PC=$%04X\n", regPC);
 }
 
 void SMBEmulator::step()
@@ -855,21 +845,13 @@ void SMBEmulator::handleIRQ() {
     
     totalCycles += 7;
     frameCycles += 7;
-    
-    printf("IRQ triggered, jumping to $%04X\n", regPC);
 }
 
 
 void SMBEmulator::writeMMC3Register(uint16_t address, uint8_t value)
 {
-    printf("MMC3 write: $%04X = $%02X\n", address, value);
-    
     switch (address & 0xE001) {
         case 0x8000: // Bank select
-            printf("  Bank Select: $%02X -> $%02X\n", mmc3.bankSelect, value);
-            printf("    PRG mode: %d -> %d\n", (mmc3.bankSelect >> 6) & 1, (value >> 6) & 1);
-            printf("    CHR mode: %d -> %d\n", (mmc3.bankSelect >> 7) & 1, (value >> 7) & 1);
-            printf("    Register: %d -> %d\n", mmc3.bankSelect & 7, value & 7);
             mmc3.bankSelect = value;
             updateMMC3Banks();
             break;
@@ -877,39 +859,32 @@ void SMBEmulator::writeMMC3Register(uint16_t address, uint8_t value)
         case 0x8001: // Bank data
             {
                 uint8_t bank = mmc3.bankSelect & 7;
-                printf("  Bank Data: R%d = $%02X -> $%02X\n", bank, mmc3.bankData[bank], value);
                 mmc3.bankData[bank] = value;
                 updateMMC3Banks();
             }
             break;
             
         case 0xA000: // Mirroring
-            printf("  Mirroring: %s\n", (value & 1) ? "Horizontal" : "Vertical");
             mmc3.mirroring = value & 1;
             break;
             
         case 0xA001: // PRG RAM protect
-            printf("  PRG RAM Protect: $%02X\n", value);
             mmc3.prgRamProtect = value;
             break;
             
         case 0xC000: // IRQ latch
-            printf("  IRQ Latch: $%02X\n", value);
             mmc3.irqLatch = value;
             break;
             
         case 0xC001: // IRQ reload
-            printf("  IRQ Reload\n");
             mmc3.irqReload = true;
             break;
             
         case 0xE000: // IRQ disable
-            printf("  IRQ Disable\n");
             mmc3.irqEnable = false;
             break;
             
         case 0xE001: // IRQ enable
-            printf("  IRQ Enable\n");
             mmc3.irqEnable = true;
             break;
     }
@@ -920,8 +895,6 @@ void SMBEmulator::updateMMC3Banks()
 {
     uint8_t totalPRGBanks = prgSize / 0x2000;  // Number of 8KB banks
     uint8_t totalCHRBanks = chrSize / 0x400;   // Number of 1KB banks
-    
-    printf("MMC3 Update: Total PRG banks=%d, Total CHR banks=%d\n", totalPRGBanks, totalCHRBanks);
     
     // FIXED PRG banking logic
     bool prgSwap = (mmc3.bankSelect & 0x40) != 0;
@@ -944,9 +917,6 @@ void SMBEmulator::updateMMC3Banks()
         mmc3.currentPRGBanks[3] = totalPRGBanks - 1;  // $E000: Last bank (fixed)
     }
     
-    printf("MMC3 PRG Banks: [%02X,%02X,%02X,%02X] (mode=%d)\n",
-           mmc3.currentPRGBanks[0], mmc3.currentPRGBanks[1], 
-           mmc3.currentPRGBanks[2], mmc3.currentPRGBanks[3], prgSwap);
     
     // CHR banking (your existing code is fine)
     bool chrA12Invert = (mmc3.bankSelect & 0x80) != 0;
@@ -1000,7 +970,6 @@ void SMBEmulator::stepMMC3IRQ() {
         // Trigger IRQ when counter reaches 0 and IRQ is enabled
         if (mmc3.irqCounter == 0 && mmc3.irqEnable) {
             triggerIRQ();
-            printf("MMC3 IRQ triggered (latch=$%02X)\n", mmc3.irqLatch);
         }
     }
 }
@@ -2186,10 +2155,7 @@ void SMBEmulator::writeGxROMRegister(uint16_t address, uint8_t value) {
     // Mapper 66: Write to $8000-$FFFF sets both PRG and CHR banks
     gxrom.prgBank = (value >> 4) & 0x03;  // Bits 4-5 (2 bits = 4 banks)
     gxrom.chrBank = value & 0x03;         // Bits 0-1 (2 bits = 4 banks)
-    
-    printf("GxROM: PRG bank %d, CHR bank %d (wrote $%02X to $%04X)\n", 
-           gxrom.prgBank, gxrom.chrBank, value, address);
-    
+        
 }
 
 
@@ -2208,8 +2174,6 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
         if (physicalBank >= totalCHRBanks) {
             static int errorCount = 0;
             if (errorCount < 10) {
-                printf("CHR bank out of bounds: bank %d >= %d (addr=$%04X)\n", 
-                       physicalBank, totalCHRBanks, address);
                 errorCount++;
             }
             return 0;
@@ -2229,17 +2193,7 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
         
         if (chrAddr < chrSize) {
             return chrROM[chrAddr];
-        }
-        
-        // Debug CHR reads
-        static int chrDebugCount = 0;
-        if (chrDebugCount < 10) {
-            printf("GxROM CHR read: bank %d, addr $%04X, chrAddr $%08X, data $%02X\n",
-                   gxrom.chrBank, address, chrAddr, 
-                   (chrAddr < chrSize) ? chrROM[chrAddr] : 0);
-            chrDebugCount++;
-        }
-        
+        }        
         return 0;  // Out of bounds
     }
     else if (nesHeader.mapper == 1) {
@@ -2388,14 +2342,7 @@ uint8_t SMBEmulator::readPRG(uint16_t address) {
                 }
             }
             
-            // Debug MMC1 PRG reads
-            static int mmc1DebugCount = 0;
-            if (mmc1DebugCount < 10) {
-                printf("MMC1 PRG read: addr=$%04X, control=$%02X, bank=%d, mode=%s\n",
-                       address, mmc1.control, mmc1.currentPRGBank,
-                       (mmc1.control & 0x08) ? "16KB" : "32KB");
-                mmc1DebugCount++;
-            }        }
+ }
         else if (nesHeader.mapper == 2) {
             // UxROM - your existing code
             uint32_t romAddr = address - 0x8000;
@@ -2435,18 +2382,9 @@ uint8_t SMBEmulator::readPRG(uint16_t address) {
             uint8_t physicalBank = mmc3.currentPRGBanks[bankIndex];
             uint32_t prgAddr = (physicalBank * 0x2000) + offset;
             
-            // Debug PRG reads for reset vector area
-            if (address >= 0xFFFC) {
-                printf("Reset vector read: $%04X -> bank %d, addr $%08X = $%02X\n",
-                       address, physicalBank, prgAddr, 
-                       (prgAddr < prgSize) ? prgROM[prgAddr] : 0);
-            }
-            
             if (prgAddr < prgSize) {
                 return prgROM[prgAddr];
             } else {
-                printf("MMC3 PRG out of bounds: bank %d, addr $%04X, prgAddr $%08X\n",
-                       physicalBank, address, prgAddr);
                 return 0;
             }
         }
