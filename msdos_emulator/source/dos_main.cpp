@@ -3305,14 +3305,19 @@ void debugMapperInfo(const char* romFilename)
                 uint8_t mapper = (header[6] >> 4) | (header[7] & 0xF0);
                 uint8_t prgPages = header[4];
                 uint8_t chrPages = header[5];
+
+                bool needsCycleAccuracy = false;
+                const char* reason = "";
                 
                 printf("Mapper: %d\n", mapper);
                 printf("PRG ROM: %d pages (16KB each)\n", prgPages);
                 printf("CHR ROM: %d pages (8KB each)\n", chrPages);
-                
+
+                if (zapperEnabled) {
+                        needsCycleAccuracy = true;
+                        reason="Zapper";
+                }                
                 // Predict update method
-                bool needsCycleAccuracy = false;
-                const char* reason = "";
                 
                 switch (mapper) {
                     case 2:
@@ -3347,7 +3352,7 @@ void debugMapperInfo(const char* romFilename)
 
 int main(int argc, char** argv) 
 {
-    printf("Super Mario Bros Emulator - DOS Version\n");
+    printf("WarpNES\n");
     
     // Parse command line arguments
     const char* romFilename = nullptr;

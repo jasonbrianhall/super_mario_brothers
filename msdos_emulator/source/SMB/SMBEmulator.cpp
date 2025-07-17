@@ -967,13 +967,6 @@ case 0x4017:
         if (zapperEnabled && zapper) {
             uint8_t zapperValue = zapper->readByte();
             
-            // DEBUG: Print EVERY zapper register read to see if Duck Hunt is checking it
-            printf("$4017 READ: $%02X (trigger=%s light=%s) at PC=$%04X\n", 
-                   zapperValue,
-                   zapper->isTriggerPressed() ? "PRESSED" : "released",
-                   zapper->isLightDetected() ? "DETECTED" : "none",
-                   regPC);
-            
             return zapperValue;
         } else {
             return controller2->readByte(PLAYER_2);
@@ -1929,9 +1922,6 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
             // Set light detection immediately - no delay
             zapper->setLightDetected(lightDetected);
             
-            printf("EMULATOR: Trigger pressed at NES(%d,%d) -> Screen(%d,%d) scale=%d inArea=%s light=%s\n",
-                   nesMouseX, nesMouseY, screenMouseX, screenMouseY, scale, 
-                   inGameArea ? "YES" : "NO", lightDetected ? "YES" : "NO");
             
         } else if (!currentTrigger) {
             // Clear light when trigger not pressed
@@ -1939,7 +1929,6 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
         } else {
             // Trigger pressed but outside game area
             zapper->setLightDetected(false);
-            printf("EMULATOR: Trigger pressed outside game area\n");
         }
         
         // NOW draw crosshair AFTER light detection - if in game area

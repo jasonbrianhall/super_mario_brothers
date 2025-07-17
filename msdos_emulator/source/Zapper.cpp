@@ -195,19 +195,15 @@ bool Zapper::detectLightScaled(uint16_t* frameBuffer, int screenWidth, int scree
                               int screenX, int screenY, int scale) 
 {
     if (!frameBuffer) {
-        printf("ZAPPER DEBUG: Frame buffer is NULL!\n");
         return false;
     }
     
     if (screenX < 0 || screenY < 0 || screenX >= screenWidth || screenY >= screenHeight) {
-        printf("ZAPPER DEBUG: Out of bounds - screen=(%d,%d) size=(%dx%d)\n", 
-               screenX, screenY, screenWidth, screenHeight);
         return false;
     }
     
     // Debug: Always detect light when trigger is pressed for testing
     if (triggerPressed) {
-        printf("ZAPPER DEBUG: TRIGGER PRESSED - FORCING LIGHT DETECTION TRUE\n");
         return true;  // Force detection for testing
     }
     
@@ -224,9 +220,7 @@ bool Zapper::detectLightScaled(uint16_t* frameBuffer, int screenWidth, int scree
     int g = ((centerPixel >> 5) & 0x3F) << 2;
     int b = (centerPixel & 0x1F) << 3;
     int centerBrightness = (r * 299 + g * 587 + b * 114) / 1000;
-    
-    printf("ZAPPER DEBUG: Center pixel RGB(%d,%d,%d) brightness=%d\n", r, g, b, centerBrightness);
-    
+        
     // Sample area around cursor
     for (int dy = -radius; dy <= radius; dy += 4) {  // Sample every 4th pixel for speed
         for (int dx = -radius; dx <= radius; dx += 4) {
@@ -257,9 +251,6 @@ bool Zapper::detectLightScaled(uint16_t* frameBuffer, int screenWidth, int scree
     
     bool detected = (brightPixelCount >= 1) || (maxBrightness > 60) || (whitePixelCount >= 1);
     
-    printf("ZAPPER DEBUG: Area scan - bright=%d/%d white=%d max=%d -> %s\n",
-           brightPixelCount, totalPixels, whitePixelCount, maxBrightness,
-           detected ? "LIGHT DETECTED" : "NO LIGHT");
     
     return detected;
 }
