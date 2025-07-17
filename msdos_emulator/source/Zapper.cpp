@@ -194,6 +194,79 @@ void Zapper::drawCrosshair32(uint32_t* buffer, int screenWidth, int screenHeight
 bool Zapper::detectLightScaled(uint16_t* frameBuffer, int screenWidth, int screenHeight, 
                               int screenX, int screenY, int scale) 
 {
+    if (!frameBuffer) {
+        printf("ZAPPER DEBUG: Frame buffer is NULL!\n");
+        return false;
+    }
+    
+    if (screenX < 0 || screenY < 0 || screenX >= screenWidth || screenY >= screenHeight) {
+        printf("ZAPPER DEBUG: Out of bounds - screen=(%d,%d) size=(%dx%d)\n", 
+               screenX, screenY, screenWidth, screenHeight);
+        return false;
+    }
+    
+    // Debug: Always detect light when trigger is pressed for testing
+    if (triggerPressed) {
+        printf("ZAPPER DEBUG: TRIGGER PRESSED - FORCING LIGHT DETECTION TRUE\n");
+        return true;  // Force detection for testing
+    }
+    
+    // If not pressed, do normal detection but with debug info
+    int radius = std::max(12, 6 * scale);
+    int brightPixelCount = 0;
+    int totalPixels = 0;
+    int maxBrightness = 0;
+    int whitePixelCount = 0;
+    
+    // Sample just the center pixel for quick debug
+    uint16_t centerPixel = frameBuffer[screenY * screenWidth + screenX];
+    int r = ((centerPixel >> 11) & 0x1F) << 3;
+    int g = ((centerPixel >> 5) & 0x3F) << 2;
+    int b = (centerPixel & 0x1F) << 3;
+    int centerBrightness = (r * 299 + g * 587 + b * 114) / 1000;
+    
+    printf("ZAPPER DEBUG: Center pixel RGB(%d,%d,%d) brightness=%d\n", r, g, b, centerBrightness);
+    
+    // Sample area around cursor
+    for (int dy = -radius; dy <= radius; dy += 4) {  // Sample every 4th pixel for speed
+        for (int dx = -radius; dx <= radius; dx += 4) {
+            int checkX = screenX + dx;
+            int checkY = screenY + dy;
+            
+            if (checkX >= 0 && checkX < screenWidth && checkY >= 0 && checkY < screenHeight) {
+                uint16_t pixel = frameBuffer[checkY * screenWidth + checkX];
+                totalPixels++;
+                
+                int pr = ((pixel >> 11) & 0x1F) << 3;
+                int pg = ((pixel >> 5) & 0x3F) << 2;
+                int pb = (pixel & 0x1F) << 3;
+                int brightness = (pr * 299 + pg * 587 + pb * 114) / 1000;
+                
+                maxBrightness = std::max(maxBrightness, brightness);
+                
+                if (brightness > 40) {  // Very low threshold
+                    brightPixelCount++;
+                }
+                
+                if (pr > 100 || pg > 100 || pb > 100) {
+                    whitePixelCount++;
+                }
+            }
+        }
+    }
+    
+    bool detected = (brightPixelCount >= 1) || (maxBrightness > 60) || (whitePixelCount >= 1);
+    
+    printf("ZAPPER DEBUG: Area scan - bright=%d/%d white=%d max=%d -> %s\n",
+           brightPixelCount, totalPixels, whitePixelCount, maxBrightness,
+           detected ? "LIGHT DETECTED" : "NO LIGHT");
+    
+    return detected;
+}
+
+/*bool Zapper::detectLightScaled(uint16_t* frameBuffer, int screenWidth, int screenHeight, 
+                              int screenX, int screenY, int scale) 
+{
     if (!frameBuffer || screenX < 0 || screenY < 0 || screenX >= screenWidth || screenY >= screenHeight) {
         printf("SCALED DETECT: Invalid parameters\n");
         return false;
@@ -239,7 +312,7 @@ bool Zapper::detectLightScaled(uint16_t* frameBuffer, int screenWidth, int scree
     bool detected = (brightPixelCount >= 5);
     
     return detected;
-}
+}*/
 
 void Zapper::drawCrosshairScaled(uint16_t* buffer, int screenWidth, int screenHeight, 
                                 int screenX, int screenY, int scale) 

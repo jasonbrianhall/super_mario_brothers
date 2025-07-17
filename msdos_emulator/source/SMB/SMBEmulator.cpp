@@ -948,11 +948,6 @@ void SMBEmulator::executeInstruction()
 // Memory access functions
 uint8_t SMBEmulator::readByte(uint16_t address)
 {
-    if (zapperEnabled && address==0x4017) {
-        // Read from Zapper instead of controller 2
-        return zapper->readByte();
-    }
-
     if (address < 0x2000) {
         // RAM (mirrored every 2KB)
         return ram[address & 0x7FF];
@@ -967,14 +962,16 @@ uint8_t SMBEmulator::readByte(uint16_t address)
         switch (address) {
             case 0x4016:
                 return controller1->readByte(PLAYER_1);
-            case 0x4017:
-                if (zapperEnabled) {
-                    // Read from Zapper instead of controller 2
-                    return zapper->readByte();
-                } 
-                // Read from Controller 2
+    case 0x4017:
+        {
+            if (zapperEnabled && zapper) {
+                uint8_t zapperValue = zapper->readByte();
+                
+                return zapperValue;
+            } else {
                 return controller2->readByte(PLAYER_2);
-            default:
+            }
+        }            default:
                 return 0; // Other APU registers are write-only
         }
     }
@@ -1889,17 +1886,19 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
 {
     // First render the game using PPU scaling
     ppu->renderScaled(buffer, screenWidth, screenHeight);
-    // Add Zapper crosshair AFTER game rendering
+    
     if (zapperEnabled && zapper) {
+        // Get the raw mouse coordinates (these should be in NES coordinates 0-255, 0-239)
         int nesMouseX = zapper->getMouseX();
         int nesMouseY = zapper->getMouseY();
-                
-        // Calculate scaling factors (same logic PPU uses)
+        
+        // Calculate scaling factors
         int scale_x = screenWidth / 256;
         int scale_y = screenHeight / 240;
         int scale = (scale_x < scale_y) ? scale_x : scale_y;
         if (scale < 1) scale = 1;
         
+        // Calculate actual rendered game area
         int dest_w = 256 * scale;
         int dest_h = 240 * scale;
         int dest_x = (screenWidth - dest_w) / 2;
@@ -1909,20 +1908,43 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
         int screenMouseX = (nesMouseX * scale) + dest_x;
         int screenMouseY = (nesMouseY * scale) + dest_y;
         
+        // Bounds check - make sure we're within the game area
+        bool inGameArea = (screenMouseX >= dest_x && screenMouseX < dest_x + dest_w &&
+                          screenMouseY >= dest_y && screenMouseY < dest_y + dest_h);
         
-        // Perform light detection on the scaled buffer
-        if (zapper->isTriggerPressed()) {
+        // CRITICAL: Duck Hunt light detection - DO THIS BEFORE DRAWING CROSSHAIR!
+        bool currentTrigger = zapper->isTriggerPressed();
+        
+        if (currentTrigger && inGameArea) {
+            // Duck Hunt checks for light detection EVERY frame during trigger press
+            // IMPORTANT: Check light BEFORE drawing crosshair so we don't detect our own pixels!
             bool lightDetected = zapper->detectLightScaled(buffer, screenWidth, screenHeight, 
                                                           screenMouseX, screenMouseY, scale);
+            
+            // Set light detection immediately - no delay
             zapper->setLightDetected(lightDetected);
             
+            printf("EMULATOR: Trigger pressed at NES(%d,%d) -> Screen(%d,%d) scale=%d inArea=%s light=%s\n",
+                   nesMouseX, nesMouseY, screenMouseX, screenMouseY, scale, 
+                   inGameArea ? "YES" : "NO", lightDetected ? "YES" : "NO");
+            
+        } else if (!currentTrigger) {
+            // Clear light when trigger not pressed
+            zapper->setLightDetected(false);
+        } else {
+            // Trigger pressed but outside game area
+            zapper->setLightDetected(false);
+            printf("EMULATOR: Trigger pressed outside game area\n");
         }
         
-        // Draw crosshair at scaled position
-        zapper->drawCrosshairScaled(buffer, screenWidth, screenHeight, screenMouseX, screenMouseY, scale);
-        
+        // NOW draw crosshair AFTER light detection - if in game area
+        if (inGameArea) {
+            zapper->drawCrosshairScaled(buffer, screenWidth, screenHeight, 
+                                      screenMouseX, screenMouseY, scale);
+        }
     }
 }
+
 
 void SMBEmulator::renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight)
 {
