@@ -6,6 +6,12 @@
 
 class SMBEmulator;  // Forward declaration
 
+struct VisibleSprite {
+    uint8_t x, y, tile, attr;
+    int spriteIndex;  // To track which sprite for sprite 0 hit
+};
+
+
 class CycleAccuratePPU {
 private:
     SMBEmulator& engine;
@@ -62,7 +68,9 @@ public:
     void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
     void writeByte(uint16_t address, uint8_t value);
     void renderCompleteFrame();
-
+    void renderTileBlock(int tileX, int tileY, uint16_t backgroundColor);
+    void renderAllSprites();
+    void renderSingleSprite(const VisibleSprite& sprite);
 private:
     // Helper methods
     uint32_t convert16BitTo32Bit(uint16_t color16);

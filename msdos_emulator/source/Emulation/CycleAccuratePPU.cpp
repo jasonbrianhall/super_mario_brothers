@@ -111,38 +111,173 @@ void CycleAccuratePPU::renderCompleteFrame()
 {
     if (!frameBuffer) return;
     
-    // The key insight from the debug version: render the frame in a structured way
-    // that ensures every pixel gets written exactly once
+    uint16_t backgroundColor = getBackgroundColor16();
     
-    for (int y = 0; y < 240; y++) {
-        for (int x = 0; x < 256; x++) {
-            uint16_t backgroundColor = getBackgroundColor16();
-            uint16_t finalColor = backgroundColor;
+    // OPTIMIZATION 1: Render by tiles instead of pixels
+    // This reduces calculations from 61,440 to ~960 tiles
+    
+    for (int tileY = 0; tileY < 30; tileY++) {
+        for (int tileX = 0; tileX < 32; tileX++) {
+            renderTileBlock(tileX, tileY, backgroundColor);
+        }
+    }
+    
+    // OPTIMIZATION 2: Render sprites last (only where they exist)
+    if (ppuMask & 0x10) {
+        renderAllSprites();
+    }
+}
+
+void CycleAccuratePPU::renderAllSprites()
+{
+    // Collect visible sprites
+    VisibleSprite visibleSprites[64];
+    int visibleCount = 0;
+    
+    for (int i = 0; i < 64; i++) {
+        uint8_t spriteY = oam[i * 4];
+        uint8_t spriteX = oam[i * 4 + 3];
+        
+        if (spriteY < 0xEF && spriteX < 0xF9) {
+            visibleSprites[visibleCount].y = spriteY + 1;
+            visibleSprites[visibleCount].tile = oam[i * 4 + 1];
+            visibleSprites[visibleCount].attr = oam[i * 4 + 2];
+            visibleSprites[visibleCount].x = spriteX;
+            visibleSprites[visibleCount].spriteIndex = i;  // Track which sprite
+            visibleCount++;
+        }
+    }
+    
+    // Render visible sprites (back to front for priority)
+    for (int i = visibleCount - 1; i >= 0; i--) {
+        renderSingleSprite(visibleSprites[i]);
+    }
+}
+
+void CycleAccuratePPU::renderSingleSprite(const VisibleSprite& sprite)
+{
+    // Get tile pattern data ONCE
+    uint16_t tile = sprite.tile + ((frameCtrl & 0x08) ? 256 : 0);
+    
+    uint8_t plane1Data[8], plane2Data[8];
+    for (int row = 0; row < 8; row++) {
+        plane1Data[row] = readByte(tile * 16 + row);
+        plane2Data[row] = readByte(tile * 16 + row + 8);
+    }
+    
+    bool flipX = (sprite.attr & 0x40) != 0;
+    bool flipY = (sprite.attr & 0x80) != 0;
+    uint8_t spritePalette = sprite.attr & 0x03;
+    
+    // Render all 64 pixels of sprite
+    for (int py = 0; py < 8; py++) {
+        int pixelY = flipY ? (7 - py) : py;
+        uint8_t plane1 = plane1Data[pixelY];
+        uint8_t plane2 = plane2Data[pixelY];
+        
+        for (int px = 0; px < 8; px++) {
+            int screenX = sprite.x + px;
+            int screenY = sprite.y + py;
             
-            // Render background pixel if enabled
-            if (ppuMask & 0x08) {  // Background enabled
-                uint16_t bgPixel = renderBackgroundPixel(x, y);
-                if (bgPixel != 0) {
-                    finalColor = bgPixel;
-                }
+            if (screenX >= 256 || screenY >= 240) continue;
+            
+            int pixelX = flipX ? (7 - px) : px;
+            
+            uint8_t paletteIndex = (((plane1 >> (7 - pixelX)) & 1) | 
+                                   (((plane2 >> (7 - pixelX)) & 1) << 1));
+            
+            if (paletteIndex == 0) continue; // Transparent
+            
+            // Check sprite 0 hit
+            if (sprite.spriteIndex == 0 && frameBuffer[screenY * 256 + screenX] != getBackgroundColor16()) {
+                sprite0Hit = true;
             }
             
-            // Render sprite pixel if enabled  
-            if (ppuMask & 0x10) {  // Sprites enabled
-                uint16_t spritePixel = renderSpritePixel(x, y);
-                if (spritePixel != 0) {
-                    // Check sprite 0 hit
-                    if (isSpriteZeroAtPixel(x, y) && (finalColor != backgroundColor)) {
-                        sprite0Hit = true;
-                    }
-                    finalColor = spritePixel;
-                }
-            }
-            
-            frameBuffer[y * 256 + x] = finalColor;
+            uint8_t colorIndex = palette[0x10 + spritePalette * 4 + paletteIndex];
+            frameBuffer[screenY * 256 + screenX] = convertColorTo16Bit(colorIndex);
         }
     }
 }
+
+void CycleAccuratePPU::renderTileBlock(int tileX, int tileY, uint16_t backgroundColor)
+{
+    if (!(ppuMask & 0x08)) {
+        // Background disabled - fill with background color
+        for (int py = 0; py < 8; py++) {
+            for (int px = 0; px < 8; px++) {
+                int screenX = tileX * 8 + px;
+                int screenY = tileY * 8 + py;
+                if (screenX < 256 && screenY < 240) {
+                    frameBuffer[screenY * 256 + screenX] = backgroundColor;
+                }
+            }
+        }
+        return;
+    }
+    
+    // Calculate tile address ONCE per tile (not per pixel)
+    uint16_t nametableAddr;
+    int scrolledTileX = tileX;
+    
+    // Handle scrolling logic ONCE per tile
+    if (tileY >= 4) { // Game area scrolls (below status bar)
+        int scrollX = frameScrollX + ((frameCtrl & 0x01) ? 256 : 0);
+        scrolledTileX = (tileX * 8 + scrollX) / 8;
+        
+        uint16_t baseAddr = (frameCtrl & 0x01) ? 0x2400 : 0x2000;
+        if (scrolledTileX >= 32) {
+            baseAddr = (frameCtrl & 0x01) ? 0x2000 : 0x2400;
+            scrolledTileX -= 32;
+        }
+        nametableAddr = baseAddr + (tileY * 32) + (scrolledTileX % 32);
+    } else {
+        // Status bar never scrolls
+        nametableAddr = 0x2000 + (tileY * 32) + tileX;
+    }
+    
+    // Get tile data ONCE
+    uint8_t tileIndex = readByte(nametableAddr);
+    uint8_t attribute = getAttributeTableValue(nametableAddr);
+    
+    // Get pattern table base
+    uint16_t patternTableBase = (frameCtrl & 0x10) ? 0x1000 : 0x0000;
+    uint16_t tileAddress = patternTableBase + (tileIndex * 16);
+    
+    // Read all 8 rows of pattern data ONCE
+    uint8_t plane1Data[8], plane2Data[8];
+    for (int row = 0; row < 8; row++) {
+        plane1Data[row] = readByte(tileAddress + row);
+        plane2Data[row] = readByte(tileAddress + row + 8);
+    }
+    
+    // Now render all 64 pixels of this tile
+    for (int py = 0; py < 8; py++) {
+        uint8_t plane1 = plane1Data[py];
+        uint8_t plane2 = plane2Data[py];
+        
+        for (int px = 0; px < 8; px++) {
+            int screenX = tileX * 8 + px;
+            int screenY = tileY * 8 + py;
+            
+            if (screenX >= 256 || screenY >= 240) continue;
+            
+            // Extract pixel color
+            uint8_t paletteIndex = (((plane1 >> (7 - px)) & 1) | 
+                                   (((plane2 >> (7 - px)) & 1) << 1));
+            
+            uint16_t pixelColor;
+            if (paletteIndex == 0) {
+                pixelColor = backgroundColor;
+            } else {
+                uint8_t colorIndex = palette[attribute * 4 + paletteIndex];
+                pixelColor = convertColorTo16Bit(colorIndex);
+            }
+            
+            frameBuffer[screenY * 256 + screenX] = pixelColor;
+        }
+    }
+}
+
 
 void CycleAccuratePPU::executeVisibleScanline()
 {

@@ -354,21 +354,20 @@ void SMBEmulator::setFrameRendered()
 
 
 void SMBEmulator::update() {
-    if (frameReady) return;  // Don't update if frame is already complete
+    if (frameReady) return;
     
-    // Execute a small chunk of cycles per update call (not entire frame!)
-    const int CYCLES_PER_UPDATE = 100;  // Small chunk - adjust as needed
-    int cyclesExecuted = 0;
+    clock_t start = clock();
     
-    while (cyclesExecuted < CYCLES_PER_UPDATE && !frameReady) {
-        // Execute one CPU instruction
+    const int CYCLES_PER_FRAME = 29781;
+    int frameCyclesExecuted = 0;
+    
+    while (frameCyclesExecuted < CYCLES_PER_FRAME && !frameReady) {
         uint8_t opcode = readByte(regPC);
         uint8_t cpuCycles = instructionCycles[opcode];
         
         executeInstruction();
         
-        // Execute corresponding PPU cycles (3 PPU cycles per CPU cycle)
-        for (int i = 0; i < cpuCycles * 3; i++) {
+       for (int i = 0; i < cpuCycles * 3; i++) {
             bool frameComplete = ppu->executeCycle(renderBuffer);
             
             if (frameComplete) {
@@ -377,11 +376,13 @@ void SMBEmulator::update() {
             }
         }
         
-        // Update cycle counters
-        cyclesExecuted += cpuCycles;
+        frameCyclesExecuted += cpuCycles;
         totalCycles += cpuCycles;
-        frameCycles += cpuCycles;
     }
+    
+    clock_t end = clock();
+    float ms = (float)(end - start) * 1000.0f / CLOCKS_PER_SEC;
+    printf("Frame emulation took: %.2f ms\n", ms);
 }
 
 void SMBEmulator::reset() {
