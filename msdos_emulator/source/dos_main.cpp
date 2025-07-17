@@ -1021,6 +1021,7 @@ void AllegroMainWindow::run(const char* romFilename) {
                vsync();  // This ensures we wait for vertical retrace
 #else
               //rest(1000 / Configuration::getFrameRate());
+              vsync();
 #endif
 
            } else {

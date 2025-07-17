@@ -356,32 +356,31 @@ void SMBEmulator::setFrameRendered()
 void SMBEmulator::update() {
     frameReady = false;
     
-    // Execute exactly one frame worth of cycles
-    const int TOTAL_FRAME_CYCLES = 29780;  // NTSC frame cycles
-    int cyclesExecuted = 0;
-    int cpuCycles;
+    // NTSC timing: 29,780.5 cycles per frame (we'll use 29,781 for simplicity)
+    const int CYCLES_PER_FRAME = 29781;
+    int frameCyclesExecuted = 0;
     
-    while (cyclesExecuted < TOTAL_FRAME_CYCLES && !frameReady) {
+    while (frameCyclesExecuted < CYCLES_PER_FRAME && !frameReady) {
         // Execute one CPU instruction
+        uint8_t opcode = readByte(regPC);
+        uint8_t cpuCycles = instructionCycles[opcode];
+        
         executeInstruction();
-        cpuCycles = 5;  // You had this hardcoded
         
         // Execute corresponding PPU cycles (3 PPU cycles per CPU cycle)
         for (int i = 0; i < cpuCycles * 3; i++) {
-            // CRITICAL: Pass renderBuffer directly to PPU
             bool frameComplete = ppu->executeCycle(renderBuffer);
-            
-            cyclesExecuted++;
             
             if (frameComplete) {
                 frameReady = true;
                 break;
             }
         }
+        
+        // Update cycle counters
+        frameCyclesExecuted += cpuCycles;
+        totalCycles += cpuCycles;
     }
-    
-    // DON'T copy from PPU buffer since we're passing renderBuffer directly
-    // The PPU writes directly to renderBuffer now
 }
 
 void SMBEmulator::reset() {
