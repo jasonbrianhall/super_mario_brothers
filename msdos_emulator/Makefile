@@ -1,4 +1,4 @@
-# Makefile for smbe with Windows, Linux, and DOS Support
+# Makefile for warpnes with Windows, Linux, and DOS Support
 # Based on Tetrimone Makefile structure
 # Last modification: $(shell date +%m/%d/%Y)
 
@@ -54,12 +54,12 @@ OBJS_WIN_DEBUG = $(SOURCE_FILES:.cpp=.win.debug.o)
 OBJS_DOS_DEBUG = $(SOURCE_FILES:.cpp=.dos.debug.o)
 
 # Target executables
-TARGET_LINUX = smbe
-TARGET_WIN = smbe.exe
-TARGET_DOS = smbe.exe
-TARGET_LINUX_DEBUG = smbe_debug
-TARGET_WIN_DEBUG = smbe_debug.exe
-TARGET_DOS_DEBUG = smbe_debug.exe
+TARGET_LINUX = warpnes
+TARGET_WIN = warpnes.exe
+TARGET_DOS = warpnes.exe
+TARGET_LINUX_DEBUG = warpnes_debug
+TARGET_WIN_DEBUG = warpnes_debug.exe
+TARGET_DOS_DEBUG = warpnesd.exe
 
 # Build directories
 BUILD_DIR = build
@@ -87,23 +87,23 @@ all: linux
 
 # OS-specific builds
 .PHONY: windows
-windows: smbe-windows
+windows: warpnes-windows
 
 .PHONY: linux
-linux: smbe-linux
+linux: warpnes-linux
 
 .PHONY: dos
-dos: smbe-dos
+dos: warpnes-dos
 
 # Debug targets
 .PHONY: debug
-debug: smbe-linux-debug smbe-windows-debug smbe-dos-debug
+debug: warpnes-linux-debug warpnes-windows-debug warpnes-dos-debug
 
 #
 # Linux build targets
 #
-.PHONY: smbe-linux
-smbe-linux: $(BUILD_DIR_LINUX)/$(TARGET_LINUX)
+.PHONY: warpnes-linux
+warpnes-linux: $(BUILD_DIR_LINUX)/$(TARGET_LINUX)
 
 $(BUILD_DIR_LINUX)/$(TARGET_LINUX): $(addprefix $(BUILD_DIR_LINUX)/,$(OBJS_LINUX))
 	@echo "Linking Linux executable..."
@@ -118,8 +118,8 @@ $(BUILD_DIR_LINUX)/%.o: %.cpp
 #
 # Linux debug targets
 #
-.PHONY: smbe-linux-debug
-smbe-linux-debug: $(BUILD_DIR_LINUX_DEBUG)/$(TARGET_LINUX_DEBUG)
+.PHONY: warpnes-linux-debug
+warpnes-linux-debug: $(BUILD_DIR_LINUX_DEBUG)/$(TARGET_LINUX_DEBUG)
 
 $(BUILD_DIR_LINUX_DEBUG)/$(TARGET_LINUX_DEBUG): $(addprefix $(BUILD_DIR_LINUX_DEBUG)/,$(OBJS_LINUX_DEBUG))
 	@echo "Linking Linux debug executable..."
@@ -134,8 +134,8 @@ $(BUILD_DIR_LINUX_DEBUG)/%.debug.o: %.cpp
 #
 # Windows build targets
 #
-.PHONY: smbe-windows
-smbe-windows: $(BUILD_DIR_WIN)/$(TARGET_WIN) smbe-collect-dlls
+.PHONY: warpnes-windows
+warpnes-windows: $(BUILD_DIR_WIN)/$(TARGET_WIN) warpnes-collect-dlls
 
 $(BUILD_DIR_WIN)/$(TARGET_WIN): $(addprefix $(BUILD_DIR_WIN)/,$(OBJS_WIN))
 	@echo "Linking Windows executable..."
@@ -150,8 +150,8 @@ $(BUILD_DIR_WIN)/%.win.o: %.cpp
 #
 # Windows debug targets
 #
-.PHONY: smbe-windows-debug
-smbe-windows-debug: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG) smbe-collect-debug-dlls
+.PHONY: warpnes-windows-debug
+warpnes-windows-debug: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG) warpnes-collect-debug-dlls
 
 $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG): $(addprefix $(BUILD_DIR_WIN_DEBUG)/,$(OBJS_WIN_DEBUG))
 	@echo "Linking Windows debug executable..."
@@ -166,8 +166,8 @@ $(BUILD_DIR_WIN_DEBUG)/%.win.debug.o: %.cpp
 #
 # DOS build targets
 #
-.PHONY: smbe-dos
-smbe-dos: $(BUILD_DIR_DOS)/$(TARGET_DOS)
+.PHONY: warpnes-dos
+warpnes-dos: $(BUILD_DIR_DOS)/$(TARGET_DOS)
 
 $(BUILD_DIR_DOS)/$(TARGET_DOS): $(addprefix $(BUILD_DIR_DOS)/,$(OBJS_DOS))
 	@echo "Linking DOS executable..."
@@ -182,8 +182,8 @@ $(BUILD_DIR_DOS)/%.dos.o: %.cpp
 #
 # DOS debug targets
 #
-.PHONY: smbe-dos-debug
-smbe-dos-debug: $(BUILD_DIR_DOS_DEBUG)/$(TARGET_DOS_DEBUG)
+.PHONY: warpnes-dos-debug
+warpnes-dos-debug: $(BUILD_DIR_DOS_DEBUG)/$(TARGET_DOS_DEBUG)
 
 $(BUILD_DIR_DOS_DEBUG)/$(TARGET_DOS_DEBUG): $(addprefix $(BUILD_DIR_DOS_DEBUG)/,$(OBJS_DOS_DEBUG))
 	@echo "Linking DOS debug executable..."
@@ -198,13 +198,13 @@ $(BUILD_DIR_DOS_DEBUG)/%.dos.debug.o: %.cpp
 #
 # DLL collection for Windows builds
 #
-.PHONY: smbe-collect-dlls
-smbe-collect-dlls: $(BUILD_DIR_WIN)/$(TARGET_WIN)
+.PHONY: warpnes-collect-dlls
+warpnes-collect-dlls: $(BUILD_DIR_WIN)/$(TARGET_WIN)
 	@echo "Collecting DLLs for Windows build..."
 	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN)/$(TARGET_WIN) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN)
 
-.PHONY: smbe-collect-debug-dlls
-smbe-collect-debug-dlls: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG)
+.PHONY: warpnes-collect-debug-dlls
+warpnes-collect-debug-dlls: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG)
 	@echo "Collecting Debug DLLs for Windows build..."
 	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN_DEBUG)
 
@@ -263,19 +263,19 @@ clean:
 .PHONY: help
 help:
 	@echo "Available targets:"
-	@echo "  make               - Build smbe for Linux (default)"
-	@echo "  make linux         - Build smbe for Linux"
-	@echo "  make windows       - Build smbe for Windows (requires MinGW)"
-	@echo "  make dos           - Build smbe for DOS (requires DJGPP)"
+	@echo "  make               - Build warpnes for Linux (default)"
+	@echo "  make linux         - Build warpnes for Linux"
+	@echo "  make windows       - Build warpnes for Windows (requires MinGW)"
+	@echo "  make dos           - Build warpnes for DOS (requires DJGPP)"
 	@echo ""
-	@echo "  make debug         - Build smbe with debug symbols for all platforms"
-	@echo "  make smbe-linux-debug    - Build smbe for Linux with debug symbols"
-	@echo "  make smbe-windows-debug  - Build smbe for Windows with debug symbols"
-	@echo "  make smbe-dos-debug      - Build smbe for DOS with debug symbols"
+	@echo "  make debug         - Build warpnes with debug symbols for all platforms"
+	@echo "  make warpnes-linux-debug    - Build warpnes for Linux with debug symbols"
+	@echo "  make warpnes-windows-debug  - Build warpnes for Windows with debug symbols"
+	@echo "  make warpnes-dos-debug      - Build warpnes for DOS with debug symbols"
 	@echo ""
 	@echo "  make check-deps    - Check if required dependencies are installed"
 	@echo "  make create-dll-script   - Create DLL collection script"
-	@echo "  make smbe-collect-dlls   - Collect DLLs for Windows build"
+	@echo "  make warpnes-collect-dlls   - Collect DLLs for Windows build"
 	@echo ""
 	@echo "  make clean         - Remove all build files"
 	@echo "  make help          - Show this help message"

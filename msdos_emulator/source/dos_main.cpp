@@ -980,7 +980,7 @@ void AllegroMainWindow::setupMenu()
 
 void AllegroMainWindow::run(const char* romFilename)
 {
-    printf("=== Starting Super Mario Bros ===\n");
+    printf("Welcome to WarpNES\n");
 
     gamePaused = false;
     showingMenu = false;
