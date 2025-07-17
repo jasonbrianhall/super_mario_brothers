@@ -71,6 +71,8 @@ public:
     void renderTileBlock(int tileX, int tileY, uint16_t backgroundColor);
     void renderAllSprites();
     void renderSingleSprite(const VisibleSprite& sprite);
+    uint16_t getBackgroundColor16();
+
 private:
     // Helper methods
     uint32_t convert16BitTo32Bit(uint16_t color16);
@@ -88,7 +90,6 @@ private:
     uint16_t getNametableIndex(uint16_t address);
     uint8_t getAttributeTableValue(uint16_t nametableAddress);
     uint16_t convertColorTo16Bit(uint8_t colorIndex);
-    uint16_t getBackgroundColor16();
     bool isSpriteZeroAtPixel(int x, int y);
     
     uint8_t readDataRegister();

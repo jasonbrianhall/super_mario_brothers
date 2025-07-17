@@ -1007,9 +1007,8 @@ void AllegroMainWindow::run(const char* romFilename) {
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
             if(engine.isFrameReady()) {
-                //updateAndDraw();
+                updateAndDraw();
                 engine.setFrameRendered();
-                engine.clearRenderBuffer();
                 if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
                     void* audiobuf = get_audio_stream_buffer(audiostream);
                     if (audiobuf) {
@@ -2495,9 +2494,9 @@ void AllegroMainWindow::drawDialog(BITMAP* target)
                 rect(target, dialog_x, dialog_y, dialog_x + dialog_w, dialog_y + dialog_h, 
                      makecol(255, 255, 255));
                 
-                drawTextCentered(target, dialog_y + 20, "SUPER MARIO BROS Virtualizer", makecol(255, 255, 0));
+                drawTextCentered(target, dialog_y + 20, "SUPER MARIO BROS Emulator", makecol(255, 255, 0));
                 drawTextCentered(target, dialog_y + 40, "Version 1.0", makecol(255, 255, 255));
-                drawTextCentered(target, dialog_y + 60, "Built with Allegro 4", makecol(255, 255, 255));
+                drawTextCentered(target, dialog_y + 60, "Built with Allegro", makecol(255, 255, 255));
                 
                 #ifdef __DJGPP__
                 drawTextCentered(target, dialog_y + 80, "DOS Version", makecol(255, 255, 255));

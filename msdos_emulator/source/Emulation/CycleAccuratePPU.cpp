@@ -105,8 +105,6 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
     return frameComplete;
 }
 
-// In CycleAccuratePPU.cpp - Debug the rendering process
-
 void CycleAccuratePPU::renderCompleteFrame()
 {
     if (!frameBuffer) return;

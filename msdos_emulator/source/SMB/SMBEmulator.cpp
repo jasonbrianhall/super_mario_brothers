@@ -1572,8 +1572,11 @@ void SMBEmulator::render(uint32_t* buffer)
 }
 
 void SMBEmulator::clearRenderBuffer() {
-    if (renderBuffer) {
-        memset(renderBuffer, 0, 256 * 240 * sizeof(uint16_t));
+    if (renderBuffer && ppu) {
+        uint16_t bgColor = ppu->getBackgroundColor16();
+        for (int i = 0; i < 256 * 240; i++) {
+            renderBuffer[i] = bgColor;
+        }
     }
 }
 
@@ -1590,10 +1593,9 @@ void SMBEmulator::renderDirectFast(uint16_t* buffer, int screenWidth, int screen
     ppu->renderScaled(buffer, screenWidth, screenHeight);
 }
 
-
 void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight) {
     if (!frameReady || !buffer) return;
-    
+    return;    
     // Calculate scaling
     int scale_x = screenWidth / 256;
     int scale_y = screenHeight / 240;
