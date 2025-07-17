@@ -1095,7 +1095,7 @@ void AllegroMainWindow::run(const char* romFilename)
                 }
             }
 
-            engine.render16(renderBuffer);
+            //engine.render16(renderBuffer);
             currentFrameBuffer = renderBuffer;
         }
 

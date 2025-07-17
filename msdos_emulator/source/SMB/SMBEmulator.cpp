@@ -1863,10 +1863,10 @@ void SMBEmulator::render(uint32_t* buffer)
 
 void SMBEmulator::render16(uint16_t* buffer)
 {
-    ppu->render16(buffer);  // ← Your existing line
+    ppu->render16(buffer);
     
     // Add Zapper overlay
-    if (zapperEnabled) {
+/*    if (zapperEnabled) {
         // Do light detection on the finished frame
         if (zapper->isTriggerPressed()) {
             bool light = zapper->detectLight(buffer, 256, 240, 
@@ -1875,7 +1875,7 @@ void SMBEmulator::render16(uint16_t* buffer)
         }
         // Draw crosshair on top
         zapper->drawCrosshair(buffer, 256, 240, zapper->getMouseX(), zapper->getMouseY());
-    }
+    }*/
 }
 
 void SMBEmulator::renderDirectFast(uint16_t* buffer, int screenWidth, int screenHeight)
@@ -1886,7 +1886,50 @@ void SMBEmulator::renderDirectFast(uint16_t* buffer, int screenWidth, int screen
 
 void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight)
 {
+    // First render the game using PPU scaling
     ppu->renderScaled(buffer, screenWidth, screenHeight);
+    
+    // Add Zapper crosshair AFTER game rendering
+    if (zapperEnabled && zapper) {
+        int nesMouseX = zapper->getMouseX();
+        int nesMouseY = zapper->getMouseY();
+        
+        printf("CROSSHAIR: NES pos (%d,%d), screen size %dx%d\n", 
+               nesMouseX, nesMouseY, screenWidth, screenHeight);
+        
+        // Calculate scaling factors (same logic PPU uses)
+        int scale_x = screenWidth / 256;
+        int scale_y = screenHeight / 240;
+        int scale = (scale_x < scale_y) ? scale_x : scale_y;
+        if (scale < 1) scale = 1;
+        
+        int dest_w = 256 * scale;
+        int dest_h = 240 * scale;
+        int dest_x = (screenWidth - dest_w) / 2;
+        int dest_y = (screenHeight - dest_h) / 2;
+        
+        // Convert NES coordinates to screen coordinates
+        int screenMouseX = (nesMouseX * scale) + dest_x;
+        int screenMouseY = (nesMouseY * scale) + dest_y;
+        
+        printf("CROSSHAIR: Scaled to screen pos (%d,%d), scale=%d, offset=(%d,%d)\n", 
+               screenMouseX, screenMouseY, scale, dest_x, dest_y);
+        
+        // Perform light detection on the scaled buffer
+        if (zapper->isTriggerPressed()) {
+            bool lightDetected = zapper->detectLightScaled(buffer, screenWidth, screenHeight, 
+                                                          screenMouseX, screenMouseY, scale);
+            zapper->setLightDetected(lightDetected);
+            
+            printf("LIGHT DETECTION: %s at screen pos (%d,%d)\n", 
+                   lightDetected ? "DETECTED" : "NOT DETECTED", screenMouseX, screenMouseY);
+        }
+        
+        // Draw crosshair at scaled position
+        zapper->drawCrosshairScaled(buffer, screenWidth, screenHeight, screenMouseX, screenMouseY, scale);
+        
+        printf("CROSSHAIR: Drawing completed\n");
+    }
 }
 
 void SMBEmulator::renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight)

@@ -1,6 +1,7 @@
 #include "Zapper.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 Zapper::Zapper() 
     : mouseX(0), mouseY(0), triggerPressed(false), lightDetected(false)
@@ -97,6 +98,8 @@ bool Zapper::detectLight(uint16_t* frameBuffer, int screenWidth, int screenHeigh
 void Zapper::drawCrosshair(uint16_t* buffer, int screenWidth, int screenHeight, int x, int y) 
 {
     if (!buffer || x < 0 || y < 0 || x >= screenWidth || y >= screenHeight) {
+        printf("Crosshair draw failed: x=%d, y=%d, screen=%dx%d, buffer=%p\n", 
+               x, y, screenWidth, screenHeight, buffer);
         return;
     }
     
@@ -186,4 +189,123 @@ void Zapper::drawCrosshair32(uint32_t* buffer, int screenWidth, int screenHeight
             }
         }
     }
+}
+
+bool Zapper::detectLightScaled(uint16_t* frameBuffer, int screenWidth, int screenHeight, 
+                              int screenX, int screenY, int scale) 
+{
+    if (!frameBuffer || screenX < 0 || screenY < 0 || screenX >= screenWidth || screenY >= screenHeight) {
+        printf("SCALED DETECT: Invalid parameters\n");
+        return false;
+    }
+    
+    // Larger detection radius for scaled display
+    int radius = DETECTION_RADIUS * scale;
+    if (radius < 8) radius = 8;  // Minimum radius
+    
+    int brightPixelCount = 0;
+    int totalPixels = 0;
+    
+    for (int dy = -radius; dy <= radius; dy++) {
+        for (int dx = -radius; dx <= radius; dx++) {
+            int checkX = screenX + dx;
+            int checkY = screenY + dy;
+            
+            if (checkX >= 0 && checkX < screenWidth && checkY >= 0 && checkY < screenHeight) {
+                uint16_t pixel = frameBuffer[checkY * screenWidth + checkX];
+                totalPixels++;
+                
+                // Convert RGB565 to brightness
+                int r = (pixel >> 11) & 0x1F;
+                int g = (pixel >> 5) & 0x3F;
+                int b = pixel & 0x1F;
+                
+                // Scale to 8-bit
+                r = (r << 3) | (r >> 2);
+                g = (g << 2) | (g >> 4);
+                b = (b << 3) | (b >> 2);
+                
+                // Calculate brightness
+                int brightness = (r * 299 + g * 587 + b * 114) / 1000;
+                
+                // More sensitive detection for Duck Hunt
+                if (brightness > 100 || r > 180 || g > 180 || b > 180) {
+                    brightPixelCount++;
+                }
+            }
+        }
+    }
+    
+    bool detected = (brightPixelCount >= 5);
+    
+    return detected;
+}
+
+void Zapper::drawCrosshairScaled(uint16_t* buffer, int screenWidth, int screenHeight, 
+                                int screenX, int screenY, int scale) 
+{
+    if (!buffer) {
+        printf("SCALED CROSSHAIR: Buffer is NULL!\n");
+        return;
+    }
+        
+    // Bounds check
+    if (screenX < 0 || screenX >= screenWidth || screenY < 0 || screenY >= screenHeight) {
+        printf("SCALED CROSSHAIR: Position out of bounds!\n");
+        return;
+    }
+    
+    // Scale crosshair size based on display scale
+    int crosshairSize = 8 * scale;
+    if (crosshairSize < 8) crosshairSize = 8;
+    if (crosshairSize > 32) crosshairSize = 32;
+    
+    int thickness = scale;
+    if (thickness < 1) thickness = 1;
+    if (thickness > 3) thickness = 3;
+    
+    // Choose colors based on state
+    uint16_t crosshairColor = triggerPressed ? 0xFFE0 : 0xF800;  // Yellow when firing, red when idle
+    uint16_t centerColor = lightDetected ? 0x07E0 : 0xFFFF;      // Green when light detected, white otherwise
+    
+    // Draw horizontal line
+    for (int dx = -crosshairSize; dx <= crosshairSize; dx++) {
+        int drawX = screenX + dx;
+        if (drawX >= 0 && drawX < screenWidth) {
+            for (int dy = -thickness; dy <= thickness; dy++) {
+                int drawY = screenY + dy;
+                if (drawY >= 0 && drawY < screenHeight) {
+                    buffer[drawY * screenWidth + drawX] = crosshairColor;
+                }
+            }
+        }
+    }
+    
+    // Draw vertical line
+    for (int dy = -crosshairSize; dy <= crosshairSize; dy++) {
+        int drawY = screenY + dy;
+        if (drawY >= 0 && drawY < screenHeight) {
+            for (int dx = -thickness; dx <= thickness; dx++) {
+                int drawX = screenX + dx;
+                if (drawX >= 0 && drawX < screenWidth) {
+                    buffer[drawY * screenWidth + drawX] = crosshairColor;
+                }
+            }
+        }
+    }
+    
+    // Draw center circle
+    int centerRadius = thickness + 1;
+    for (int dy = -centerRadius; dy <= centerRadius; dy++) {
+        for (int dx = -centerRadius; dx <= centerRadius; dx++) {
+            if (dx*dx + dy*dy <= centerRadius*centerRadius) {
+                int drawX = screenX + dx;
+                int drawY = screenY + dy;
+                if (drawX >= 0 && drawX < screenWidth && drawY >= 0 && drawY < screenHeight) {
+                    buffer[drawY * screenWidth + drawX] = centerColor;
+                }
+            }
+        }
+    }
+    
 }

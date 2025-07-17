@@ -32,11 +32,12 @@ public:
     
     // Light detection logic
     bool detectLight(uint16_t* frameBuffer, int screenWidth, int screenHeight, int mouseX, int mouseY);
+    bool detectLightScaled(uint16_t* frameBuffer, int screenWidth, int screenHeight, int screenX, int screenY, int scale);
     
     // Visual feedback
     void drawCrosshair(uint16_t* buffer, int screenWidth, int screenHeight, int x, int y);
     void drawCrosshair32(uint32_t* buffer, int screenWidth, int screenHeight, int x, int y);
-    
+    void drawCrosshairScaled(uint16_t* buffer, int screenWidth, int screenHeight, int screenX, int screenY, int scale);
 private:
     int mouseX, mouseY;
     bool triggerPressed;
