@@ -992,8 +992,9 @@ void AllegroMainWindow::run(const char* romFilename) {
     
     engine.reset();
     gameRunning = true;
-    
-    printf("Starting simplified game loop...\n");
+    int sleeptime= int(float(1000) / float(Configuration::getFrameRate()));
+    if (sleeptime<5) { sleeptime=16; }
+
     
     while (gameRunning) {
         handleInput();
@@ -1006,33 +1007,27 @@ void AllegroMainWindow::run(const char* romFilename) {
                 updateAndDraw();
                 engine.setFrameRendered();
 
-
-              if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
-                  void* audiobuf = get_audio_stream_buffer(audiostream);
-                  if (audiobuf) {
-                      int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
-                      if (samplesNeeded > 1024) samplesNeeded = 1024;
-                    
-                      engine.audioCallback((uint8_t*)audiobuf, samplesNeeded);
-                      free_audio_stream_buffer(audiostream);
-                  }
-              }
+                if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
+                    void* audiobuf = get_audio_stream_buffer(audiostream);
+                    if (audiobuf) {
+                        int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
+                        if (samplesNeeded > 1024) samplesNeeded = 1024;
+                      
+                        engine.audioCallback((uint8_t*)audiobuf, samplesNeeded);
+                        free_audio_stream_buffer(audiostream);
+                    }
+                }
+                
 #ifdef __DJGPP__
                vsync();  // This ensures we wait for vertical retrace
 #else
-              //rest(1000 / Configuration::getFrameRate());
-              vsync();
+              rest(sleeptime);
 #endif
 
            } else {
                engine.update();
            }
-
-    
         }
-        
-        // Display whatever frame is available
-        
     }
 }
 

@@ -354,13 +354,13 @@ void SMBEmulator::setFrameRendered()
 
 
 void SMBEmulator::update() {
-    frameReady = false;
+    if (frameReady) return;  // Don't update if frame is already complete
     
-    // NTSC timing: 29,780.5 cycles per frame (we'll use 29,781 for simplicity)
-    const int CYCLES_PER_FRAME = 29781;
-    int frameCyclesExecuted = 0;
+    // Execute a small chunk of cycles per update call (not entire frame!)
+    const int CYCLES_PER_UPDATE = 100;  // Small chunk - adjust as needed
+    int cyclesExecuted = 0;
     
-    while (frameCyclesExecuted < CYCLES_PER_FRAME && !frameReady) {
+    while (cyclesExecuted < CYCLES_PER_UPDATE && !frameReady) {
         // Execute one CPU instruction
         uint8_t opcode = readByte(regPC);
         uint8_t cpuCycles = instructionCycles[opcode];
@@ -378,8 +378,9 @@ void SMBEmulator::update() {
         }
         
         // Update cycle counters
-        frameCyclesExecuted += cpuCycles;
+        cyclesExecuted += cpuCycles;
         totalCycles += cpuCycles;
+        frameCycles += cpuCycles;
     }
 }
 
