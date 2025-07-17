@@ -992,25 +992,28 @@ void AllegroMainWindow::run(const char* romFilename) {
     
     engine.reset();
     gameRunning = true;
-    int sleeptime= int(float(1000) / float(Configuration::getFrameRate()));
-    if (sleeptime<5) { sleeptime=16; }
-
+    
+    // CALCULATE ONCE OUTSIDE LOOP
+    const int frameRate = Configuration::getFrameRate();
+    const int targetFrameTimeMS = (frameRate > 0) ? (1000 / frameRate) : 16;  // 16ms for 60 FPS
+    
+    printf("Starting frame-timed game loop...\n");
+    printf("Target frame time: %d ms\n", targetFrameTimeMS);
     
     while (gameRunning) {
+        clock_t frameStart = clock();  // Start timing
+        
         handleInput();
         
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
-            // Run emulator for one frame
-            
-            // Audio processing - only when frame is ready
             if(engine.isFrameReady()) {
                 updateAndDraw();
                 engine.setFrameRendered();
-
+                
                 if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
                     void* audiobuf = get_audio_stream_buffer(audiostream);
                     if (audiobuf) {
-                        int samplesNeeded = Configuration::getAudioFrequency() / Configuration::getFrameRate();
+                        int samplesNeeded = Configuration::getAudioFrequency() / frameRate;
                         if (samplesNeeded > 1024) samplesNeeded = 1024;
                       
                         engine.audioCallback((uint8_t*)audiobuf, samplesNeeded);
@@ -1018,18 +1021,36 @@ void AllegroMainWindow::run(const char* romFilename) {
                     }
                 }
                 
+                // CALCULATE ACTUAL SLEEP TIME
+                clock_t frameEnd = clock();
+                float workTimeMS = (float)(frameEnd - frameStart) * 1000.0f / CLOCKS_PER_SEC;
+                int sleepTimeMS = targetFrameTimeMS - (int)workTimeMS;
+                
+                if (sleepTimeMS > 0) {
 #ifdef __DJGPP__
-               vsync();  // This ensures we wait for vertical retrace
+                    vsync();  // On DOS, just use vsync
 #else
-              rest(sleeptime);
+                    rest(sleepTimeMS);  // Sleep for remaining time
 #endif
-
-           } else {
-               engine.update();
-           }
+                } else {
+                    // Frame took too long - we're behind schedule
+                    static int overrunCount = 0;
+                    if (++overrunCount % 60 == 0) {  // Print once per second
+                        printf("Frame overrun: %.2f ms (target: %d ms)\n", workTimeMS, targetFrameTimeMS);
+                    }
+                    rest(1);  // Minimal sleep to yield CPU
+                }
+            } else {
+                engine.update();
+                rest(1);  // Sleep 1ms between updates
+            }
+        } else {
+            updateAndDraw();
+            rest(targetFrameTimeMS);
         }
     }
 }
+
 
 void AllegroMainWindow::showJoystickStatus()
 {

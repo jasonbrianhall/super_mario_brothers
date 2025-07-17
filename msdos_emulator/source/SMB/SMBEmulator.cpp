@@ -356,8 +356,6 @@ void SMBEmulator::setFrameRendered()
 void SMBEmulator::update() {
     if (frameReady) return;
     
-    clock_t start = clock();
-    
     const int CYCLES_PER_FRAME = 29781;
     int frameCyclesExecuted = 0;
     
@@ -380,9 +378,6 @@ void SMBEmulator::update() {
         totalCycles += cpuCycles;
     }
     
-    clock_t end = clock();
-    float ms = (float)(end - start) * 1000.0f / CLOCKS_PER_SEC;
-    printf("Frame emulation took: %.2f ms\n", ms);
 }
 
 void SMBEmulator::reset() {
