@@ -2335,18 +2335,7 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
         static bool hasNonZeroData = false;
         
         if (address < chrSize) {
-            uint8_t data = chrROM[address];
-            
-            // Debug first few reads and any non-zero data
-            if (debugCount < 20 || (!hasNonZeroData && data != 0)) {
-                printf("UxROM CHR read: addr=$%04X, data=$%02X\n", address, data);
-                debugCount++;
-                if (data != 0) {
-                    hasNonZeroData = true;
-                    printf("*** FOUND NON-ZERO CHR DATA! Game is using CHR-RAM ***\n");
-                }
-            }
-            
+            uint8_t data = chrROM[address];            
             return data;
         }
     }
