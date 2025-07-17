@@ -28,7 +28,7 @@ CycleAccuratePPU::CycleAccuratePPU(SMBEmulator& engine) : engine(engine)
     currentCycle = 0;
     frameComplete = false;
     frameBuffer = nullptr;
-    
+
     // Initialize PPU registers to proper reset state
     ppuCtrl = 0x00;
     ppuMask = 0x00;
@@ -51,6 +51,7 @@ CycleAccuratePPU::CycleAccuratePPU(SMBEmulator& engine) : engine(engine)
     
     // Initialize frame capture state
     frameScrollX = 0;
+    frameScrollY=0;
     frameCtrl = 0;
     sprite0Hit = false;
 }
@@ -61,30 +62,21 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
     frameComplete = false;
     
     if (currentScanline >= 0 && currentScanline <= 239) {
-        // Visible scanlines
         executeVisibleScanline();
     } else if (currentScanline == 240) {
-        // Post-render scanline
-    } else if (currentScanline == 241 && currentCycle == 1) {
-        // Start of VBlank - CAPTURE FRAME STATE HERE
-        ppuStatus |= 0x80;  // Set VBlank flag
-        
-        // CRITICAL: Capture the CURRENT register state for this frame
+        // Post-render scanline - capture state for next frame
         frameScrollX = ppuScrollX;
         frameCtrl = ppuCtrl;
-        
+    } else if (currentScanline == 241 && currentCycle == 1) {
+        // VBlank start
+        ppuStatus |= 0x80;
         if (ppuCtrl & 0x80) {
             engine.triggerNMI();
         }
-    } else if (currentScanline == 261) {
-        // Pre-render scanline
-        if (currentCycle == 1) {
-            ppuStatus &= 0x7F;  // Clear VBlank flag
-            sprite0Hit = false;
-            
-            // RESET STATE FOR NEW FRAME - THIS MIGHT BE MISSING
-            // Don't reset frameScrollX/frameCtrl here - use captured values
-        }
+    } else if (currentScanline == 261 && currentCycle == 1) {
+        // Pre-render
+        ppuStatus &= 0x7F;
+        sprite0Hit = false;
     }
     
     // Advance timing
@@ -214,9 +206,8 @@ void CycleAccuratePPU::renderSingleSprite(const VisibleSprite& sprite)
 
 void CycleAccuratePPU::renderTileBlock(int tileX, int tileY, uint16_t backgroundColor)
 {
-    // If background is disabled, tiles should render as background color
+    // If background is disabled, fill with background color
     if (!(ppuMask & 0x08)) {
-        // Fill this tile area with background color (redundant if we cleared above, but safe)
         for (int py = 0; py < 8; py++) {
             for (int px = 0; px < 8; px++) {
                 int screenX = tileX * 8 + px;
@@ -229,27 +220,29 @@ void CycleAccuratePPU::renderTileBlock(int tileX, int tileY, uint16_t background
         return;
     }
     
-    // ... rest of your existing renderTileBlock code ...
-    // The tile rendering logic can stay the same
+    // FIXED SCROLLING LOGIC:
+    // Calculate the actual tile position considering scroll
+    int actualTileX = tileX;
+    int actualTileY = tileY;
     
-    // Calculate tile address ONCE per tile
+    // Apply horizontal scrolling
+    int totalScrollX = frameScrollX;
+    if (frameCtrl & 0x01) {
+        totalScrollX += 256;  // Add 256 if nametable bit is set
+    }
+    
+    // Calculate which tile we should actually render
+    int scrolledPixelX = (tileX * 8) + totalScrollX;
+    actualTileX = (scrolledPixelX / 8) % 64;  // 64 tiles across both nametables
+    
+    // Determine which nametable to use
     uint16_t nametableAddr;
-    int scrolledTileX = tileX;
-    
-    // Handle scrolling logic
-    if (tileY >= 4) { // Game area scrolls
-        int scrollX = frameScrollX + ((frameCtrl & 0x01) ? 256 : 0);
-        scrolledTileX = (tileX * 8 + scrollX) / 8;
-        
-        uint16_t baseAddr = (frameCtrl & 0x01) ? 0x2400 : 0x2000;
-        if (scrolledTileX >= 32) {
-            baseAddr = (frameCtrl & 0x01) ? 0x2000 : 0x2400;
-            scrolledTileX -= 32;
-        }
-        nametableAddr = baseAddr + (tileY * 32) + (scrolledTileX % 32);
+    if (actualTileX < 32) {
+        // Left nametable
+        nametableAddr = 0x2000 + (actualTileY * 32) + actualTileX;
     } else {
-        // Status bar never scrolls
-        nametableAddr = 0x2000 + (tileY * 32) + tileX;
+        // Right nametable  
+        nametableAddr = 0x2400 + (actualTileY * 32) + (actualTileX - 32);
     }
     
     // Get tile data
@@ -267,6 +260,9 @@ void CycleAccuratePPU::renderTileBlock(int tileX, int tileY, uint16_t background
         plane2Data[row] = readByte(tileAddress + row + 8);
     }
     
+    // Calculate pixel offset for sub-tile scrolling
+    int pixelOffsetX = totalScrollX % 8;
+    
     // Render all pixels of this tile
     for (int py = 0; py < 8; py++) {
         uint8_t plane1 = plane1Data[py];
@@ -278,13 +274,16 @@ void CycleAccuratePPU::renderTileBlock(int tileX, int tileY, uint16_t background
             
             if (screenX >= 256 || screenY >= 240) continue;
             
+            // Apply sub-pixel scrolling
+            int actualPixelX = (px + pixelOffsetX) % 8;
+            
             // Extract pixel color
-            uint8_t paletteIndex = (((plane1 >> (7 - px)) & 1) | 
-                                   (((plane2 >> (7 - px)) & 1) << 1));
+            uint8_t paletteIndex = (((plane1 >> (7 - actualPixelX)) & 1) | 
+                                   (((plane2 >> (7 - actualPixelX)) & 1) << 1));
             
             uint16_t pixelColor;
             if (paletteIndex == 0) {
-                pixelColor = backgroundColor;  // Transparent pixels use background
+                pixelColor = backgroundColor;
             } else {
                 uint8_t colorIndex = palette[attribute * 4 + paletteIndex];
                 pixelColor = convertColorTo16Bit(colorIndex);
@@ -341,35 +340,29 @@ void CycleAccuratePPU::renderPixel(int x, int y)
 
 uint16_t CycleAccuratePPU::renderBackgroundPixel(int x, int y)
 {
-    // ALWAYS use captured frame values, not current registers
-    int scrollX = frameScrollX + ((frameCtrl & 0x01) ? 256 : 0);
+    // Calculate scrolled position
+    int scrolledX = (x + frameScrollX) % 512;
+    int scrolledY = (y + frameScrollY) % 480;  // You're missing Y scroll!
     
-    // Status bar (rows 0-31) never scrolls
-    if (y < 32) {
-        int tileX = x / 8;
-        int tileY = y / 8;
-        uint16_t nametableAddr = 0x2000 + (tileY * 32) + tileX;
-        return renderTilePixel(nametableAddr, x % 8, y % 8, y);
+    // Determine which nametable based on scroll and control register
+    int nametableX = (frameCtrl & 0x01) ? 1 : 0;
+    int nametableY = (frameCtrl & 0x02) ? 1 : 0;
+    
+    // Adjust for scrolling
+    if (scrolledX >= 256) {
+        nametableX = 1 - nametableX;
+        scrolledX -= 256;
     }
     
-    // Game area scrolls using CAPTURED scroll value
-    int scrolledX = x + scrollX;
+    // Calculate tile position
     int tileX = scrolledX / 8;
-    int tileY = y / 8;
+    int tileY = scrolledY / 8;
     
-    // Use CAPTURED control register
-    uint16_t baseAddr = (frameCtrl & 0x01) ? 0x2400 : 0x2000;
+    // Build nametable address
+    uint16_t nametableAddr = 0x2000 + (nametableY * 0x800) + (nametableX * 0x400) + 
+                            (tileY * 32) + tileX;
     
-    if (tileX >= 32) {
-        baseAddr = (frameCtrl & 0x01) ? 0x2000 : 0x2400;
-        tileX -= 32;
-    }
-    
-    uint16_t nametableAddr = baseAddr + (tileY * 32) + (tileX % 32);
-    int pixelX = scrolledX % 8;
-    int pixelY = y % 8;
-    
-    return renderTilePixel(nametableAddr, pixelX, pixelY, y);
+    return renderTilePixel(nametableAddr, scrolledX % 8, scrolledY % 8, y);
 }
 
 uint16_t CycleAccuratePPU::renderSpritePixel(int x, int y)
@@ -505,31 +498,31 @@ uint16_t CycleAccuratePPU::getNametableIndex(uint16_t address)
 
 uint8_t CycleAccuratePPU::getAttributeTableValue(uint16_t nametableAddress)
 {
-    nametableAddress = getNametableIndex(nametableAddress);
-
-    // Get the tile position within the nametable (32x30 tiles)
-    int tileX = nametableAddress & 0x1f;  // 0-31
-    int tileY = (nametableAddress >> 5) & 0x1f;  // 0-29
+    // Work with the original address, not the mirrored one
+    uint16_t baseAddr = (nametableAddress - 0x2000) & 0x0FFF;
+    int table = baseAddr / 0x400;  // Which nametable (0-3)
+    int offset = baseAddr % 0x400;  // Offset within nametable
     
-    // Convert tile position to attribute table position (16x16 pixel groups = 2x2 tiles)
-    int attrX = tileX / 4;  // 0-7
-    int attrY = tileY / 4;  // 0-7
+    // Get tile position within the nametable
+    int tileX = offset % 32;
+    int tileY = offset / 32;
     
-    // Calculate which quadrant within the 4x4 tile group (32x32 pixels)
-    int quadX = (tileX / 2) & 1;  // 0 or 1
-    int quadY = (tileY / 2) & 1;  // 0 or 1
+    // Convert to attribute table coordinates
+    int attrX = tileX / 4;
+    int attrY = tileY / 4;
     
-    // Calculate the shift amount for this quadrant
+    // Get quadrant within the 4x4 tile group
+    int quadX = (tileX % 4) / 2;
+    int quadY = (tileY % 4) / 2;
+    
+    // Calculate bit shift
     int shift = (quadY * 4) + (quadX * 2);
     
-    // Get the nametable base
-    int nametableBase = (nametableAddress >= 0x400) ? 0x400 : 0x000;
+    // Get the actual attribute byte
+    uint16_t attrAddr = 0x2000 + (table * 0x400) + 0x3C0 + (attrY * 8) + attrX;
+    uint8_t attrByte = readByte(attrAddr);
     
-    // Attribute table starts at +0x3C0 from nametable base
-    int attrOffset = nametableBase + 0x3C0 + (attrY * 8) + attrX;
-    
-    // Extract the 2-bit palette value and return it
-    return (nametable[attrOffset] >> shift) & 0x03;
+    return (attrByte >> shift) & 0x03;
 }
 
 uint16_t CycleAccuratePPU::convertColorTo16Bit(uint8_t colorIndex)

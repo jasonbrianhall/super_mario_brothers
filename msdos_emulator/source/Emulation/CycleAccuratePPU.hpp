@@ -35,7 +35,7 @@ private:
     uint16_t currentAddress;
     bool writeToggle;
     uint8_t vramBuffer;
-    
+    uint8_t frameScrollY;
     // Memory
     uint8_t palette[32];
     uint8_t nametable[2048];
