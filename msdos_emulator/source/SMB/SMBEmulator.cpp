@@ -962,20 +962,25 @@ uint8_t SMBEmulator::readByte(uint16_t address)
         switch (address) {
             case 0x4016:
                 return controller1->readByte(PLAYER_1);
-    case 0x4017:
-        {
-            if (zapperEnabled && zapper) {
-                uint8_t zapperValue = zapper->readByte();
-                
-                return zapperValue;
-            } else {
-                return controller2->readByte(PLAYER_2);
-            }
-        }            default:
-                return 0; // Other APU registers are write-only
+case 0x4017:
+    {
+        if (zapperEnabled && zapper) {
+            uint8_t zapperValue = zapper->readByte();
+            
+            // DEBUG: Print EVERY zapper register read to see if Duck Hunt is checking it
+            printf("$4017 READ: $%02X (trigger=%s light=%s) at PC=$%04X\n", 
+                   zapperValue,
+                   zapper->isTriggerPressed() ? "PRESSED" : "released",
+                   zapper->isLightDetected() ? "DETECTED" : "none",
+                   regPC);
+            
+            return zapperValue;
+        } else {
+            return controller2->readByte(PLAYER_2);
         }
-    }
-    else if (address >= 0x8000) {
+    }                
+        }
+    } else if (address >= 0x8000) {
         // PRG ROM with mapper support
         if (nesHeader.mapper == 0) {
             // NROM - simple mapping
