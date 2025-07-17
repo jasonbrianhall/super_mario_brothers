@@ -370,6 +370,9 @@ void SMBEmulator::update() {
             
             if (frameComplete) {
                 frameReady = true;
+                        if (apu) {
+            apu->stepFrame();  // Call this once per frame like before
+        }
                 break;
             }
         }
