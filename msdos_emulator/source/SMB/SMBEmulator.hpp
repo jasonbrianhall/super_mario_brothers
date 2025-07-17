@@ -181,6 +181,7 @@ public:
     int getMirroringMode() const;
     void setFrameRendered();
     void clearRenderBuffer();
+    void triggerIRQ();
 private:
     // Core components
     CPU* cpu;
@@ -189,7 +190,7 @@ private:
     Mapper* mapper;
     Controller* controller1;
     Controller* controller2;
-    
+    bool pendingIRQ = false;
     // ROM data
     uint8_t* prgROM;
     uint8_t* chrROM;
