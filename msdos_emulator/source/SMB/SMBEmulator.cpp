@@ -60,6 +60,7 @@ SMBEmulator::SMBEmulator()
     controller1 = new Controller();
     controller2 = new Controller();
     zapper = new Zapper();
+    zapperEnabled=0;
 }
 
 SMBEmulator::~SMBEmulator()
@@ -1888,15 +1889,11 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
 {
     // First render the game using PPU scaling
     ppu->renderScaled(buffer, screenWidth, screenHeight);
-    
     // Add Zapper crosshair AFTER game rendering
     if (zapperEnabled && zapper) {
         int nesMouseX = zapper->getMouseX();
         int nesMouseY = zapper->getMouseY();
-        
-        printf("CROSSHAIR: NES pos (%d,%d), screen size %dx%d\n", 
-               nesMouseX, nesMouseY, screenWidth, screenHeight);
-        
+                
         // Calculate scaling factors (same logic PPU uses)
         int scale_x = screenWidth / 256;
         int scale_y = screenHeight / 240;
@@ -1912,8 +1909,6 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
         int screenMouseX = (nesMouseX * scale) + dest_x;
         int screenMouseY = (nesMouseY * scale) + dest_y;
         
-        printf("CROSSHAIR: Scaled to screen pos (%d,%d), scale=%d, offset=(%d,%d)\n", 
-               screenMouseX, screenMouseY, scale, dest_x, dest_y);
         
         // Perform light detection on the scaled buffer
         if (zapper->isTriggerPressed()) {
@@ -1921,14 +1916,11 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
                                                           screenMouseX, screenMouseY, scale);
             zapper->setLightDetected(lightDetected);
             
-            printf("LIGHT DETECTION: %s at screen pos (%d,%d)\n", 
-                   lightDetected ? "DETECTED" : "NOT DETECTED", screenMouseX, screenMouseY);
         }
         
         // Draw crosshair at scaled position
         zapper->drawCrosshairScaled(buffer, screenWidth, screenHeight, screenMouseX, screenMouseY, scale);
         
-        printf("CROSSHAIR: Drawing completed\n");
     }
 }
 
