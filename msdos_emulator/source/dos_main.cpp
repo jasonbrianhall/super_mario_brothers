@@ -2151,10 +2151,6 @@ void AllegroMainWindow::updateAndDraw()
     
     // Copy back buffer to screen
     blit(back_buffer, screen, 0, 0, 0, 0, SCREEN_W, SCREEN_H);
-    
-    #ifdef __DJGPP__
-    vsync();
-    #endif
 }
 
 void AllegroMainWindow::drawGame(BITMAP* target)

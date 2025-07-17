@@ -61,13 +61,15 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
     frameComplete = false;
     
     if (currentScanline >= 0 && currentScanline <= 239) {
-        // Visible scanlines - don't render yet
+        // Visible scanlines
         executeVisibleScanline();
     } else if (currentScanline == 240) {
-        // Post-render scanline - do nothing
+        // Post-render scanline
     } else if (currentScanline == 241 && currentCycle == 1) {
-        // Start of VBlank
+        // Start of VBlank - CAPTURE FRAME STATE HERE
         ppuStatus |= 0x80;  // Set VBlank flag
+        
+        // CRITICAL: Capture the CURRENT register state for this frame
         frameScrollX = ppuScrollX;
         frameCtrl = ppuCtrl;
         
@@ -80,8 +82,8 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
             ppuStatus &= 0x7F;  // Clear VBlank flag
             sprite0Hit = false;
             
-            // DON'T clear the frame buffer - we'll overwrite every pixel anyway
-            // Removing: memset(frameBuffer, 0, 256 * 240 * sizeof(uint16_t));
+            // RESET STATE FOR NEW FRAME - THIS MIGHT BE MISSING
+            // Don't reset frameScrollX/frameCtrl here - use captured values
         }
     }
     
@@ -95,7 +97,7 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
             currentScanline = 0;
             frameComplete = true;
             
-            // Render the entire frame NOW - every pixel will be written
+            // Render the frame using CAPTURED state, not current state
             if (frameBuffer) {
                 renderCompleteFrame();
             }
@@ -104,6 +106,7 @@ bool CycleAccuratePPU::executeCycle(uint16_t* buffer)
     
     return frameComplete;
 }
+
 
 void CycleAccuratePPU::renderCompleteFrame()
 {
@@ -338,7 +341,7 @@ void CycleAccuratePPU::renderPixel(int x, int y)
 
 uint16_t CycleAccuratePPU::renderBackgroundPixel(int x, int y)
 {
-    // Use captured frame values for consistent rendering
+    // ALWAYS use captured frame values, not current registers
     int scrollX = frameScrollX + ((frameCtrl & 0x01) ? 256 : 0);
     
     // Status bar (rows 0-31) never scrolls
@@ -346,18 +349,17 @@ uint16_t CycleAccuratePPU::renderBackgroundPixel(int x, int y)
         int tileX = x / 8;
         int tileY = y / 8;
         uint16_t nametableAddr = 0x2000 + (tileY * 32) + tileX;
-        return renderTilePixel(nametableAddr, x % 8, y % 8, currentScanline);
+        return renderTilePixel(nametableAddr, x % 8, y % 8, y);
     }
     
-    // Game area scrolls
+    // Game area scrolls using CAPTURED scroll value
     int scrolledX = x + scrollX;
     int tileX = scrolledX / 8;
     int tileY = y / 8;
     
-    // Determine which nametable to use
+    // Use CAPTURED control register
     uint16_t baseAddr = (frameCtrl & 0x01) ? 0x2400 : 0x2000;
     
-    // Handle horizontal wrapping
     if (tileX >= 32) {
         baseAddr = (frameCtrl & 0x01) ? 0x2000 : 0x2400;
         tileX -= 32;
@@ -367,108 +369,83 @@ uint16_t CycleAccuratePPU::renderBackgroundPixel(int x, int y)
     int pixelX = scrolledX % 8;
     int pixelY = y % 8;
     
-    return renderTilePixel(nametableAddr, pixelX, pixelY, currentScanline);
+    return renderTilePixel(nametableAddr, pixelX, pixelY, y);
 }
 
 uint16_t CycleAccuratePPU::renderSpritePixel(int x, int y)
 {
-    // Scan through OAM for sprites at this pixel (in reverse order for priority)
+    // Use CAPTURED control register for sprite pattern table
     for (int i = 63; i >= 0; i--) {
         uint8_t spriteY = oam[i * 4];
         uint8_t tileIndex = oam[i * 4 + 1];
         uint8_t attributes = oam[i * 4 + 2];
         uint8_t spriteX = oam[i * 4 + 3];
         
-        // Check if sprite is visible
         if (spriteY >= 0xEF || spriteX >= 0xF9) {
             continue;
         }
         
-        // Increment Y by one (sprite data is delayed by one scanline)
         spriteY++;
         
-        // Check if pixel is within this sprite
         if (x < spriteX || x >= spriteX + 8 || y < spriteY || y >= spriteY + 8) {
             continue;
         }
         
-        // Calculate pixel position within sprite
         int pixelX = x - spriteX;
         int pixelY = y - spriteY;
         
-        // Apply flipping
         bool flipX = (attributes & 0x40) != 0;
         bool flipY = (attributes & 0x80) != 0;
         
         if (flipX) pixelX = 7 - pixelX;
         if (flipY) pixelY = 7 - pixelY;
         
-        // Get tile pattern
-        uint16_t tile = tileIndex + ((frameCtrl & 0x08) ? 256 : 0);  // Use captured control
+        // USE CAPTURED CONTROL for pattern table selection
+        uint16_t tile = tileIndex + ((frameCtrl & 0x08) ? 256 : 0);
         
         uint8_t plane1 = readByte(tile * 16 + pixelY);
         uint8_t plane2 = readByte(tile * 16 + pixelY + 8);
         
-        // Extract pixel color
         uint8_t paletteIndex = (((plane1 >> (7 - pixelX)) & 1) | 
                                (((plane2 >> (7 - pixelX)) & 1) << 1));
         
         if (paletteIndex == 0) {
-            continue;  // Transparent pixel
+            continue;
         }
         
-        // Get sprite palette
         uint8_t spritePalette = attributes & 0x03;
         uint8_t colorIndex = palette[0x10 + spritePalette * 4 + paletteIndex];
         
         return convertColorTo16Bit(colorIndex);
     }
     
-    return 0;  // No sprite pixel
+    return 0;
 }
 
 uint16_t CycleAccuratePPU::renderTilePixel(uint16_t nametableAddr, int pixelX, int pixelY, int scanline)
 {
-    // Get tile index from nametable
     uint8_t tileIndex = readByte(nametableAddr);
     
-    // DEBUGGING: Print tile info for first few tiles
-    static int debugCount = 0;
-    if (debugCount < 10) {
-        printf("Tile render: addr=$%04X, tile=$%02X, x=%d, y=%d\n", 
-               nametableAddr, tileIndex, pixelX, pixelY);
-        debugCount++;
-    }
-    
-    // Get pattern table base - FIXED LOGIC
+    // USE CAPTURED CONTROL for pattern table selection
     uint16_t patternTableBase;
     if (frameCtrl & 0x10) {
-        patternTableBase = 0x1000;  // Pattern table 1 ($1000-$1FFF)
+        patternTableBase = 0x1000;
     } else {
-        patternTableBase = 0x0000;  // Pattern table 0 ($0000-$0FFF)
+        patternTableBase = 0x0000;
     }
     
     uint16_t tileAddress = patternTableBase + (tileIndex * 16) + pixelY;
     
-    // Read pattern data using mapper-aware reading
     uint8_t plane1 = readByte(tileAddress);
     uint8_t plane2 = readByte(tileAddress + 8);
     
-    // DEBUGGING: Print pattern data for first few reads
-    if (debugCount < 10) {
-        printf("Pattern data: addr=$%04X, plane1=$%02X, plane2=$%02X\n", 
-               tileAddress, plane1, plane2);
-    }
-    
-    // Extract 2-bit color index
     uint8_t paletteIndex = (((plane1 >> (7 - pixelX)) & 1) | 
                            (((plane2 >> (7 - pixelX)) & 1) << 1));
     
     if (paletteIndex == 0) {
-        return getBackgroundColor16();  // Use universal background color
+        return getBackgroundColor16();
     }
     
-    // Get attribute table value for this tile
     uint8_t attribute = getAttributeTableValue(nametableAddr);
     uint8_t colorIndex = palette[attribute * 4 + paletteIndex];
     
