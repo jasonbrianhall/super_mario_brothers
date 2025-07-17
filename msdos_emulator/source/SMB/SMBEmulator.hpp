@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <string>
 #include <fstream>
-
+#include "../Zapper.hpp"
 
 // Forward declarations
 class APU;
@@ -22,7 +22,14 @@ public:
     ~SMBEmulator();
     void checkSprite0Hit(int scanline, int cycle);
     uint8_t* getCHR();
-    
+
+    void enableZapper(bool enable);
+    bool isZapperEnabled() const { return zapperEnabled; }
+    Zapper& getZapper() { return *zapper; }
+    void updateZapperInput(int mouseX, int mouseY, bool mousePressed);
+
+
+
     // Add these methods that PPU needs (same as SMBEngine)
     uint8_t readData(uint16_t address);
     void writeData(uint16_t address, uint8_t value);
@@ -105,6 +112,11 @@ private:
     uint8_t regP;  // Processor status: NV-BDIZC
     uint64_t totalCycles;
     uint64_t frameCycles;
+
+    // NES Zapper
+    Zapper* zapper;
+    bool zapperEnabled;
+    uint16_t* currentFrameBuffer;
     
     // Status flag helpers
     enum StatusFlags {

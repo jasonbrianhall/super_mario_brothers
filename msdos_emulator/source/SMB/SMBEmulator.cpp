@@ -7,6 +7,7 @@
 #include "../Emulation/PPU.hpp"
 #include "../Emulation/Controller.hpp"
 #include "../Configuration.hpp"
+#include "../Zapper.hpp"
 
 // 6502 instruction cycle counts
 const uint8_t SMBEmulator::instructionCycles[256] = {
@@ -58,6 +59,7 @@ SMBEmulator::SMBEmulator()
     ppu = new PPU(*this);
     controller1 = new Controller();
     controller2 = new Controller();
+    zapper = new Zapper();
 }
 
 SMBEmulator::~SMBEmulator()
@@ -66,6 +68,7 @@ SMBEmulator::~SMBEmulator()
     delete ppu;
     delete controller1;
     delete controller2;
+    delete zapper;
     unloadROM();
 }
 
@@ -944,6 +947,11 @@ void SMBEmulator::executeInstruction()
 // Memory access functions
 uint8_t SMBEmulator::readByte(uint16_t address)
 {
+    if (zapperEnabled && address==0x4017) {
+        // Read from Zapper instead of controller 2
+        return zapper->readByte();
+    }
+
     if (address < 0x2000) {
         // RAM (mirrored every 2KB)
         return ram[address & 0x7FF];
@@ -959,6 +967,11 @@ uint8_t SMBEmulator::readByte(uint16_t address)
             case 0x4016:
                 return controller1->readByte(PLAYER_1);
             case 0x4017:
+                if (zapperEnabled) {
+                    // Read from Zapper instead of controller 2
+                    return zapper->readByte();
+                } 
+                // Read from Controller 2
                 return controller2->readByte(PLAYER_2);
             default:
                 return 0; // Other APU registers are write-only
@@ -1850,7 +1863,19 @@ void SMBEmulator::render(uint32_t* buffer)
 
 void SMBEmulator::render16(uint16_t* buffer)
 {
-    ppu->render16(buffer);
+    ppu->render16(buffer);  // ← Your existing line
+    
+    // Add Zapper overlay
+    if (zapperEnabled) {
+        // Do light detection on the finished frame
+        if (zapper->isTriggerPressed()) {
+            bool light = zapper->detectLight(buffer, 256, 240, 
+                                           zapper->getMouseX(), zapper->getMouseY());
+            zapper->setLightDetected(light);
+        }
+        // Draw crosshair on top
+        zapper->drawCrosshair(buffer, 256, 240, zapper->getMouseX(), zapper->getMouseY());
+    }
 }
 
 void SMBEmulator::renderDirectFast(uint16_t* buffer, int screenWidth, int screenHeight)
@@ -2389,4 +2414,31 @@ void SMBEmulator::writeUxROMRegister(uint16_t address, uint8_t value)
     
     // Debug output
     //printf("UxROM: Set PRG bank to %d (total banks: %d)\n", uxrom.prgBank, totalBanks);
+}
+
+
+void SMBEmulator::enableZapper(bool enable)
+{
+    zapperEnabled = enable;
+    if (enable) {
+        std::cout << "NES Zapper enabled" << std::endl;
+    }
+}
+
+void SMBEmulator::updateZapperInput(int mouseX, int mouseY, bool mousePressed)
+{
+    if (!zapperEnabled) return;
+    
+    // Scale mouse coordinates from screen to NES resolution (256x240)
+    // This will need to be adjusted based on actual screen scaling
+    zapper->setMousePosition(mouseX, mouseY);
+    zapper->setTriggerPressed(mousePressed);
+    
+    // Perform light detection on current frame
+    if (mousePressed && currentFrameBuffer) {
+        bool lightDetected = zapper->detectLight(currentFrameBuffer, 256, 240, mouseX, mouseY);
+        zapper->setLightDetected(lightDetected);
+    } else {
+        zapper->setLightDetected(false);
+    }
 }

@@ -47,6 +47,12 @@ void initWaveFile();
 void writeWaveData(uint8_t* buffer, int length);
 void closeWaveFile();
 
+
+// Zapper
+static bool zapperEnabled = false;
+static int mouseX = 0, mouseY = 0;
+static bool mousePressed = false;
+
 // WAV file header structure
 struct WaveHeader {
     char riff[4] = {'R','I','F','F'};
@@ -780,6 +786,25 @@ bool AllegroMainWindow::initializeInput()
             printf("Joystick poll test successful\n");
         }
     }
+
+    if (zapperEnabled) {
+        printf("Initializing mouse for NES Zapper...\n");
+        if (install_mouse() >= 0) {
+            printf("Mouse initialized successfully\n");
+            
+            // Show mouse cursor
+            show_mouse(screen);
+            
+            // Set initial mouse position to center
+            position_mouse(SCREEN_W / 2, SCREEN_H / 2);
+            
+            printf("Mouse cursor enabled for NES Zapper\n");
+        } else {
+            printf("Failed to initialize mouse: %s\n", allegro_error);
+            printf("Zapper will not work without mouse support\n");
+            zapperEnabled = false;
+        }
+    }
     
     return true;
 }
@@ -999,6 +1024,12 @@ void AllegroMainWindow::run(const char* romFilename)
 
     printf("ROM loaded successfully\n");
 
+    // Enable Zapper if requested
+    if (zapperEnabled) {
+        engine.enableZapper(true);
+        setStatusMessage("NES Zapper enabled - Use mouse to aim, click to fire");
+    }
+
     uint8_t mapper = engine.getMapper();
     printf("Detected mapper: %d\n", mapper);
 
@@ -1147,6 +1178,23 @@ void AllegroMainWindow::handleInput()
     if (num_joysticks > 0) {
         poll_joystick();
     }
+
+    if (zapperEnabled) {
+        poll_mouse();
+        mouseX = mouse_x;
+        mouseY = mouse_y;
+        mousePressed = (mouse_b & 1) != 0;  // Left mouse button
+        
+        // Convert screen coordinates to NES coordinates
+        // This needs to account for scaling and centering
+        int nesMouseX, nesMouseY;
+        screenToNESCoordinates(mouseX, mouseY, &nesMouseX, &nesMouseY);
+        
+        // Update Zapper state in the engine
+        if (smbEngine) {
+            smbEngine->updateZapperInput(nesMouseX, nesMouseY, mousePressed);
+        }
+    }
     
     #ifndef __DJGPP__
     // Handle F11 key for fullscreen toggle (Linux only)
@@ -1198,6 +1246,33 @@ void AllegroMainWindow::handleInput()
     }
     
     updateStatusMessage();
+}
+
+void AllegroMainWindow::screenToNESCoordinates(int screenX, int screenY, int* nesX, int* nesY)
+{
+    // Calculate NES display area on screen
+    int scale_x = SCREEN_W / 256;
+    int scale_y = SCREEN_H / 240;
+    int scale = (scale_x < scale_y) ? scale_x : scale_y;
+    if (scale < 1) scale = 1;
+    
+    int dest_w = 256 * scale;
+    int dest_h = 240 * scale;
+    int dest_x = (SCREEN_W - dest_w) / 2;
+    int dest_y = (SCREEN_H - dest_h) / 2;
+    
+    // Convert screen coordinates to NES coordinates
+    int relativeX = screenX - dest_x;
+    int relativeY = screenY - dest_y;
+    
+    *nesX = relativeX / scale;
+    *nesY = relativeY / scale;
+    
+    // Clamp to NES screen bounds
+    if (*nesX < 0) *nesX = 0;
+    if (*nesX >= 256) *nesX = 255;
+    if (*nesY < 0) *nesY = 0;
+    if (*nesY >= 240) *nesY = 239;
 }
 
 void AllegroMainWindow::handleDialogInputNoEsc()
@@ -3099,7 +3174,11 @@ void AllegroMainWindow::shutdown()
         destroy_bitmap(back_buffer);
         back_buffer = NULL;
     }
-    
+
+    if (zapperEnabled) {
+        show_mouse(NULL);  // Hide mouse cursor
+        printf("Mouse support disabled\n");
+    }
     saveControlConfig();
     
     allegro_exit();
@@ -3295,31 +3374,56 @@ void debugMapperInfo(const char* romFilename)
     printf("===================\n\n");
 }
 
-// Main function for DOS
 int main(int argc, char** argv) 
 {
     printf("Super Mario Bros Emulator - DOS Version\n");
     
+    // Parse command line arguments
+    const char* romFilename = nullptr;
+    
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--neszapper") == 0) {
+            zapperEnabled = true;
+            printf("NES Zapper enabled\n");
+        } else if (argv[i][0] != '-') {
+            // Assume this is the ROM filename
+            romFilename = argv[i];
+        }
+    }
+    
     // Check for ROM file argument
-    if (argc < 2) {
-        printf("Usage: %s <rom_file.nes>\n", argv[0]);
-        printf("Example: %s smb.nes\n", argv[0]);
+    if (!romFilename) {
+        printf("Usage: %s [--neszapper] <rom_file.nes>\n", argv[0]);
+        printf("Example: %s --neszapper duckhunt.nes\n", argv[0]);
+        printf("Options:\n");
+        printf("  --neszapper    Enable NES Zapper (light gun) support\n");
         return -1;
     }
     
     // Validate ROM file exists
-    FILE* romTest = fopen(argv[1], "rb");
+    FILE* romTest = fopen(romFilename, "rb");
     if (!romTest) {
-        printf("Error: Cannot open ROM file '%s'\n", argv[1]);
+        printf("Error: Cannot open ROM file '%s'\n", romFilename);
         printf("Please check the file path and try again\n");
         return -1;
     }
     fclose(romTest);
     
-    // NEW: Add ROM analysis before starting
-    debugMapperInfo(argv[1]);
+    // Show Zapper status
+    if (zapperEnabled) {
+        printf("=== NES ZAPPER ENABLED ===\n");
+        printf("Mouse controls:\n");
+        printf("  - Move mouse to aim\n");
+        printf("  - Left click to fire\n");
+        printf("  - Red crosshair shows aim point\n");
+        printf("Compatible games: Duck Hunt, Wild Gunman, Hogan's Alley\n");
+        printf("========================\n");
+    }
     
-    printf("ROM file: %s\n", argv[1]);
+    // Add ROM analysis before starting
+    debugMapperInfo(romFilename);
+    
+    printf("ROM file: %s\n", romFilename);
     printf("Initializing...\n");
     
     // Initialize Configuration first (CRITICAL for sound)
@@ -3337,8 +3441,8 @@ int main(int argc, char** argv)
         return -1;
     }
     
-    printf("Starting game with ROM: %s\n", argv[1]);
-    mainWindow.run(argv[1]);  // Pass ROM filename to run method
+    printf("Starting game with ROM: %s\n", romFilename);
+    mainWindow.run(romFilename);  // Pass ROM filename to run method
     
     return 0;
 }

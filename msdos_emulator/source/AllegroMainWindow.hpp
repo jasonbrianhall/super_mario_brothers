@@ -1,7 +1,9 @@
 #ifndef ALLEGRO_MAIN_WINDOW_HPP
 #define ALLEGRO_MAIN_WINDOW_HPP
 
+#include "Zapper.hpp"
 #include <allegro.h>
+#include <cstdint>
 #include <string.h>
 
 // Forward declarations
@@ -26,7 +28,7 @@ public:
   ~AllegroMainWindow();
 
   bool initialize();
-  void run(const char* romFilename);
+  void run(const char *romFilename);
   void shutdown();
   enum CaptureType {
     CAPTURE_NONE,
@@ -44,8 +46,9 @@ public:
     CAPTURE_JOY_SELECT
   };
   CaptureType currentCaptureType;
-void renderScaled(uint16_t* buffer, int screenWidth, int screenHeight);
-void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
+  void renderScaled(uint16_t *buffer, int screenWidth, int screenHeight);
+  void renderScaled32(uint32_t *buffer, int screenWidth, int screenHeight);
+  void screenToNESCoordinates(int screenX, int screenY, int *nesX, int *nesY);
 
 private:
   // Allegro components
@@ -103,34 +106,34 @@ private:
   };
   PlayerJoy player1Joy, player2Joy;
 
-struct VideoSettings {
-    int currentMode;        // Index into available modes
-    int scalingMode;        // 0=nearest, 1=smooth, 2=scanlines
-    bool maintainAspect;    // Keep 4:3 aspect ratio
-    bool centerImage;       // Center the game image
-    int brightness;         // 0-255
-    int contrast;          // 0-255
-};
+  struct VideoSettings {
+    int currentMode;     // Index into available modes
+    int scalingMode;     // 0=nearest, 1=smooth, 2=scanlines
+    bool maintainAspect; // Keep 4:3 aspect ratio
+    bool centerImage;    // Center the game image
+    int brightness;      // 0-255
+    int contrast;        // 0-255
+  };
 
-struct VideoMode {
+  struct VideoMode {
     int width, height;
-    char description[32];   // Fixed size for DOS compatibility
+    char description[32]; // Fixed size for DOS compatibility
     bool available;
-};
+  };
 
-VideoSettings videoSettings;
-VideoMode availableModes[10];
-int numAvailableModes;
-int selectedVideoOption;
+  VideoSettings videoSettings;
+  VideoMode availableModes[10];
+  int numAvailableModes;
+  int selectedVideoOption;
 
-void setupVideoModes();
-void testVideoMode(int index);
-bool setVideoMode(int index);
-void drawVideoOptionsDialog(BITMAP* target);
-void handleVideoOptionsInput();
-void saveVideoConfig();
-void loadVideoConfig();
-void resetVideoDefaults();
+  void setupVideoModes();
+  void testVideoMode(int index);
+  bool setVideoMode(int index);
+  void drawVideoOptionsDialog(BITMAP *target);
+  void handleVideoOptionsInput();
+  void saveVideoConfig();
+  void loadVideoConfig();
+  void resetVideoDefaults();
 
   // Initialization
   bool initializeAllegro();
@@ -217,67 +220,66 @@ void resetVideoDefaults();
   void resetPlayer1ControlsToDefault();
   void resetPlayer2ControlsToDefault();
   void testCurrentJoystick();
-  
+
   void displayJoystickInfo();
-  void drawControlsDialog(BITMAP* target, Player player);
+  void drawControlsDialog(BITMAP *target, Player player);
   void showJoystickStatus();
   bool isValidJoystickButton(int joyIndex, int buttonNum);
   void runJoystickTest();
-  bool getJoystickDirection(int joyIndex, int* x_dir, int* y_dir);
+  bool getJoystickDirection(int joyIndex, int *x_dir, int *y_dir);
   void printControlMappings();
-  void startKeyCapture(CaptureType captureType, const char* promptText);
+  void startKeyCapture(CaptureType captureType, const char *promptText);
   void debugJoystickInfo(int joyIndex);
-  void convertBuffer16ToBitmap16_2x(uint16_t* buffer16, BITMAP* bitmap, 
-                                                    int dest_x, int dest_y);
-    bool isFullscreen;
-    int windowedWidth, windowedHeight;
-    int fullscreenWidth, fullscreenHeight;
-    bool createBuffers();
+  void convertBuffer16ToBitmap16_2x(uint16_t *buffer16, BITMAP *bitmap,
+                                    int dest_x, int dest_y);
+  bool isFullscreen;
+  int windowedWidth, windowedHeight;
+  int fullscreenWidth, fullscreenHeight;
+  bool createBuffers();
 #ifndef __DJGPP__
-    bool toggleFullscreen();
+  bool toggleFullscreen();
 #endif
 
+  struct ScalingCache {
+    uint16_t *scaledBuffer;       // Pre-scaled buffer
+    int *sourceToDestX;           // X coordinate mapping table
+    int *sourceToDestY;           // Y coordinate mapping table
+    int scaleFactor;              // Current scale factor
+    int destWidth, destHeight;    // Destination dimensions
+    int destOffsetX, destOffsetY; // Centering offsets
+    bool isValid;                 // Cache validity flag
 
-    struct ScalingCache {
-        uint16_t* scaledBuffer;          // Pre-scaled buffer
-        int* sourceToDestX;              // X coordinate mapping table
-        int* sourceToDestY;              // Y coordinate mapping table
-        int scaleFactor;                 // Current scale factor
-        int destWidth, destHeight;       // Destination dimensions
-        int destOffsetX, destOffsetY;    // Centering offsets
-        bool isValid;                    // Cache validity flag
-        
-        ScalingCache();
-        ~ScalingCache();
-        void cleanup();
-    };
-    
-    ScalingCache scalingCache;
-    uint32_t* lineStartOffsets;         // Pre-calculated line start offsets
-    bool useOptimizedScaling;           // Enable/disable optimization
-    
-    // Scaling methods
-    void initializeScalingCache();
-    void updateScalingCache();
-    bool isScalingCacheValid();
-    void drawGameCached(BITMAP* target);
-    void drawGameFastScale(BITMAP* target);
-    
-    // Optimized scaling methods
-    void drawGame1x1(uint16_t* nesBuffer, BITMAP* target);
-    void drawGame2x(uint16_t* nesBuffer, BITMAP* target);
-    void drawGame3x(uint16_t* nesBuffer, BITMAP* target);
-    void drawGameGenericScale(uint16_t* nesBuffer, BITMAP* target, int scale);
-    
-    #ifdef __DJGPP__
-    // DOS-specific optimizations
-    void drawGameDOS320x200(BITMAP* target);
-    void drawGameDOSOptimized(BITMAP* target);
-    #endif
-    void convertScreenBuffer16ToBitmap(uint16_t* buffer16, BITMAP* bitmap);
-    void convertScreenBuffer32ToBitmap(uint32_t* buffer32, BITMAP* bitmap);
+    ScalingCache();
+    ~ScalingCache();
+    void cleanup();
+  };
+
+  ScalingCache scalingCache;
+  uint32_t *lineStartOffsets; // Pre-calculated line start offsets
+  bool useOptimizedScaling;   // Enable/disable optimization
+
+  // Scaling methods
+  void initializeScalingCache();
+  void updateScalingCache();
+  bool isScalingCacheValid();
+  void drawGameCached(BITMAP *target);
+  void drawGameFastScale(BITMAP *target);
+
+  // Optimized scaling methods
+  void drawGame1x1(uint16_t *nesBuffer, BITMAP *target);
+  void drawGame2x(uint16_t *nesBuffer, BITMAP *target);
+  void drawGame3x(uint16_t *nesBuffer, BITMAP *target);
+  void drawGameGenericScale(uint16_t *nesBuffer, BITMAP *target, int scale);
+
+#ifdef __DJGPP__
+  // DOS-specific optimizations
+  void drawGameDOS320x200(BITMAP *target);
+  void drawGameDOSOptimized(BITMAP *target);
+#endif
+  void convertScreenBuffer16ToBitmap(uint16_t *buffer16, BITMAP *bitmap);
+  void convertScreenBuffer32ToBitmap(uint32_t *buffer32, BITMAP *bitmap);
 };
 
-void debugMapperInfo(const char* romFilename);
+void debugMapperInfo(const char *romFilename);
 
 #endif // ALLEGRO_MAIN_WINDOW_HPP
