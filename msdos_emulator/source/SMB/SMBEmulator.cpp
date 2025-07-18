@@ -603,73 +603,164 @@ void SMBEmulator::updateCycleAccurate()
     ppuCycleState.inVBlank = false;
     ppuCycleState.renderingEnabled = false;
     
-    // More precise NTSC timing for cycle-accurate emulation
-    const int CYCLES_PER_SCANLINE = 341;  // Actual PPU cycles per scanline
+    // NTSC PPU timing constants
+    const int CYCLES_PER_SCANLINE = 341;
     const int VISIBLE_SCANLINES = 240;
     const int VBLANK_START_SCANLINE = 241;
     const int TOTAL_SCANLINES = 262;
-    const int CPU_CYCLES_PER_PPU_CYCLE = 3;  // CPU runs at 3x PPU speed
-
+    const int CPU_DIVIDER = 3;  // CPU runs every 3 PPU cycles
+    
+    // Frame timing state
+    bool frameEven = (totalCycles / (TOTAL_SCANLINES * CYCLES_PER_SCANLINE)) % 2 == 0;
+    int cpuCycleCounter = 0;
+    
     for (int scanline = 0; scanline < TOTAL_SCANLINES; scanline++) {
         ppuCycleState.scanline = scanline;
         
-        // Check if we're in visible area or VBlank
-        if (scanline <= VISIBLE_SCANLINES) {
+        // Determine scanline state
+        if (scanline < VISIBLE_SCANLINES) {
             ppuCycleState.inVBlank = false;
             ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
         } else if (scanline == VBLANK_START_SCANLINE) {
+            // VBlank starts
             ppuCycleState.inVBlank = true;
             ppu->setVBlankFlag(true);
             ppu->captureFrameScroll();
             
-            // Trigger NMI if enabled (after a few cycles)
-            if (ppu->getControl() & 0x80) {
-                handleNMI();
-            }
+            // NMI timing - happens on cycle 1 of scanline 241
+            // We'll handle this in the cycle loop
+        } else if (scanline == 261) {
+            // Pre-render scanline
+            ppuCycleState.inVBlank = false;
+            ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
         }
         
-        // Process each cycle in the scanline
-        for (int cycle = 0; cycle < CYCLES_PER_SCANLINE; cycle++) {
+        // Calculate cycles for this scanline (handle odd frame skip)
+        int cyclesThisScanline = CYCLES_PER_SCANLINE;
+        if (scanline == 261 && frameEven && ppuCycleState.renderingEnabled) {
+            cyclesThisScanline = 340;  // Skip cycle 340 on odd frames when rendering
+        }
+        
+        for (int cycle = 0; cycle < cyclesThisScanline; cycle++) {
             ppuCycleState.cycle = cycle;
             
-            // Step PPU one cycle
-            stepPPUCycle();
+            // === PPU CYCLE-SPECIFIC EVENTS ===
             
-            // Execute CPU instructions for every 3 PPU cycles
-            if (cycle % CPU_CYCLES_PER_PPU_CYCLE == 0) {
-                executeInstruction();
+            // VBlank flag set on cycle 1 of scanline 241
+            if (scanline == VBLANK_START_SCANLINE && cycle == 1) {
+                ppu->setVBlankFlag(true);
+                
+                // Trigger NMI if enabled
+                if (ppu->getControl() & 0x80) {
+                    handleNMI();
+                }
             }
             
-            // Check for sprite 0 hit during rendering
+            // VBlank flag cleared on cycle 1 of pre-render scanline (261)
+            if (scanline == 261 && cycle == 1) {
+                ppu->setVBlankFlag(false);
+                ppu->setSprite0Hit(false);
+            }
+            
+            // Sprite 0 hit timing (approximate)
             if (ppuCycleState.renderingEnabled && scanline < VISIBLE_SCANLINES) {
                 checkSprite0Hit(scanline, cycle);
             }
             
-            // MMC3 IRQ checking (happens on specific PPU cycles)
+            // === MAPPER-SPECIFIC PPU EVENTS ===
+            
+            // MMC3 IRQ counter - decrements on A12 rising edge during rendering
             if (nesHeader.mapper == 4) {
-                checkMMC3IRQ();
+                checkMMC3IRQ(scanline, cycle);
             }
+            
+            // MMC1 CHR bank switching can happen mid-frame
+            if (nesHeader.mapper == 1) {
+                // MMC1 writes can happen anytime, no special PPU timing needed
+            }
+            
+            // UxROM CHR-RAM writes can happen anytime  
+            if (nesHeader.mapper == 2) {
+                // CHR-RAM updates are immediate
+            }
+            
+            // === CPU EXECUTION ===
+            
+            // Run CPU every 3 PPU cycles
+            cpuCycleCounter++;
+            if (cpuCycleCounter >= CPU_DIVIDER) {
+                cpuCycleCounter = 0;
+                executeInstruction();
+                
+                // Check for infinite loops in CPU
+                static uint16_t lastCPU_PC = 0;
+                static int samePCCount = 0;
+                
+                if (regPC == lastCPU_PC) {
+                    samePCCount++;
+                    if (samePCCount > 10000) {  // Stuck for too long
+                        printf("CRITICAL: CPU stuck at PC=$%04X during cycle-accurate emulation\n", regPC);
+                        printf("Scanline: %d, Cycle: %d\n", scanline, cycle);
+                        printf("PPU State: VBlank=%d, Rendering=%d\n", ppuCycleState.inVBlank, ppuCycleState.renderingEnabled);
+                        printf("Next opcode: $%02X\n", readByte(regPC));
+                        
+                        // Emergency recovery
+                        samePCCount = 0;
+                        regPC++;  // Force PC to advance
+                    }
+                } else {
+                    samePCCount = 0;
+                    lastCPU_PC = regPC;
+                }
+            }
+            
+            // === STEP PPU INTERNAL STATE ===
+            stepPPUCycle();
+        }
+        
+        // End of scanline processing
+        if (scanline < VISIBLE_SCANLINES && ppuCycleState.renderingEnabled) {
+            // Handle any end-of-scanline PPU events
+            stepPPUEndOfScanline(scanline);
         }
     }
     
-    // Clear VBlank flag and sprite 0 hit at start of next frame
+    // End of frame cleanup
     ppu->setVBlankFlag(false);
     ppu->setSprite0Hit(false);
     
-    // Advance audio frame
+    // Audio frame advance
     if (Configuration::getAudioEnabled()) {
         apu->stepFrame();
+    }
+    
+    // Frame completion debug
+    static int frameCount = 0;
+    frameCount++;
+    if (frameCount % 60 == 0) {  // Every second
+        printf("Cycle-accurate frame %d completed, PC=$%04X\n", frameCount, regPC);
     }
 }
 
 void SMBEmulator::checkSprite0Hit(int scanline, int cycle)
 {
-    // Sprite 0 hit detection with cycle accuracy
-    // This is important for games that rely on precise timing
+    // More accurate sprite 0 hit timing
+    if (!ppuCycleState.renderingEnabled) return;
     
-    if (scanline == 32 && cycle >= 100 && cycle <= 200) {
-        // Approximate sprite 0 hit timing for SMB status bar
-        if (ppu->getMask() & 0x18) { // If rendering enabled
+    // Sprite 0 hit can only occur on visible scanlines
+    if (scanline >= 240) return;
+    
+    // Check if sprite 0 is visible and enabled
+    uint8_t sprite0_y = ppu->getOAM()[0];
+    uint8_t sprite0_x = ppu->getOAM()[3];
+    
+    // Sprite coordinates are delayed by 1 scanline
+    sprite0_y++;
+    
+    // Check if we're in the sprite 0 area
+    if (scanline >= sprite0_y && scanline < sprite0_y + 8) {
+        if (cycle >= sprite0_x && cycle < sprite0_x + 8) {
+            // This is a simplified check - real hardware does pixel-level collision
             ppu->setSprite0Hit(true);
         }
     }
@@ -763,25 +854,127 @@ void SMBEmulator::stepPPUCycle()
     int scanline = ppuCycleState.scanline;
     int cycle = ppuCycleState.cycle;
     
-    // Background tile fetching happens on specific cycles
-    if (ppuCycleState.renderingEnabled && scanline < 240) {
-        if (cycle % 8 == 5) {
-            // Fetch pattern table low byte - where CHR banking matters
-            if (nesHeader.mapper == 2) {
-                // UxROM: CHR-RAM might have been updated
-                // Cache invalidation happens automatically
-            }
-        }
-        else if (cycle % 8 == 7) {
-            // Fetch pattern table high byte
-            if (nesHeader.mapper == 66) {
-                // GxROM: Check if CHR bank changed
-                static uint8_t lastCHRBank = 0xFF;
-                if (gxrom.chrBank != lastCHRBank) {
-                    lastCHRBank = gxrom.chrBank;
-                    // Cache invalidation would happen here
+    // Background fetching during visible scanlines and pre-render
+    if ((scanline < 240 || scanline == 261) && ppuCycleState.renderingEnabled) {
+        
+        // Tile fetching happens on specific cycles
+        int fetchCycle = cycle % 8;
+        
+        switch (fetchCycle) {
+            case 1: // Fetch nametable byte
+                if (cycle >= 1 && cycle <= 256) {
+                    // This is where CHR bank switches can affect fetching
+                    stepPPUFetchNametable();
                 }
-            }
+                break;
+                
+            case 3: // Fetch attribute byte
+                if (cycle >= 1 && cycle <= 256) {
+                    stepPPUFetchAttribute();
+                }
+                break;
+                
+            case 5: // Fetch pattern table low byte
+                if (cycle >= 1 && cycle <= 256) {
+                    stepPPUFetchPatternLow();
+                }
+                break;
+                
+            case 7: // Fetch pattern table high byte
+                if (cycle >= 1 && cycle <= 256) {
+                    stepPPUFetchPatternHigh();
+                }
+                break;
+        }
+        
+        // Sprite evaluation (cycles 65-256)
+        if (cycle >= 65 && cycle <= 256) {
+            stepPPUSpriteEvaluation();
+        }
+    }
+}
+
+void SMBEmulator::stepPPUFetchNametable()
+{
+    // Nametable fetch - doesn't usually affect mappers
+    // But MMC3 A12 line changes can happen here
+    if (nesHeader.mapper == 4) {
+        // Check for A12 transitions during nametable access
+        stepMMC3A12Transition(false); // Nametable access
+    }
+}
+
+void SMBEmulator::stepPPUFetchAttribute()
+{
+    // Attribute fetch - similar to nametable
+    if (nesHeader.mapper == 4) {
+        stepMMC3A12Transition(false);
+    }
+}
+
+void SMBEmulator::stepPPUFetchPatternLow()
+{
+    // Pattern table fetch - this is where CHR banking matters!
+    if (nesHeader.mapper == 4) {
+        stepMMC3A12Transition(true); // Pattern table access (A12 high)
+    }
+    
+    // For other mappers, CHR data is fetched here
+    // This is where CHR-RAM updates would be visible
+}
+
+void SMBEmulator::stepPPUFetchPatternHigh()
+{
+    // Second pattern table fetch
+    if (nesHeader.mapper == 4) {
+        stepMMC3A12Transition(true);
+    }
+}
+
+void SMBEmulator::stepPPUSpriteEvaluation()
+{
+    // Sprite evaluation logic
+    // This affects sprite 0 hit detection
+}
+
+void SMBEmulator::stepPPUEndOfScanline(int scanline)
+{
+    // End-of-scanline events
+    // Scroll register updates, etc.
+}
+
+// Enhanced MMC3 IRQ handling with proper A12 detection
+void SMBEmulator::stepMMC3A12Transition(bool a12High)
+{
+    if (nesHeader.mapper != 4) return;
+    
+    static bool lastA12 = false;
+    
+    // Detect A12 rising edge (low to high transition)
+    if (a12High && !lastA12) {
+        stepMMC3IRQ();
+    }
+    
+    lastA12 = a12High;
+}
+
+// Enhanced MMC3 IRQ checking with proper timing
+void SMBEmulator::checkMMC3IRQ(int scanline, int cycle)
+{
+    if (nesHeader.mapper != 4) return;
+    if (!ppuCycleState.renderingEnabled) return;
+    if (scanline >= 240 && scanline < 261) return; // Not during VBlank
+    
+    // MMC3 IRQ timing is based on A12 transitions during PPU rendering
+    // A12 goes high when accessing pattern table ($1000-$1FFF)
+    // This happens during background and sprite pattern fetches
+    
+    // Background pattern fetches happen on cycles 5 and 7 of each 8-cycle group
+    if ((cycle >= 1 && cycle <= 256) || (cycle >= 321 && cycle <= 336)) {
+        if ((cycle % 8) == 5 || (cycle % 8) == 7) {
+            stepMMC3A12Transition(true);
+        } else if ((cycle % 8) == 1 || (cycle % 8) == 3) {
+            stepMMC3A12Transition(false);
         }
     }
 }

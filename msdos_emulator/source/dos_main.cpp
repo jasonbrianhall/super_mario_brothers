@@ -1075,7 +1075,7 @@ void AllegroMainWindow::run(const char* romFilename)
         handleInput();
 
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
-            engine.updateCycleAccurate();
+            engine.update();
 
             frameCount++;
             if (frameCount % 300 == 0) {

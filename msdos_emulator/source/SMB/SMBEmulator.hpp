@@ -102,6 +102,11 @@ public:
         bool sprite0HitPending;
         int sprite0HitCycle;
         int sprite0HitScanline;
+        
+        // Additional timing state
+        bool frameEven;
+        int cpuCycleCounter;
+        bool lastA12State;  // For MMC3 A12 tracking
     } ppuCycleState;
 
 
@@ -365,6 +370,24 @@ struct UxROMState {
 void writeUxROMRegister(uint16_t address, uint8_t value);
 bool needsCycleAccuracy() const;
 void updateFrameBased();
+
+
+    // PPU cycle stepping methods
+    void stepPPUFetchNametable();
+    void stepPPUFetchAttribute(); 
+    void stepPPUFetchPatternLow();
+    void stepPPUFetchPatternHigh();
+    void stepPPUSpriteEvaluation();
+    void stepPPUEndOfScanline(int scanline);
+    
+    // Enhanced MMC3 methods
+    void stepMMC3A12Transition(bool a12High);
+    void checkMMC3IRQ(int scanline, int cycle);  // Enhanced version
+
+    // Additional timing state
+    uint64_t ppuCycles;       // Total PPU cycles executed
+    bool nmiPending;          // NMI waiting to be processed
+    int nmiDelay;             // Cycles until NMI triggers
 
 };
 
