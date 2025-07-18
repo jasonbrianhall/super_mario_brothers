@@ -10,6 +10,8 @@
 // Forward declarations
 class APU;
 class PPU;
+class PPUCycleAccurate;
+
 class Controller;
 
 /**
@@ -160,6 +162,8 @@ private:
     // Components
     APU* apu;
     PPU* ppu;
+    PPUCycleAccurate* ppuCycleAccurate;
+    
     Controller* controller1;
     Controller* controller2;
     

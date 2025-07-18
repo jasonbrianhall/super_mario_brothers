@@ -5,6 +5,7 @@
 #include "SMBEmulator.hpp"
 #include "../Emulation/APU.hpp"
 #include "../Emulation/PPU.hpp"
+#include "../Emulation/PPUCycleAccurate.hpp"
 #include "../Emulation/Controller.hpp"
 #include "../Configuration.hpp"
 #include "../Zapper.hpp"
@@ -57,6 +58,7 @@ SMBEmulator::SMBEmulator()
     // Create components - they'll get CHR data when ROM is loaded
     apu = new APU();
     ppu = new PPU(*this);
+    ppuCycleAccurate = new PPUCycleAccurate(*this);
     controller1 = new Controller();
     controller2 = new Controller();
     zapper = new Zapper();
@@ -67,6 +69,7 @@ SMBEmulator::~SMBEmulator()
 {
     delete apu;
     delete ppu;
+    delete ppuCycleAccurate;
     delete controller1;
     delete controller2;
     delete zapper;
