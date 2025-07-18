@@ -106,14 +106,12 @@ case "${1:-dos}" in
             g++ -c /src/source/SMB/SMBEmulator.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMBEngine.o && \
             g++ -c /src/source/Zapper.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Zapper.o && \
             g++ -c /src/source/dos_main.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Main.o && \
-            g++ /src/$BUILD_DIR/obj/*.o -L/src/$BUILD_DIR/source-install/lib -lalleg -lm -O3 -march=i586 -s -o /src/$BUILD_DIR/smb.exe &&
-            g++ /src/$BUILD_DIR/obj/*.o -L/src/$BUILD_DIR/source-install/lib -lalleg -lm -O3 -march=i586 -s -o /src/$BUILD_DIR/smb.exe &&
-            echo 'Linking executable...' &&
-            g++ /src/$BUILD_DIR/obj/*.o -lalleg -lm -s -L/src/$BUILD_DIR/source-install/lib -o /src/$BUILD_DIR/smbe.exe &&
+            g++ /src/$BUILD_DIR/obj/*.o -L/src/$BUILD_DIR/source-install/lib -lalleg -lm -O3 -march=i586 -s -o /src/$BUILD_DIR/warpnese.exe &&
             echo 'Converting to COFF format...' &&
-            exe2coff /src/$BUILD_DIR/smb.exe &&
+            exe2coff /src/$BUILD_DIR/waprnese.exe &&
             echo 'Creating final DOS executable with DPMI stub...' &&
-            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/warpnes.exe &&
+            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/warpnese.exe > /src/$BUILD_DIR/warpnes.exe &&
+            #rm /src/$BUILD_DIR/warpnese.exe
             echo 'DOS build complete!'
         "
     
@@ -133,7 +131,7 @@ case "${1:-dos}" in
     echo ""
     echo "🎮 WarpNES Emulator built with Allegro 4!"
     echo "📁 Files:"
-    rm $BUILD_DIR/smb
+    #rm $BUILD_DIR/warpnese.exe
     ls -la $BUILD_DIR/*.exe $BUILD_DIR/*.EXE 2>/dev/null || true
     ;;
 
@@ -159,18 +157,27 @@ case "${1:-dos}" in
         -u $USER_ID:$GROUP_ID \
         $DJGPP_IMAGE \
         /bin/sh -c "
-            mkdir -p /src/$BUILD_DIR/obj && 
+            cd /src && 
+            echo 'Checking available libraries...' &&
+            find $BUILD_DIR/source-install -name '*.a' 2>/dev/null || echo 'No .a files found' &&
+            echo 'Creating object directory...' &&
+            mkdir -p /src/$BUILD_DIR/obj &&
+            echo 'Compiling individual source files...' &&
             g++ -c /src/source/Configuration.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Configuration.o && \
             g++ -c /src/source/Emulation/APU.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/APU.o && \
             g++ -c /src/source/Emulation/AllegroMidi.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/AllegroMidi.o && \
             g++ -c /src/source/Emulation/Controller.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Controller.o && \
             g++ -c /src/source/Emulation/PPU.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/PPU.o && \
+            g++ -c /src/source/Emulation/PPUCycleAccurate.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/PPUCycleAccurate.o && \
             g++ -c /src/source/SMB/SMBEmulator.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/SMBEngine.o && \
             g++ -c /src/source/Zapper.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Zapper.o && \
             g++ -c /src/source/dos_main.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Main.o && \
-            g++ /src/$BUILD_DIR/obj/*.o -L/src/$BUILD_DIR/source-install/lib -lalleg -lm -O3 -march=i586 -s -o /src/$BUILD_DIR/smb.exe &&
-            exe2coff /src/$BUILD_DIR/smb.exe && 
-            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/warpnes.exe &&
+            g++ /src/$BUILD_DIR/obj/*.o -L/src/$BUILD_DIR/source-install/lib -lalleg -lm -O3 -march=i586 -s -o /src/$BUILD_DIR/warpnese.exe &&
+            echo 'Converting to COFF format...' &&
+            exe2coff /src/$BUILD_DIR/waprnese.exe &&
+            echo 'Creating final DOS executable with DPMI stub...' &&
+            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/warpnese.exe > /src/$BUILD_DIR/warpnes.exe &&
+            rm /src/$BUILD_DIR/warpnese.exe
             echo 'Quick compile complete!'
         "
     rm $BUILD_DIR/smb -f
