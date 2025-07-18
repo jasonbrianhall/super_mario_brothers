@@ -168,7 +168,6 @@ void PPUCycleAccurate::fetchNametableByte(int scanline, int cycle)
 {
     int pixelX = cycle - 1;
     
-    // Simple approach: fetch tile for current position
     int scrolledX = (pixelX + ppuScrollX) / 8;
     int scrolledY = (scanline + ppuScrollY) / 8;
     
@@ -199,6 +198,13 @@ void PPUCycleAccurate::fetchNametableByte(int scanline, int cycle)
     
     state.currentTileX = nametableX;
     state.currentTileY = nametableY;
+    
+    // Debug boundary tile fetching
+    if (scanline < 5 && cycle < 64) {
+        printf("Fetch: cycle=%d, pixelX=%d, scroll=%d, "
+               "scrolledX=%d, ntX=%d, addr=$%04X, tile=0x%02X\n",
+               cycle, pixelX, ppuScrollX, scrolledX, nametableX, addr, state.bgTileIndex);
+    }
 }
 
 void PPUCycleAccurate::fetchAttributeByte(int scanline, int cycle)
@@ -281,11 +287,25 @@ void PPUCycleAccurate::fetchPatternHigh(int scanline, int cycle)
 
 void PPUCycleAccurate::loadShiftRegisters()
 {
-    // Load new tile data into the LOW 8 bits
+    uint16_t oldShiftLow = state.bgPatternShiftLow;
+    uint16_t oldShiftHigh = state.bgPatternShiftHigh;
+    
     state.bgPatternShiftLow = (state.bgPatternShiftLow & 0xFF00) | state.bgPatternLow;
     state.bgPatternShiftHigh = (state.bgPatternShiftHigh & 0xFF00) | state.bgPatternHigh;
     
     state.bgAttributeLatch0 = state.bgAttribute;
+    
+    // Debug shift register loading
+    static int loadCount = 0;
+    if (loadCount < 15) {
+        printf("Load[%d]: tile=0x%02X, pattern=(0x%02X,0x%02X), "
+               "shifts: 0x%04X->0x%04X, 0x%04X->0x%04X\n",
+               loadCount, state.bgTileIndex,
+               state.bgPatternLow, state.bgPatternHigh,
+               oldShiftLow, state.bgPatternShiftLow,
+               oldShiftHigh, state.bgPatternShiftHigh);
+        loadCount++;
+    }
 }
 
 void PPUCycleAccurate::shiftBackgroundRegisters()
@@ -352,16 +372,13 @@ void PPUCycleAccurate::renderPixel(int scanline, int cycle)
         int fineX = ppuScrollX & 0x07;
         finalPixel = getBackgroundPixel(fineX);
         
-        // Debug the boundary area where 0's appear
-        if (scanline < 10 && pixelX < 32) {
-            static int boundaryDebugCount = 0;
-            if (boundaryDebugCount < 20) {
-                printf("Boundary: (%d,%d), scroll=%d, fineX=%d, "
-                       "shifts=(0x%04X,0x%04X), pixel=0x%04X\n",
-                       pixelX, scanline, ppuScrollX, fineX,
-                       state.bgPatternShiftLow, state.bgPatternShiftHigh, finalPixel);
-                boundaryDebugCount++;
-            }
+        // Enhanced boundary debug - show more info
+        if (scanline < 3 && pixelX < 16) {
+            printf("Boundary[%d,%d]: scroll=%d, fineX=%d, "
+                   "shifts=(0x%04X,0x%04X), pixel=0x%04X, bg=0x%02X\n",
+                   pixelX, scanline, ppuScrollX, fineX,
+                   state.bgPatternShiftLow, state.bgPatternShiftHigh, 
+                   finalPixel, palette[0]);
         }
     }
     
