@@ -1100,14 +1100,9 @@ void AllegroMainWindow::run(const char* romFilename)
 
         updateAndDraw();
 
-        #ifdef __DJGPP__
-        while (true) {
-            unsigned long nowTicks = uclock();
-            double elapsedMs = (nowTicks - lastTicks) / ticksPerMs;
-            if (elapsedMs >= targetFrameMs) break;
-        }
-        lastTicks = uclock();  // Reset frame tick
-        #else
+#ifdef __DJGPP__
+        vsync();
+#else
         auto now = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = now - lastFrameTime;
         if (elapsed.count() < targetFrameMs) {

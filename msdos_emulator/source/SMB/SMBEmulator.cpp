@@ -507,8 +507,7 @@ void SMBEmulator::handleNMI()
 void SMBEmulator::update()
 {
     if (!romLoaded) return;
-    updateFrameBased();
-    // Choose update method based on mapper capabilities
+
     if (needsCycleAccuracy()) {
         updateCycleAccurate();
     } else {
@@ -600,7 +599,6 @@ void SMBEmulator::updateFrameBased()
 void SMBEmulator::updateCycleAccurate()
 {
     if (!romLoaded) return;
-    
     // Sync PPU state at start of frame
     ppuCycleAccurate->syncWithMainPPU(ppu);
     
@@ -2311,7 +2309,6 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
         } else {
             ppu->renderScaled(buffer, screenWidth, screenHeight);
         }
-    
     if (zapperEnabled && zapper) {
         // Get the raw mouse coordinates (these should be in NES coordinates 0-255, 0-239)
         int nesMouseX = zapper->getMouseX();
