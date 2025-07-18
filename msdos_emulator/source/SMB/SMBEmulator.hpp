@@ -47,7 +47,6 @@ public:
     void step();    // Execute one instruction
     
     // Rendering
-    void render16(uint16_t* buffer);
     void renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight);
 #ifndef __DJGPP__
     void render(uint32_t* buffer);
@@ -110,7 +109,7 @@ public:
         int cpuCycleCounter;
         bool lastA12State;  // For MMC3 A12 tracking
     } ppuCycleState;
-
+    void scaleBuffer16(uint16_t* nesBuffer, uint16_t* screenBuffer, int screenWidth, int screenHeight);
 
 private:
     // 6502 CPU state

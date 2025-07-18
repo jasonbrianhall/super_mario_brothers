@@ -600,6 +600,9 @@ void SMBEmulator::updateCycleAccurate()
 {
     if (!romLoaded) return;
     
+    // Sync PPU state at start of frame
+    ppuCycleAccurate->syncWithMainPPU(ppu);
+    
     frameCycles = 0;
     ppuCycleState.scanline = 0;
     ppuCycleState.cycle = 0;
@@ -661,10 +664,9 @@ void SMBEmulator::updateCycleAccurate()
                 ppu->setSprite0Hit(false);
             }
             
-            // Sprite 0 hit timing (approximate)
-            if (ppuCycleState.renderingEnabled && scanline < VISIBLE_SCANLINES) {
-                checkSprite0Hit(scanline, cycle);
-            }
+            // === STEP CYCLE-ACCURATE PPU ===
+            // This is the critical line that was missing!
+            ppuCycleAccurate->stepCycle(scanline, cycle);
             
             // === MAPPER-SPECIFIC PPU EVENTS ===
             
@@ -684,7 +686,7 @@ void SMBEmulator::updateCycleAccurate()
                 executeInstruction();
             }
             
-            // === STEP PPU INTERNAL STATE ===
+            // === STEP PPU INTERNAL STATE (for compatibility) ===
             stepPPUCycle();
         }
         
@@ -711,6 +713,7 @@ void SMBEmulator::updateCycleAccurate()
                frameCount, regPC, totalCycles);
     }
 }
+
 void SMBEmulator::checkSprite0Hit(int scanline, int cycle)
 {
     // More accurate sprite 0 hit timing
@@ -2248,33 +2251,58 @@ void SMBEmulator::render(uint32_t* buffer)
     ppu->render(buffer);
 }
 
-void SMBEmulator::render16(uint16_t* buffer)
-{
-    ppu->render16(buffer);
-    
-    // Add Zapper overlay
-/*    if (zapperEnabled) {
-        // Do light detection on the finished frame
-        if (zapper->isTriggerPressed()) {
-            bool light = zapper->detectLight(buffer, 256, 240, 
-                                           zapper->getMouseX(), zapper->getMouseY());
-            zapper->setLightDetected(light);
-        }
-        // Draw crosshair on top
-        zapper->drawCrosshair(buffer, 256, 240, zapper->getMouseX(), zapper->getMouseY());
-    }*/
-}
-
 void SMBEmulator::renderDirectFast(uint16_t* buffer, int screenWidth, int screenHeight)
 {
     ppu->renderScaled(buffer, screenWidth, screenHeight);
+}
+
+void SMBEmulator::scaleBuffer16(uint16_t* nesBuffer, uint16_t* screenBuffer, int screenWidth, int screenHeight)
+{
+    // Clear screen with black
+    for (int i = 0; i < screenWidth * screenHeight; i++) {
+        screenBuffer[i] = 0x0000;
+    }
+    
+    // Calculate scaling
+    int scale_x = screenWidth / 256;
+    int scale_y = screenHeight / 240;
+    int scale = (scale_x < scale_y) ? scale_x : scale_y;
+    if (scale < 1) scale = 1;
+    
+    int dest_w = 256 * scale;
+    int dest_h = 240 * scale;
+    int dest_x = (screenWidth - dest_w) / 2;
+    int dest_y = (screenHeight - dest_h) / 2;
+    
+    // Simple scaling
+    for (int y = 0; y < 240; y++) {
+        for (int x = 0; x < 256; x++) {
+            uint16_t pixel = nesBuffer[y * 256 + x];
+            
+            // Draw scale x scale block
+            for (int sy = 0; sy < scale; sy++) {
+                for (int sx = 0; sx < scale; sx++) {
+                    int screen_x = dest_x + x * scale + sx;
+                    int screen_y = dest_y + y * scale + sy;
+                    
+                    if (screen_x >= 0 && screen_x < screenWidth && 
+                        screen_y >= 0 && screen_y < screenHeight) {
+                        screenBuffer[screen_y * screenWidth + screen_x] = pixel;
+                    }
+                }
+            }
+        }
+    }
 }
 
 
 void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight)
 {
     // First render the game using PPU scaling
-    ppu->renderScaled(buffer, screenWidth, screenHeight);
+    //ppu->renderScaled(buffer, screenWidth, screenHeight);
+        static uint16_t nesBuffer[256 * 240];
+        ppuCycleAccurate->getFrameBuffer(nesBuffer);
+        scaleBuffer16(nesBuffer, buffer, screenWidth, screenHeight);
     
     if (zapperEnabled && zapper) {
         // Get the raw mouse coordinates (these should be in NES coordinates 0-255, 0-239)
@@ -2331,10 +2359,10 @@ void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHe
 }
 
 
-void SMBEmulator::renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight)
+/*void SMBEmulator::renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight)
 {
     ppu->renderScaled32(buffer, screenWidth, screenHeight);
-}
+}*/
 
 // Audio functions (delegate to APU)
 void SMBEmulator::audioCallback(uint8_t* stream, int length)

@@ -86,28 +86,38 @@ void PPUCycleAccurate::stepVisibleScanline(int scanline, int cycle)
     bool renderingEnabled = (ppuMask & 0x18) != 0;
     
     if (!renderingEnabled) {
-        // If rendering disabled, just output background color
         if (cycle >= 1 && cycle <= 256) {
             int pixelX = cycle - 1;
-            frameBuffer[scanline * 256 + pixelX] = convertToRGB565(palette[0]);
+            if (pixelX < 256 && scanline < 240) {
+                uint32_t bgColor32 = paletteRGB[palette[0]];
+                uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | 
+                                   ((bgColor32 & 0x00FC00) >> 5) | 
+                                   ((bgColor32 & 0x0000F8) >> 3);
+                frameBuffer[scanline * 256 + pixelX] = bgColor16;
+            }
         }
         return;
     }
     
-    // Background tile fetching (cycles 1-256 and 321-336)
+    // Background tile fetching
     if ((cycle >= 1 && cycle <= 256) || (cycle >= 321 && cycle <= 336)) {
         stepBackgroundFetch(scanline, cycle);
-        shiftBackgroundRegisters();
     }
     
-    // Sprite evaluation for next scanline (cycles 65-256)
+    // Debug cycles where we should be loading
+    if (cycle == 8 || cycle == 16 || cycle == 24 || cycle == 32) {
+        printf("On cycle %d - should have just loaded shift registers\n", cycle);
+    }
+    
+    // Shift and render
+    if (cycle >= 1 && cycle <= 256) {
+        shiftBackgroundRegisters();
+        renderPixel(scanline, cycle);
+    }
+    
+    // Sprite evaluation
     if (cycle == 65) {
         evaluateSprites(scanline + 1);
-    }
-    
-    // Pixel output (cycles 1-256)
-    if (cycle >= 1 && cycle <= 256) {
-        renderPixel(scanline, cycle);
     }
 }
 
@@ -136,7 +146,6 @@ void PPUCycleAccurate::stepPreRenderScanline(int scanline, int cycle)
 
 void PPUCycleAccurate::stepBackgroundFetch(int scanline, int cycle)
 {
-    // Determine which fetch cycle we're in (1-8 pattern)
     int fetchCycle;
     if (cycle >= 1 && cycle <= 256) {
         fetchCycle = ((cycle - 1) % 8) + 1;
@@ -144,6 +153,13 @@ void PPUCycleAccurate::stepBackgroundFetch(int scanline, int cycle)
         fetchCycle = ((cycle - 321) % 8) + 1;
     } else {
         return;
+    }
+    
+    // Debug which fetch cycle we're in
+    static int fetchCycleDebugCount = 0;
+    if (fetchCycleDebugCount < 10) {
+        printf("FetchCycle: cycle=%d, fetchCycle=%d\n", cycle, fetchCycle);
+        fetchCycleDebugCount++;
     }
     
     switch (fetchCycle) {
@@ -163,108 +179,194 @@ void PPUCycleAccurate::stepBackgroundFetch(int scanline, int cycle)
             fetchPatternHigh(scanline, cycle);
             break;
             
-        case 0: // Every 8th cycle (8, 16, 24, etc) - load shift registers
+        case 8: // Load shift registers on cycles 8, 16, 24, etc.
+            printf("About to load shift registers on cycle %d\n", cycle);
             loadShiftRegisters();
+            break;
+            
+        default:
+            // This should never happen if our math is right
+            static int defaultCount = 0;
+            if (defaultCount < 5) {
+                printf("UNEXPECTED fetchCycle: %d on cycle %d\n", fetchCycle, cycle);
+                defaultCount++;
+            }
             break;
     }
 }
-
 void PPUCycleAccurate::fetchNametableByte(int scanline, int cycle)
 {
-    // Calculate effective scroll position
-    state.effectiveScrollX = ppuScrollX + ((ppuCtrl & 0x01) ? 256 : 0);
-    state.effectiveScrollY = ppuScrollY + ((ppuCtrl & 0x02) ? 240 : 0);
+    int pixelX = cycle - 1;
     
-    // Calculate current tile position
-    int pixelX = (cycle >= 321) ? (cycle - 321) + 256 : (cycle - 1);
-    int scrolledX = (pixelX + state.effectiveScrollX) % 512;
-    int scrolledY = (scanline + state.effectiveScrollY) % 480;
+    // Add scroll offset
+    int scrolledX = (pixelX + ppuScrollX) / 8;
+    int scrolledY = (scanline + ppuScrollY) / 8;
     
-    state.currentTileX = scrolledX / 8;
-    state.currentTileY = scrolledY / 8;
+    // Handle nametable boundaries
+    int nametableX = scrolledX % 64;
+    int nametableY = scrolledY % 60;
     
-    // Fetch nametable byte
-    uint16_t nametableAddr = getNametableAddress(state.currentTileX, state.currentTileY);
-    
-    // Handle status bar area (always from nametable 0, rows 0-3)
-    if (scanline < 32) {  // Status bar area
-        int statusTileX = pixelX / 8;
-        int statusTileY = scanline / 8;
-        nametableAddr = 0x2000 + (statusTileY * 32) + statusTileX;
+    // Determine which nametable
+    uint16_t baseAddr = 0x2000;
+    if (nametableX >= 32) {
+        baseAddr = 0x2400;
+        nametableX -= 32;
+    }
+    if (nametableY >= 30) {
+        baseAddr += 0x800;
+        nametableY -= 30;
     }
     
-    state.bgTileIndex = nametable[applyNametableMirroring(nametableAddr) - 0x2000];
+    uint16_t addr = baseAddr + (nametableY * 32) + nametableX;
+    addr = applyNametableMirroring(addr);
+    
+    if ((addr - 0x2000) < 2048) {
+        state.bgTileIndex = nametable[addr - 0x2000];
+    } else {
+        state.bgTileIndex = 0;
+    }
+    
+    // Store for attribute fetch
+    state.currentTileX = nametableX;
+    state.currentTileY = nametableY;
+    
+    // Enhanced debug
+    static int fetchCount = 0;
+    if (fetchCount < 20) {
+        printf("FetchNT[%d]: cycle=%d, scroll=(%d,%d), pos=(%d,%d), "
+               "nt=(%d,%d), addr=$%04X, tile=0x%02X\n",
+               fetchCount, cycle, ppuScrollX, ppuScrollY, pixelX, scanline,
+               nametableX, nametableY, addr, state.bgTileIndex);
+        
+        // Also check if nametable has any non-zero data
+        if (fetchCount == 0) {
+            int nonZeroCount = 0;
+            for (int i = 0; i < 2048; i++) {
+                if (nametable[i] != 0) nonZeroCount++;
+            }
+            printf("Nametable debug: %d non-zero bytes out of 2048\n", nonZeroCount);
+        }
+        
+        fetchCount++;
+    }
 }
 
 void PPUCycleAccurate::fetchAttributeByte(int scanline, int cycle)
 {
-    // Get attribute for current tile position
-    uint16_t attrAddr = getAttributeAddress(state.currentTileX, state.currentTileY);
+    // Use the tile position from fetchNametableByte
+    int tileX = state.currentTileX;
+    int tileY = state.currentTileY;
     
-    // Handle status bar area
-    if (scanline < 32) {
-        int statusTileX = ((cycle >= 321) ? (cycle - 321) + 256 : (cycle - 1)) / 8;
-        int statusTileY = scanline / 8;
-        attrAddr = 0x23C0 + (statusTileY / 4) * 8 + (statusTileX / 4);
+    // Each attribute byte covers a 4x4 tile area (32x32 pixels)
+    int attrX = (tileX % 32) / 4;
+    int attrY = (tileY % 30) / 4;
+    
+    // Determine which nametable's attribute table
+    int nametableIndex = 0;
+    if (tileX >= 32) nametableIndex |= 1;
+    if (tileY >= 30) nametableIndex |= 2;
+    
+    uint16_t attrAddr = 0x23C0 + (nametableIndex * 0x400) + (attrY * 8) + attrX;
+    attrAddr = applyNametableMirroring(attrAddr);
+    
+    uint8_t attrByte = 0;
+    if ((attrAddr - 0x2000) < 2048) {
+        attrByte = nametable[attrAddr - 0x2000];
     }
     
-    uint8_t attrByte = nametable[applyNametableMirroring(attrAddr) - 0x2000];
-    state.bgAttribute = getAttributeBits(state.currentTileX, state.currentTileY, attrByte);
+    // Extract the 2-bit palette for this specific tile's quadrant
+    int quadX = ((tileX % 32) / 2) % 2;
+    int quadY = ((tileY % 30) / 2) % 2;
+    int shift = (quadY * 4) + (quadX * 2);
+    
+    state.bgAttribute = (attrByte >> shift) & 0x03;
 }
+
 
 void PPUCycleAccurate::fetchPatternLow(int scanline, int cycle)
 {
     uint16_t tileIndex = state.bgTileIndex;
-    uint8_t fineY = (scanline + state.effectiveScrollY) % 8;
+    uint8_t fineY = (scanline + ppuScrollY) % 8;
     
-    // Handle status bar
-    if (scanline < 32) {
-        fineY = scanline % 8;
-    }
+    // CRITICAL FIX: Check the actual pattern table selection
+    // PPUCTRL bit 4: 0 = $0000, 1 = $1000
+    uint16_t patternTableBase = (ppuCtrl & 0x10) ? 0x1000 : 0x0000;
     
-    // Add pattern table base
-    if (ppuCtrl & 0x10) {
-        tileIndex += 256;
-    }
-    
-    // CRITICAL: Read CHR data through engine (handles mapper banking)
-    uint16_t patternAddr = tileIndex * 16 + fineY;
+    // Calculate pattern address
+    uint16_t patternAddr = patternTableBase + (tileIndex * 16) + fineY;
     state.bgPatternLow = engine.readCHRData(patternAddr);
+    
+    // Enhanced debug
+    static int patternLowCount = 0;
+    if (patternLowCount < 20) {
+        printf("PatternLow[%d]: tile=0x%02X, ctrl=0x%02X, ptBase=0x%04X, "
+               "fineY=%d, addr=0x%04X, data=0x%02X\n",
+               patternLowCount, tileIndex, ppuCtrl, patternTableBase,
+               fineY, patternAddr, state.bgPatternLow);
+        
+        // Check if we're reading from valid CHR area
+        if (patternAddr >= 0x2000) {
+            printf("ERROR: Pattern address 0x%04X is outside CHR range!\n", patternAddr);
+        }
+        
+        patternLowCount++;
+    }
 }
 
 void PPUCycleAccurate::fetchPatternHigh(int scanline, int cycle)
 {
     uint16_t tileIndex = state.bgTileIndex;
-    uint8_t fineY = (scanline + state.effectiveScrollY) % 8;
+    uint8_t fineY = (scanline + ppuScrollY) % 8;
     
-    // Handle status bar
-    if (scanline < 32) {
-        fineY = scanline % 8;
-    }
+    // CRITICAL FIX: Use the same pattern table base
+    uint16_t patternTableBase = (ppuCtrl & 0x10) ? 0x1000 : 0x0000;
     
-    // Add pattern table base
-    if (ppuCtrl & 0x10) {
-        tileIndex += 256;
-    }
-    
-    // CRITICAL: Read CHR data through engine (handles mapper banking)
-    uint16_t patternAddr = tileIndex * 16 + fineY + 8;
+    // Calculate pattern address (+8 for high byte)
+    uint16_t patternAddr = patternTableBase + (tileIndex * 16) + fineY + 8;
     state.bgPatternHigh = engine.readCHRData(patternAddr);
+    
+    // Enhanced debug
+    static int patternHighCount = 0;
+    if (patternHighCount < 20) {
+        printf("PatternHigh[%d]: tile=0x%02X, ctrl=0x%02X, ptBase=0x%04X, "
+               "fineY=%d, addr=0x%04X, data=0x%02X\n",
+               patternHighCount, tileIndex, ppuCtrl, patternTableBase,
+               fineY, patternAddr, state.bgPatternHigh);
+        patternHighCount++;
+    }
 }
+
 
 void PPUCycleAccurate::loadShiftRegisters()
 {
-    // Load new tile data into shift registers
+    // Store old values for comparison
+    uint16_t oldShiftLow = state.bgPatternShiftLow;
+    uint16_t oldShiftHigh = state.bgPatternShiftHigh;
+    
+    // Load new data into the LOW 8 bits
     state.bgPatternShiftLow = (state.bgPatternShiftLow & 0xFF00) | state.bgPatternLow;
     state.bgPatternShiftHigh = (state.bgPatternShiftHigh & 0xFF00) | state.bgPatternHigh;
     
-    // Load attribute data
+    // Update attribute latch
     state.bgAttributeLatch0 = state.bgAttribute;
+    
+    // Enhanced debug
+    static int loadCount = 0;
+    if (loadCount < 20) {
+        printf("Load[%d]: tile=0x%02X, patterns=(0x%02X,0x%02X), "
+               "shifts: 0x%04X->0x%04X, 0x%04X->0x%04X, attr=%d\n",
+               loadCount, state.bgTileIndex,
+               state.bgPatternLow, state.bgPatternHigh,
+               oldShiftLow, state.bgPatternShiftLow,
+               oldShiftHigh, state.bgPatternShiftHigh,
+               state.bgAttribute);
+        loadCount++;
+    }
 }
 
 void PPUCycleAccurate::shiftBackgroundRegisters()
 {
-    // Shift pattern data
+    // Shift left by 1 bit every cycle
     state.bgPatternShiftLow <<= 1;
     state.bgPatternShiftHigh <<= 1;
 }
@@ -319,29 +421,24 @@ void PPUCycleAccurate::renderPixel(int scanline, int cycle)
     int pixelX = cycle - 1;
     if (pixelX >= 256 || scanline >= 240) return;
     
-    uint16_t finalPixel = convertToRGB565(palette[0]); // Default background
+    uint16_t finalPixel = convertToRGB565(palette[0]);
     
     // Get background pixel
-    if (ppuMask & 0x08) { // Background enabled
-        uint8_t fineX = (pixelX + state.effectiveScrollX) % 8;
+    if (ppuMask & 0x08) {
+        // Use fine X from scroll register
+        int fineX = ppuScrollX & 0x07;
         finalPixel = getBackgroundPixel(fineX);
     }
     
     // Get sprite pixel
-    if (ppuMask & 0x10) { // Sprites enabled
+    if (ppuMask & 0x10) {
         bool sprite0Hit = false;
         bool spritePriority = false;
         uint16_t spritePixel = getSpritePixel(pixelX, sprite0Hit, spritePriority);
         
-        if (spritePixel != 0) { // Non-transparent sprite
+        if (spritePixel != 0) {
             if (!spritePriority || finalPixel == convertToRGB565(palette[0])) {
                 finalPixel = spritePixel;
-            }
-            
-            // Sprite 0 hit detection
-            if (sprite0Hit && finalPixel != convertToRGB565(palette[0])) {
-                // Set sprite 0 hit flag in main PPU through engine
-                // This is a simplified approach
             }
         }
     }
@@ -349,21 +446,34 @@ void PPUCycleAccurate::renderPixel(int scanline, int cycle)
     frameBuffer[scanline * 256 + pixelX] = finalPixel;
 }
 
+
 uint16_t PPUCycleAccurate::getBackgroundPixel(int fineX)
 {
-    // Extract pixel from shift registers
-    int shiftAmount = 15 - fineX;
+    // Read from the HIGH bits of shift registers
+    int bitPosition = 15;
     
     uint8_t pixel = 0;
-    if (state.bgPatternShiftLow & (1 << shiftAmount)) pixel |= 1;
-    if (state.bgPatternShiftHigh & (1 << shiftAmount)) pixel |= 2;
+    if (state.bgPatternShiftLow & (1 << bitPosition)) pixel |= 1;
+    if (state.bgPatternShiftHigh & (1 << bitPosition)) pixel |= 2;
     
-    if (pixel == 0) {
-        return convertToRGB565(palette[0]); // Transparent background
+    // Enhanced debug for first few pixels
+    static int pixelDebugCount = 0;
+    if (pixelDebugCount < 10) {
+        printf("GetBGPixel[%d]: fineX=%d, bitPos=%d, "
+               "shifts=(0x%04X,0x%04X), pixel=%d, palette=%d\n",
+               pixelDebugCount, fineX, bitPosition,
+               state.bgPatternShiftLow, state.bgPatternShiftHigh,
+               pixel, state.bgAttributeLatch0);
+        pixelDebugCount++;
     }
     
-    // Get palette from attribute
-    uint8_t paletteIndex = state.bgAttributeLatch0 * 4 + pixel;
+    if (pixel == 0) {
+        return convertToRGB565(palette[0]);
+    }
+    
+    uint8_t paletteIndex = (state.bgAttributeLatch0 * 4) + pixel;
+    if (paletteIndex >= 32) paletteIndex = 0;
+    
     return convertToRGB565(palette[paletteIndex]);
 }
 
@@ -445,10 +555,22 @@ uint8_t PPUCycleAccurate::getAttributeBits(int tileX, int tileY, uint8_t attrByt
 
 uint16_t PPUCycleAccurate::applyNametableMirroring(uint16_t address)
 {
-    // Simplified mirroring (horizontal for SMB)
-    if (address >= 0x2400 && address < 0x2800) {
-        return address - 0x400; // Mirror to first nametable
+    // DuckTales uses vertical mirroring (mapper 2 = UxROM)
+    // Vertical mirroring: $2000=$2800, $2400=$2C00
+    
+    if (address >= 0x3000) {
+        // Mirror $3000-$3EFF to $2000-$2EFF
+        address -= 0x1000;
     }
+    
+    if (address >= 0x2800 && address < 0x2C00) {
+        // $2800-$2BFF mirrors to $2000-$23FF  
+        address -= 0x800;
+    } else if (address >= 0x2C00 && address < 0x3000) {
+        // $2C00-$2FFF mirrors to $2400-$27FF
+        address -= 0x800;
+    }
+    
     return address;
 }
 
