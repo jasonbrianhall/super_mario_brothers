@@ -110,7 +110,8 @@ case "${1:-dos}" in
             echo 'Converting to COFF format...' &&
             exe2coff /src/$BUILD_DIR/waprnese.exe &&
             echo 'Creating final DOS executable with DPMI stub...' &&
-            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/warpnese.exe > /src/$BUILD_DIR/warpnes.exe &&
+            exe2coff /src/$BUILD_DIR/warpnese.exe &&
+            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/warpnese > /src/$BUILD_DIR/warpnes.exe &&
             #rm /src/$BUILD_DIR/warpnese.exe
             echo 'DOS build complete!'
         "
@@ -176,7 +177,8 @@ case "${1:-dos}" in
             echo 'Converting to COFF format...' &&
             exe2coff /src/$BUILD_DIR/waprnese.exe &&
             echo 'Creating final DOS executable with DPMI stub...' &&
-            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/warpnese.exe > /src/$BUILD_DIR/warpnes.exe &&
+            exe2coff /src/$BUILD_DIR/warpnese.exe &&
+            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/warpnese > /src/$BUILD_DIR/warpnes.exe &&
             rm /src/$BUILD_DIR/warpnese.exe
             echo 'Quick compile complete!'
         "
