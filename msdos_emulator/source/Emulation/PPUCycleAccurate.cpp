@@ -2,8 +2,8 @@
 #include "../SMB/SMBEmulator.hpp"
 #include "PPU.hpp"
 
-// NES palette (same as main PPU)
-static constexpr const uint32_t paletteRGB[64] = {
+// NES palette
+static const uint32_t nesPalette[64] = {
     0x7c7c7c, 0x0000fc, 0x0000bc, 0x4428bc, 0x940084, 0xa80020, 0xa81000, 0x881400,
     0x503000, 0x007800, 0x006800, 0x005800, 0x004058, 0x000000, 0x000000, 0x000000,
     0xbcbcbc, 0x0078f8, 0x0058f8, 0x6844fc, 0xd800cc, 0xe40058, 0xf83800, 0xe45c10,
@@ -14,534 +14,467 @@ static constexpr const uint32_t paletteRGB[64] = {
     0xf8d878, 0xd8f878, 0xb8f8b8, 0xb8f8d8, 0x00fcfc, 0xf8d8f8, 0x000000, 0x000000
 };
 
-PPUCycleAccurate::PPUCycleAccurate(SMBEmulator& engine) : engine(engine)
-{
+// bitmap8x8 implementation
+void bitmap8x8::create(uint8_t* patternLow, uint8_t* patternHigh) {
+    memset(s, 0, 8*8);
+    for (int y = 0; y < 8; y++) {
+        for (int x = 0; x < 8; x++) {
+            if (patternLow[y] & (0x80 >> x)) s[y][x] |= 1;
+            if (patternHigh[y] & (0x80 >> x)) s[y][x] |= 2;
+        }
+    }
+}
+
+void bitmap8x8::draw_tile(uint16_t* dest, int x, int y, uint8_t palette, uint8_t* paletteRAM) {
+    if (x < 0 || y < 0 || x > 256-8 || y > 240-8) {
+        return;
+    }
+    
+    for (int py = 0; py < 8; py++) {
+        for (int px = 0; px < 8; px++) {
+            int screenX = x + px;
+            int screenY = y + py;
+            
+            if (screenX >= 256 || screenY >= 240) continue;
+            
+            uint8_t pixel = s[py][px];
+            uint8_t colorIndex;
+            
+            if (pixel == 0) {
+                colorIndex = paletteRAM[0];
+            } else {
+                colorIndex = paletteRAM[palette * 4 + pixel];
+            }
+            
+            uint16_t color = convertToRGB565(colorIndex);
+            dest[screenY * 256 + screenX] = color;
+        }
+    }
+}
+
+void bitmap8x8::draw_sprite(uint16_t* dest, int x, int y, uint8_t attributes, uint8_t* spritePalette) {
+    if (x < -7 || y < -7 || x >= 256 || y >= 240) return;
+    
+    bool flipX = attributes & 0x40;
+    bool flipY = attributes & 0x80;
+    bool priority = attributes & 0x20;
+    uint8_t palette = (attributes & 0x03) * 4;
+    
+    for (int py = 0; py < 8; py++) {
+        for (int px = 0; px < 8; px++) {
+            int screenX = x + (flipX ? 7-px : px);
+            int screenY = y + (flipY ? 7-py : py);
+            
+            if (screenX < 0 || screenY < 0 || screenX >= 256 || screenY >= 240) continue;
+            
+            uint8_t pixel = s[py][px];
+            if (pixel != 0) {
+                uint8_t colorIndex = spritePalette[palette + pixel];
+                dest[screenY * 256 + screenX] = convertToRGB565(colorIndex);
+            }
+        }
+    }
+}
+
+uint16_t bitmap8x8::convertToRGB565(uint8_t colorIndex) {
+    if (colorIndex >= 64) colorIndex = 0;
+    uint32_t rgb = nesPalette[colorIndex];
+    return ((rgb >> 8) & 0xF800) | ((rgb >> 5) & 0x07E0) | ((rgb >> 3) & 0x001F);
+}
+
+// pattern1k implementation
+void pattern1k::create(SMBEmulator& engine, int bankIndex) {
+    uint8_t* chrData = engine.getCHR();
+    if (!chrData) return;
+    
+    for (int i = 0; i < 64; i++) {
+        if (updated[i]) {
+            uint16_t patternAddr = bankIndex * 0x400 + i * 16;
+            uint8_t patternLow[8], patternHigh[8];
+            
+            for (int j = 0; j < 8; j++) {
+                if (patternAddr + j + 8 >= 8192) {
+                    patternLow[j] = 0;
+                    patternHigh[j] = 0;
+                } else {
+                    patternLow[j] = chrData[patternAddr + j];
+                    patternHigh[j] = chrData[patternAddr + j + 8];
+                }
+            }
+            
+            p[i].create(patternLow, patternHigh);
+            updated[i] = false;
+        }
+    }
+}
+
+void pattern1k::markAllUpdated() {
+    memset(updated, true, 64);
+}
+
+void pattern1k::markUpdated(int patternIndex) {
+    if (patternIndex >= 0 && patternIndex < 64) {
+        updated[patternIndex] = true;
+    }
+}
+
+// patterntable implementation
+void patterntable::setbank(int banknum, int pnum, pattern1k* pattern1kArray) {
+    if (banknum < 0 || banknum >= 4) return;
+    bank[banknum] = pnum;
+    pbank[banknum] = &pattern1kArray[pnum];
+}
+
+bitmap8x8& patterntable::operator[](uint8_t idx) {
+    int bankIndex = idx / 64;
+    int patternIndex = idx & 63;
+    return pbank[bankIndex]->p[patternIndex];
+}
+
+bool patterntable::operator==(const patterntable& other) const {
+    return memcmp(bank, other.bank, 4) == 0;
+}
+
+// natablecache implementation
+natablecache::natablecache() {
+    surface = new uint16_t[256 * 240];
+    memset(nametable, 0, sizeof(nametable));
+    memset(attribute, 0, sizeof(attribute));
+    totalupdate();
+}
+
+natablecache::~natablecache() {
+    delete[] surface;
+}
+
+void natablecache::totalupdate() {
+    memset(updated, true, sizeof(updated));
+    memset(lineupdated, true, sizeof(lineupdated));
+}
+
+void natablecache::write(uint16_t addr, uint8_t value) {
+    if (addr < 32 * 30) {
+        if (nametable[addr] == value) return;
+        nametable[addr] = value;
+        
+        int x = addr % 32;
+        int y = addr / 32;
+        lineupdated[y] = true;
+        updated[y][x] = true;
+    } else {
+        addr -= 32 * 30;
+        if (addr >= 64) return;
+        if (attribute[addr] == value) return;
+        
+        attribute[addr] = value;
+        
+        int attrX = (addr % 8) * 4;
+        int attrY = (addr / 8) * 4;
+        
+        for (int y = attrY; y < attrY + 4 && y < 30; y++) {
+            lineupdated[y] = true;
+            for (int x = attrX; x < attrX + 4 && x < 32; x++) {
+                updated[y][x] = true;
+            }
+        }
+    }
+}
+
+uint8_t natablecache::read(uint16_t addr) {
+    if (addr < 32 * 30) {
+        return nametable[addr];
+    } else {
+        addr -= 32 * 30;
+        return (addr < 64) ? attribute[addr] : 0;
+    }
+}
+
+void natablecache::setpatterntable(const patterntable& newpt) {
+    if (!(pt == newpt)) {
+        pt = newpt;
+        totalupdate();
+    }
+}
+
+void natablecache::refresh(int startY, int endY, uint8_t* paletteRAM) {
+    if (startY < 0) startY = 0;
+    if (endY > 30) endY = 30;
+    
+    for (int y = startY; y < endY; y++) {
+        if (lineupdated[y]) {
+            for (int x = 0; x < 32; x++) {
+                if (updated[y][x]) {
+                    drawtile(x, y, paletteRAM);
+                    updated[y][x] = false;
+                }
+            }
+            lineupdated[y] = false;
+        }
+    }
+}
+
+void natablecache::draw(uint16_t* dest, int sx, int sy, int clipX1, int clipY1, int clipX2, int clipY2, uint8_t* paletteRAM) {
+    int tileY1 = (clipY1 - sy) / 8;
+    int tileY2 = (clipY2 - sy) / 8 + 1;
+    refresh(tileY1, tileY2, paletteRAM);
+    
+    for (int y = clipY1; y < clipY2 && y < sy + 240; y++) {
+        if (y - sy < 0) continue;
+        
+        for (int x = clipX1; x < clipX2 && x < sx + 256; x++) {
+            if (x - sx < 0) continue;
+            
+            dest[y * 256 + x] = surface[(y - sy) * 256 + (x - sx)];
+        }
+    }
+}
+
+void natablecache::drawtile(int tx, int ty, uint8_t* paletteRAM) {
+    if (tx >= 32 || ty >= 30) return;
+    
+    uint8_t tileIndex = nametable[ty * 32 + tx];
+    uint8_t attrByte = attribute[(ty / 4) * 8 + (tx / 4)];
+    
+    int quadX = (tx / 2) % 2;
+    int quadY = (ty / 2) % 2;
+    int shift = (quadY * 4) + (quadX * 2);
+    uint8_t palette = (attrByte >> shift) & 0x03;
+    
+    pt[tileIndex].draw_tile(surface, tx * 8, ty * 8, palette, paletteRAM);
+}
+
+// PPUCycleAccurate implementation
+PPUCycleAccurate::PPUCycleAccurate(SMBEmulator& eng) : engine(eng) {
+    numpattern1k = 8;
+    pt1k = new pattern1k[numpattern1k];
+    memset(pt1kupdated, false, sizeof(pt1kupdated));
+    
+    for (int i = 0; i < 4; i++) {
+        ntc[i] = new natablecache();
+    }
+    
+    setMirroring(0);
     reset();
 }
 
-PPUCycleAccurate::~PPUCycleAccurate()
-{
+PPUCycleAccurate::~PPUCycleAccurate() {
+    delete[] pt1k;
+    for (int i = 0; i < 4; i++) {
+        delete ntc[i];
+    }
 }
 
-void PPUCycleAccurate::reset()
-{
-    // Clear frame buffer
-    clearFrameBuffer();
-    
-    // Reset registers
-    ppuCtrl = 0x00;
-    ppuMask = 0x00;
+void PPUCycleAccurate::reset() {
+    ppuCtrl = 0;
+    ppuMask = 0;
     ppuStatus = 0x80;
-    ppuScrollX = 0x00;
-    ppuScrollY = 0x00;
+    scrollX = scrollY = 0;
     
-    // Clear memory
-    memset(palette, 0, sizeof(palette));
-    memset(nametable, 0, sizeof(nametable));
+    memset(paletteRAM, 0, sizeof(paletteRAM));
     memset(oam, 0, sizeof(oam));
     
-    // Reset internal state
-    memset(&state, 0, sizeof(state));
+    bgPatternTable.setbank(0, 0, pt1k);
+    bgPatternTable.setbank(1, 1, pt1k);
+    bgPatternTable.setbank(2, 2, pt1k);
+    bgPatternTable.setbank(3, 3, pt1k);
+    
+    spritePatternTable = bgPatternTable;
+    
+    updatePatternTables();
 }
 
-void PPUCycleAccurate::syncWithMainPPU(PPU* mainPPU)
-{
-    if (!mainPPU) return;
-    
-    // Sync registers
-    ppuCtrl = mainPPU->getControl();
-    ppuMask = mainPPU->getMask();
-    ppuStatus = mainPPU->getStatus();
-    ppuScrollX = mainPPU->getScrollX();
-    ppuScrollY = mainPPU->getScrollY();
-    
-    // Sync memory
-    memcpy(palette, mainPPU->getPaletteRAM(), 32);
-    memcpy(nametable, mainPPU->getVRAM(), 2048);
-    memcpy(oam, mainPPU->getOAM(), 256);
+void PPUCycleAccurate::setMirroring(int type) {
+    mirroring = type;
 }
 
-void PPUCycleAccurate::clearFrameBuffer()
-{
-    // Fill with background color
-    uint16_t bgColor = convertToRGB565(palette[0]);
+void PPUCycleAccurate::updatePatternTables() {
+    uint8_t* chrData = engine.getCHR();
+    if (!chrData) return;
+    
+    static bool firstTime = true;
+    if (firstTime) {
+        for (int i = 0; i < numpattern1k && i < 8; i++) {
+            pt1kupdated[i] = true;
+            pt1k[i].markAllUpdated();
+        }
+        firstTime = false;
+    }
+    
+    for (int i = 0; i < numpattern1k && i < 8; i++) {
+        if (pt1kupdated[i]) {
+            pt1k[i].create(engine, i);
+            pt1kupdated[i] = false;
+        }
+    }
+    
+    for (int i = 0; i < 4; i++) {
+        ntc[i]->setpatterntable(bgPatternTable);
+    }
+}
+
+void PPUCycleAccurate::writeRegister(uint16_t addr, uint8_t value) {
+    switch (addr) {
+        case 0x2000: ppuCtrl = value; break;
+        case 0x2001: ppuMask = value; break;
+        case 0x2005: 
+            static bool firstWrite = true;
+            if (firstWrite) {
+                scrollX = value;
+            } else {
+                scrollY = value;
+            }
+            firstWrite = !firstWrite;
+            break;
+        case 0x2007: 
+            break;
+    }
+}
+
+uint8_t PPUCycleAccurate::readRegister(uint16_t addr) {
+    switch (addr) {
+        case 0x2002: return ppuStatus;
+        case 0x2007: return 0;
+        default: return 0;
+    }
+}
+
+void PPUCycleAccurate::markCHRUpdated(uint16_t addr) {
+    int bankIndex = addr / 0x400;
+    int patternIndex = (addr % 0x400) / 16;
+    
+    if (bankIndex < numpattern1k) {
+        pt1k[bankIndex].markUpdated(patternIndex);
+        pt1kupdated[bankIndex] = true;
+    }
+}
+
+void PPUCycleAccurate::render(uint16_t* frameBuffer) {
+    updatePatternTables();
+    
+    uint16_t bgColor = convertToRGB565(paletteRAM[0]);
     for (int i = 0; i < 256 * 240; i++) {
         frameBuffer[i] = bgColor;
     }
-}
-
-void PPUCycleAccurate::stepCycle(int scanline, int cycle)
-{
-    if (scanline < 240) {
-        stepVisibleScanline(scanline, cycle);
-    } else if (scanline >= 241 && scanline <= 260) {
-        stepVBlankScanline(scanline, cycle);
-    } else if (scanline == 261) {
-        stepPreRenderScanline(scanline, cycle);
+    
+    if (!(ppuMask & 0x08) && !(ppuMask & 0x10)) {
+        return;
+    }
+    
+    if (ppuMask & 0x08) {
+        drawBackground(frameBuffer);
+    }
+    
+    if (ppuMask & 0x10) {
+        drawSprites(frameBuffer);
     }
 }
 
-void PPUCycleAccurate::stepVisibleScanline(int scanline, int cycle)
-{
-    bool renderingEnabled = (ppuMask & 0x18) != 0;
-    
-    if (!renderingEnabled) {
-        if (cycle >= 1 && cycle <= 256) {
-            int pixelX = cycle - 1;
-            if (pixelX < 256 && scanline < 240) {
-                uint32_t bgColor32 = paletteRGB[palette[0]];
-                uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | 
-                                   ((bgColor32 & 0x00FC00) >> 5) | 
-                                   ((bgColor32 & 0x0000F8) >> 3);
-                frameBuffer[scanline * 256 + pixelX] = bgColor16;
+uint16_t PPUCycleAccurate::convertToRGB565(uint8_t colorIndex) {
+    if (colorIndex >= 64) colorIndex = 0;
+    uint32_t rgb = nesPalette[colorIndex];
+    return ((rgb >> 8) & 0xF800) | ((rgb >> 5) & 0x07E0) | ((rgb >> 3) & 0x001F);
+}
+
+uint32_t PPUCycleAccurate::convertToRGB32(uint8_t colorIndex) {
+    if (colorIndex >= 64) colorIndex = 0;
+    return nesPalette[colorIndex];
+}
+
+void PPUCycleAccurate::drawTileLikeWorkingPPU(uint16_t* frameBuffer, uint16_t tile, int xOffset, int yOffset, uint8_t attribute) {
+    for (int row = 0; row < 8; row++) {
+        uint8_t* chrData = engine.getCHR();
+        uint8_t plane1 = chrData[tile * 16 + row];
+        uint8_t plane2 = chrData[tile * 16 + row + 8];
+
+        for (int column = 0; column < 8; column++) {
+            uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + 
+                                   ((plane2 & (1 << column)) ? 2 : 0));
+            
+            uint8_t colorIndex;
+            if (paletteIndex == 0) {
+                colorIndex = paletteRAM[0];
+            } else {
+                colorIndex = paletteRAM[(attribute & 0x03) * 4 + paletteIndex];
+            }
+            
+            uint32_t pixel32 = convertToRGB32(colorIndex);
+            uint16_t pixel16 = ((pixel32 & 0xF80000) >> 8) | 
+                              ((pixel32 & 0x00FC00) >> 5) | 
+                              ((pixel32 & 0x0000F8) >> 3);
+
+            int x = (xOffset + (7 - column));
+            int y = (yOffset + row);
+            if (x >= 0 && x < 256 && y >= 0 && y < 240) {
+                frameBuffer[y * 256 + x] = pixel16;
             }
         }
-        return;
-    }
-    
-    // Background tile fetching
-    if ((cycle >= 1 && cycle <= 256) || (cycle >= 321 && cycle <= 336)) {
-        stepBackgroundFetch(scanline, cycle);
-    }
-    
-    // Debug cycles where we should be loading
-    if (cycle == 8 || cycle == 16 || cycle == 24 || cycle == 32) {
-        printf("On cycle %d - should have just loaded shift registers\n", cycle);
-    }
-    
-    // Shift and render
-    if (cycle >= 1 && cycle <= 256) {
-        shiftBackgroundRegisters();
-        renderPixel(scanline, cycle);
-    }
-    
-    // Sprite evaluation
-    if (cycle == 65) {
-        evaluateSprites(scanline + 1);
     }
 }
 
-void PPUCycleAccurate::stepVBlankScanline(int scanline, int cycle)
-{
-    // Nothing happens during VBlank for rendering
-}
-
-void PPUCycleAccurate::stepPreRenderScanline(int scanline, int cycle)
-{
-    bool renderingEnabled = (ppuMask & 0x18) != 0;
-    
-    if (!renderingEnabled) return;
-    
-    // Pre-render scanline does background fetching but no pixel output
-    if ((cycle >= 1 && cycle <= 256) || (cycle >= 321 && cycle <= 336)) {
-        stepBackgroundFetch(scanline, cycle);
-        shiftBackgroundRegisters();
-    }
-    
-    // Sprite evaluation for first visible scanline
-    if (cycle == 65) {
-        evaluateSprites(0);
+void PPUCycleAccurate::drawBackground(uint16_t* frameBuffer) {
+    for (int tileY = 0; tileY < 30; tileY++) {
+        for (int tileX = 0; tileX < 32; tileX++) {
+            uint8_t tileIndex = ntc[0]->read(tileY * 32 + tileX);
+            uint16_t tile = tileIndex + (ppuCtrl & (1 << 4) ? 256 : 0);
+            
+            uint8_t attrByte = ntc[0]->read(32 * 30 + (tileY / 4) * 8 + (tileX / 4));
+            int quadX = (tileX / 2) % 2;
+            int quadY = (tileY / 2) % 2;
+            int shift = (quadY * 4) + (quadX * 2);
+            uint8_t palette = (attrByte >> shift) & 0x03;
+            
+            drawTileLikeWorkingPPU(frameBuffer, tile, tileX * 8, tileY * 8, palette);
+        }
     }
 }
 
-void PPUCycleAccurate::stepBackgroundFetch(int scanline, int cycle)
-{
-    int fetchCycle;
-    if (cycle >= 1 && cycle <= 256) {
-        fetchCycle = ((cycle - 1) % 8) + 1;
-    } else if (cycle >= 321 && cycle <= 336) {
-        fetchCycle = ((cycle - 321) % 8) + 1;
-    } else {
-        return;
-    }
+void PPUCycleAccurate::drawSprites(uint16_t* frameBuffer) {
+    bool sprite8x16 = ppuCtrl & 0x20;
     
-    switch (fetchCycle) {
-        case 1: fetchNametableByte(scanline, cycle); break;
-        case 3: fetchAttributeByte(scanline, cycle); break;
-        case 5: fetchPatternLow(scanline, cycle); break;
-        case 7: fetchPatternHigh(scanline, cycle); break;
-        case 8: loadShiftRegisters(); break;
-    }
-}
-
-void PPUCycleAccurate::fetchNametableByte(int scanline, int cycle)
-{
-    int pixelX = cycle - 1;
-    
-    int scrolledX = (pixelX + ppuScrollX) / 8;
-    int scrolledY = (scanline + ppuScrollY) / 8;
-    
-    int nametableX = scrolledX % 64;
-    int nametableY = scrolledY % 60;
-    
-    if (nametableX < 0) nametableX += 64;
-    if (nametableY < 0) nametableY += 60;
-    
-    uint16_t baseAddr = 0x2000;
-    if (nametableX >= 32) {
-        baseAddr = 0x2400;
-        nametableX -= 32;
-    }
-    if (nametableY >= 30) {
-        baseAddr += 0x800;
-        nametableY -= 30;
-    }
-    
-    uint16_t addr = baseAddr + (nametableY * 32) + nametableX;
-    addr = applyNametableMirroring(addr);
-    
-    if ((addr - 0x2000) < 2048 && (addr - 0x2000) >= 0) {
-        state.bgTileIndex = nametable[addr - 0x2000];
-    } else {
-        state.bgTileIndex = 0x20;
-    }
-    
-    state.currentTileX = nametableX;
-    state.currentTileY = nametableY;
-    
-    // Debug boundary tile fetching
-    if (scanline < 5 && cycle < 64) {
-        printf("Fetch: cycle=%d, pixelX=%d, scroll=%d, "
-               "scrolledX=%d, ntX=%d, addr=$%04X, tile=0x%02X\n",
-               cycle, pixelX, ppuScrollX, scrolledX, nametableX, addr, state.bgTileIndex);
-    }
-}
-
-void PPUCycleAccurate::fetchAttributeByte(int scanline, int cycle)
-{
-    // Use the tile position from fetchNametableByte
-    int tileX = state.currentTileX;
-    int tileY = state.currentTileY;
-    
-    // Each attribute byte covers a 4x4 tile area (32x32 pixels)
-    int attrX = (tileX % 32) / 4;
-    int attrY = (tileY % 30) / 4;
-    
-    // Determine which nametable's attribute table
-    int nametableIndex = 0;
-    if (tileX >= 32) nametableIndex |= 1;
-    if (tileY >= 30) nametableIndex |= 2;
-    
-    uint16_t attrAddr = 0x23C0 + (nametableIndex * 0x400) + (attrY * 8) + attrX;
-    attrAddr = applyNametableMirroring(attrAddr);
-    
-    uint8_t attrByte = 0;
-    if ((attrAddr - 0x2000) < 2048) {
-        attrByte = nametable[attrAddr - 0x2000];
-    }
-    
-    // Extract the 2-bit palette for this specific tile's quadrant
-    int quadX = ((tileX % 32) / 2) % 2;
-    int quadY = ((tileY % 30) / 2) % 2;
-    int shift = (quadY * 4) + (quadX * 2);
-    
-    state.bgAttribute = (attrByte >> shift) & 0x03;
-}
-
-
-void PPUCycleAccurate::fetchPatternLow(int scanline, int cycle)
-{
-    uint16_t tileIndex = state.bgTileIndex;
-    uint8_t fineY = (scanline + ppuScrollY) % 8;
-    
-    // Make sure fineY is positive
-    if (fineY < 0) fineY += 8;
-    
-    // Pattern table selection
-    uint16_t patternTableBase = (ppuCtrl & 0x10) ? 0x1000 : 0x0000;
-    
-    // Calculate pattern address with bounds checking
-    uint16_t patternAddr = patternTableBase + (tileIndex * 16) + fineY;
-    
-    // Ensure we're reading from valid CHR range
-    if (patternAddr < 0x2000) {
-        state.bgPatternLow = engine.readCHRData(patternAddr);
-    } else {
-        state.bgPatternLow = 0x00; // Default to empty pattern
-    }
-}
-
-void PPUCycleAccurate::fetchPatternHigh(int scanline, int cycle)
-{
-    uint16_t tileIndex = state.bgTileIndex;
-    uint8_t fineY = (scanline + ppuScrollY) % 8;
-    
-    // Make sure fineY is positive
-    if (fineY < 0) fineY += 8;
-    
-    // Pattern table selection
-    uint16_t patternTableBase = (ppuCtrl & 0x10) ? 0x1000 : 0x0000;
-    
-    // Calculate pattern address with bounds checking
-    uint16_t patternAddr = patternTableBase + (tileIndex * 16) + fineY + 8;
-    
-    // Ensure we're reading from valid CHR range
-    if (patternAddr < 0x2000) {
-        state.bgPatternHigh = engine.readCHRData(patternAddr);
-    } else {
-        state.bgPatternHigh = 0x00; // Default to empty pattern
-    }
-}
-
-
-
-void PPUCycleAccurate::loadShiftRegisters()
-{
-    uint16_t oldShiftLow = state.bgPatternShiftLow;
-    uint16_t oldShiftHigh = state.bgPatternShiftHigh;
-    
-    state.bgPatternShiftLow = (state.bgPatternShiftLow & 0xFF00) | state.bgPatternLow;
-    state.bgPatternShiftHigh = (state.bgPatternShiftHigh & 0xFF00) | state.bgPatternHigh;
-    
-    state.bgAttributeLatch0 = state.bgAttribute;
-    
-    // Debug shift register loading
-    static int loadCount = 0;
-    if (loadCount < 15) {
-        printf("Load[%d]: tile=0x%02X, pattern=(0x%02X,0x%02X), "
-               "shifts: 0x%04X->0x%04X, 0x%04X->0x%04X\n",
-               loadCount, state.bgTileIndex,
-               state.bgPatternLow, state.bgPatternHigh,
-               oldShiftLow, state.bgPatternShiftLow,
-               oldShiftHigh, state.bgPatternShiftHigh);
-        loadCount++;
-    }
-}
-
-void PPUCycleAccurate::shiftBackgroundRegisters()
-{
-    // Shift left by 1 bit every cycle
-    state.bgPatternShiftLow <<= 1;
-    state.bgPatternShiftHigh <<= 1;
-}
-
-void PPUCycleAccurate::evaluateSprites(int scanline)
-{
-    if (scanline >= 240) return;
-    
-    state.spriteCount = 0;
-    state.sprite0Present = false;
-    
-    // Check all 64 sprites
-    for (int i = 0; i < 64 && state.spriteCount < 8; i++) {
+    for (int i = 63; i >= 0; i--) {
         uint8_t spriteY = oam[i * 4];
-        uint8_t spriteIndex = oam[i * 4 + 1];
-        uint8_t spriteAttr = oam[i * 4 + 2];
+        uint8_t tileIndex = oam[i * 4 + 1];
+        uint8_t attributes = oam[i * 4 + 2];
         uint8_t spriteX = oam[i * 4 + 3];
         
-        // Check if sprite is on this scanline
-        spriteY++; // Sprite Y is delayed by 1
-        if (scanline >= spriteY && scanline < spriteY + 8) {
-            // Add sprite to render list
-            int spriteSlot = state.spriteCount++;
-            state.sprites[spriteSlot].x = spriteX;
-            state.sprites[spriteSlot].attribute = spriteAttr;
-            state.sprites[spriteSlot].index = i;
-            
-            if (i == 0) {
-                state.sprite0Present = true;
-            }
-            
-            // Fetch sprite pattern data
-            uint8_t fineY = scanline - spriteY;
-            if (spriteAttr & 0x80) { // Vertical flip
-                fineY = 7 - fineY;
-            }
-            
-            uint16_t tileAddr = spriteIndex;
-            if (ppuCtrl & 0x08) { // Sprite pattern table
-                tileAddr += 256;
-            }
-            
-            // Fetch pattern data through engine
-            state.sprites[spriteSlot].patternLow = engine.readCHRData(tileAddr * 16 + fineY);
-            state.sprites[spriteSlot].patternHigh = engine.readCHRData(tileAddr * 16 + fineY + 8);
-        }
-    }
-}
-
-void PPUCycleAccurate::renderPixel(int scanline, int cycle)
-{
-    int pixelX = cycle - 1;
-    if (pixelX >= 256 || scanline >= 240) return;
-    
-    uint16_t finalPixel = convertToRGB565(palette[0]);
-    
-    // Get background pixel
-    if (ppuMask & 0x08) {
-        int fineX = ppuScrollX & 0x07;
-        finalPixel = getBackgroundPixel(fineX);
+        if (spriteY >= 240) continue;
         
-        // Enhanced boundary debug - show more info
-        if (scanline < 3 && pixelX < 16) {
-            printf("Boundary[%d,%d]: scroll=%d, fineX=%d, "
-                   "shifts=(0x%04X,0x%04X), pixel=0x%04X, bg=0x%02X\n",
-                   pixelX, scanline, ppuScrollX, fineX,
-                   state.bgPatternShiftLow, state.bgPatternShiftHigh, 
-                   finalPixel, palette[0]);
+        if (sprite8x16) {
+            spritePatternTable[tileIndex & 0xFE].draw_sprite(frameBuffer, spriteX, spriteY, attributes, &paletteRAM[16]);
+            spritePatternTable[tileIndex | 0x01].draw_sprite(frameBuffer, spriteX, spriteY + 8, attributes, &paletteRAM[16]);
+        } else {
+            spritePatternTable[tileIndex].draw_sprite(frameBuffer, spriteX, spriteY, attributes, &paletteRAM[16]);
         }
     }
+}
+
+// Compatibility methods for existing SMBEmulator code
+void PPUCycleAccurate::syncWithMainPPU(PPU* mainPPU) {
+    if (!mainPPU) return;
     
-    // Get sprite pixel
-    if (ppuMask & 0x10) {
-        bool sprite0Hit = false;
-        bool spritePriority = false;
-        uint16_t spritePixel = getSpritePixel(pixelX, sprite0Hit, spritePriority);
-        
-        if (spritePixel != 0) {
-            if (!spritePriority || finalPixel == convertToRGB565(palette[0])) {
-                finalPixel = spritePixel;
+    ppuCtrl = mainPPU->getControl();
+    ppuMask = mainPPU->getMask();
+    ppuStatus = mainPPU->getStatus();
+    scrollX = mainPPU->getScrollX();
+    scrollY = mainPPU->getScrollY();
+    
+    memcpy(paletteRAM, mainPPU->getPaletteRAM(), 32);
+    memcpy(oam, mainPPU->getOAM(), 256);
+    
+    uint8_t* vram = mainPPU->getVRAM();
+    if (vram) {
+        for (int i = 0; i < 4; i++) {
+            for (int addr = 0; addr < 1024; addr++) {
+                ntc[i]->write(addr, vram[i * 1024 + addr]);
             }
         }
     }
-    
-    frameBuffer[scanline * 256 + pixelX] = finalPixel;
 }
 
-uint16_t PPUCycleAccurate::getBackgroundPixel(int fineX)
-{
-    // Read from the shift register based on fine X scroll
-    // The shift registers are shifted left every cycle
-    // Bit 15 is the leftmost pixel of the current tile, bit 8 is the rightmost
-    
-    int bitPosition = 15 - fineX;
-    
-    // Clamp bit position to valid range
-    if (bitPosition < 8) bitPosition = 8;
-    if (bitPosition > 15) bitPosition = 15;
-    
-    uint8_t pixel = 0;
-    if (state.bgPatternShiftLow & (1 << bitPosition)) pixel |= 1;
-    if (state.bgPatternShiftHigh & (1 << bitPosition)) pixel |= 2;
-    
-    // Debug to see what's happening at the boundary
-    static int debugCount = 0;
-    if (debugCount < 10) {
-        printf("GetPixel[%d]: fineX=%d, bitPos=%d, shifts=(0x%04X,0x%04X), pixel=%d\n",
-               debugCount, fineX, bitPosition, 
-               state.bgPatternShiftLow, state.bgPatternShiftHigh, pixel);
-        debugCount++;
-    }
-    
-    if (pixel == 0) {
-        return convertToRGB565(palette[0]);
-    }
-    
-    uint8_t paletteIndex = (state.bgAttributeLatch0 * 4) + pixel;
-    if (paletteIndex >= 32) paletteIndex = 0;
-    
-    return convertToRGB565(palette[paletteIndex]);
+void PPUCycleAccurate::stepCycle(int scanline, int cycle) {
+    // No-op for frame-based rendering
 }
 
-
-
-uint16_t PPUCycleAccurate::getSpritePixel(int pixelX, bool& sprite0Hit, bool& spritePriority)
-{
-    sprite0Hit = false;
-    spritePriority = false;
-    
-    // Check sprites in priority order (lowest index first)
-    for (int i = 0; i < state.spriteCount; i++) {
-        auto& sprite = state.sprites[i];
-        
-        if (pixelX >= sprite.x && pixelX < sprite.x + 8) {
-            // Get pixel from sprite
-            int spritePixelX = pixelX - sprite.x;
-            if (sprite.attribute & 0x40) { // Horizontal flip
-                spritePixelX = 7 - spritePixelX;
-            }
-            
-            uint8_t pixel = 0;
-            if (sprite.patternLow & (1 << (7 - spritePixelX))) pixel |= 1;
-            if (sprite.patternHigh & (1 << (7 - spritePixelX))) pixel |= 2;
-            
-            if (pixel != 0) { // Non-transparent
-                if (sprite.index == 0) {
-                    sprite0Hit = true;
-                }
-                
-                spritePriority = (sprite.attribute & 0x20) != 0;
-                
-                // Get color from sprite palette
-                uint8_t spritePalette = sprite.attribute & 0x03;
-                uint8_t colorIndex = palette[0x10 + spritePalette * 4 + pixel];
-                return convertToRGB565(colorIndex);
-            }
-        }
-    }
-    
-    return 0; // No sprite pixel
-}
-
-void PPUCycleAccurate::getFrameBuffer(uint16_t* buffer)
-{
-    memcpy(buffer, frameBuffer, 256 * 240 * sizeof(uint16_t));
-}
-
-// Utility methods
-uint16_t PPUCycleAccurate::getNametableAddress(int tileX, int tileY)
-{
-    // Simplified nametable addressing
-    int nametable = 0;
-    if (tileX >= 32) {
-        nametable = 1;
-        tileX -= 32;
-    }
-    
-    return 0x2000 + (nametable * 0x400) + (tileY * 32) + tileX;
-}
-
-uint16_t PPUCycleAccurate::getAttributeAddress(int tileX, int tileY)
-{
-    int nametable = 0;
-    if (tileX >= 32) {
-        nametable = 1;
-        tileX -= 32;
-    }
-    
-    return 0x23C0 + (nametable * 0x400) + (tileY / 4) * 8 + (tileX / 4);
-}
-
-uint8_t PPUCycleAccurate::getAttributeBits(int tileX, int tileY, uint8_t attrByte)
-{
-    int quadX = (tileX / 2) % 2;
-    int quadY = (tileY / 2) % 2;
-    int shift = (quadY * 4) + (quadX * 2);
-    
-    return (attrByte >> shift) & 0x03;
-}
-
-uint16_t PPUCycleAccurate::applyNametableMirroring(uint16_t address)
-{
-    // DuckTales uses vertical mirroring (mapper 2 = UxROM)
-    // Vertical mirroring: $2000=$2800, $2400=$2C00
-    
-    if (address >= 0x3000) {
-        // Mirror $3000-$3EFF to $2000-$2EFF
-        address -= 0x1000;
-    }
-    
-    if (address >= 0x2800 && address < 0x2C00) {
-        // $2800-$2BFF mirrors to $2000-$23FF  
-        address -= 0x800;
-    } else if (address >= 0x2C00 && address < 0x3000) {
-        // $2C00-$2FFF mirrors to $2400-$27FF
-        address -= 0x800;
-    }
-    
-    return address;
-}
-
-uint16_t PPUCycleAccurate::convertToRGB565(uint8_t colorIndex)
-{
-    if (colorIndex >= 64) colorIndex = 0;
-    
-    uint32_t color32 = paletteRGB[colorIndex];
-    
-    int r = (color32 >> 16) & 0xFF;
-    int g = (color32 >> 8) & 0xFF;
-    int b = color32 & 0xFF;
-    
-    // Convert to RGB565
-    return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+void PPUCycleAccurate::getFrameBuffer(uint16_t* buffer) {
+    render(buffer);
 }

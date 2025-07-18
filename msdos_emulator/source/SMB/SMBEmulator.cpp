@@ -1,7 +1,9 @@
+#include <iostream>
 #include <cstring>
 #include <cstdint>
 #include <string>
 #include <fstream>
+#include <chrono>
 #include "SMBEmulator.hpp"
 #include "../Emulation/APU.hpp"
 #include "../Emulation/PPU.hpp"
@@ -504,6 +506,44 @@ void SMBEmulator::handleNMI()
     frameCycles += 7;
 }
 
+/*void SMBEmulator::update()
+{
+    if (!romLoaded) return;
+
+#ifdef __DJGPP__
+    // BIOS timer tick (each tick ≈ 55ms)
+    unsigned long ticksStart = (*(unsigned long*)MK_FP(0x40, 0x6C));
+#else
+    auto start = std::chrono::high_resolution_clock::now();
+#endif
+
+    if (needsCycleAccuracy()) {
+        updateCycleAccurate();
+    } else {
+        updateFrameBased();
+    }
+
+#ifdef __DJGPP__
+    unsigned long ticksEnd = (*(unsigned long*)MK_FP(0x40, 0x6C));
+    unsigned long ticksElapsed = ticksEnd - ticksStart;
+
+    std::ofstream logFile("timing.log", std::ios::app);
+    if (logFile.is_open()) {
+        logFile << "[DJGPP] SMBEmulator::update took approx " << (ticksElapsed * 55)
+                << " ms (" << (needsCycleAccuracy() ? "Cycle Accurate" : "Frame Based") << ")\n";
+        logFile.close();
+    }
+#else
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+
+    std::cout << "[SMBEmulator::update] took " << duration_us / 1000.0 << " ms ("
+              << (needsCycleAccuracy() ? "Cycle Accurate" : "Frame Based") << ")\n";
+#endif
+}*/
+
+
+
 void SMBEmulator::update()
 {
     if (!romLoaded) return;
@@ -664,7 +704,6 @@ void SMBEmulator::updateCycleAccurate()
             }
             
             // === STEP CYCLE-ACCURATE PPU ===
-            // This is the critical line that was missing!
             ppuCycleAccurate->stepCycle(scanline, cycle);
             
             // === MAPPER-SPECIFIC PPU EVENTS ===
@@ -704,13 +743,6 @@ void SMBEmulator::updateCycleAccurate()
         apu->stepFrame();
     }
     
-    // Debug output every 60 frames
-    static int frameCount = 0;
-    frameCount++;
-    if (frameCount % 60 == 0) {
-        printf("Cycle-accurate frame %d completed, PC=$%04X, total cycles=%llu\n", 
-               frameCount, regPC, totalCycles);
-    }
 }
 
 void SMBEmulator::checkSprite0Hit(int scanline, int cycle)
