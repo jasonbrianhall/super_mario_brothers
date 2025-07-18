@@ -53,10 +53,11 @@ public:
     void renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight);
 #else
     void render(unsigned int* buffer);
-    void render16(uint16_t* buffer);
     void renderScaled32(unsigned int* buffer, int screenWidth, int screenHeight);
 #endif
     void renderDirectFast(uint16_t* buffer, int screenWidth, int screenHeight);
+    void render16(uint16_t* buffer);
+
     
     // Audio
     void audioCallback(uint8_t* stream, int length);

@@ -2296,12 +2296,10 @@ void SMBEmulator::scaleBuffer16(uint16_t* nesBuffer, uint16_t* screenBuffer, int
     }
 }
 
-#ifdef __djgpp__
 void SMBEmulator::render16(uint16_t* buffer)
 {
     ppu->render16(buffer);
 }
-#endif
 
 void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight)
 {

@@ -73,7 +73,7 @@ case "${1:-dos}" in
     ;;
 
 "dos")
-    echo "Building SMB virtualizer for DOS..."
+    echo "Building WarpNES Emulator for DOS..."
     
     # Ensure Allegro is built
     ./build_dos.sh allegro
@@ -113,7 +113,7 @@ case "${1:-dos}" in
             echo 'Converting to COFF format...' &&
             exe2coff /src/$BUILD_DIR/smb.exe &&
             echo 'Creating final DOS executable with DPMI stub...' &&
-            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/smb.exe &&
+            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/warpnes.exe &&
             echo 'DOS build complete!'
         "
     
@@ -131,7 +131,7 @@ case "${1:-dos}" in
     fi
     
     echo ""
-    echo "🎮 SMB DOS Virtualizer built with Allegro 4!"
+    echo "🎮 WarpNES Emulator built with Allegro 4!"
     echo "📁 Files:"
     rm $BUILD_DIR/smb
     ls -la $BUILD_DIR/*.exe $BUILD_DIR/*.EXE 2>/dev/null || true
@@ -170,23 +170,23 @@ case "${1:-dos}" in
             g++ -c /src/source/dos_main.cpp -I/src/$BUILD_DIR/source-install/include -O3 -march=i586 -fomit-frame-pointer -ffast-math -funroll-loops -fpermissive -w -o /src/$BUILD_DIR/obj/Main.o && \
             g++ /src/$BUILD_DIR/obj/*.o -L/src/$BUILD_DIR/source-install/lib -lalleg -lm -O3 -march=i586 -s -o /src/$BUILD_DIR/smb.exe &&
             exe2coff /src/$BUILD_DIR/smb.exe && 
-            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/smbe.exe &&
+            cat /src/$BUILD_DIR/csdpmi/bin/CWSDSTUB.EXE /src/$BUILD_DIR/smb > /src/$BUILD_DIR/warpnes.exe &&
             echo 'Quick compile complete!'
         "
     rm $BUILD_DIR/smb -f
-    echo "🎮 SMB DOS Virtualizer compiled!"
+    echo "🎮 WarpNES Emulator compiled!"
     echo "📁 Files:"
     ls -la $BUILD_DIR/* 2>/dev/null || true
     ;;
 
 "run")
-    if [ ! -f "$BUILD_DIR/smb.exe" ]; then
-        echo "SMB virtualizer not built yet. Building..."
+    if [ ! -f "$BUILD_DIR/warpnes.exe" ]; then
+        echo "WarpNES Emulator not built yet. Building..."
         ./build_dos.sh dos
     fi
     
-    echo "Running SMB virtualizer in DOSBox..."
-    cd $BUILD_DIR && dosbox smb.exe
+    echo "Running WarpNES Emulator in DOSBox..."
+    cd $BUILD_DIR && dosbox warpnes.exe
     ;;
 
 "clean")
