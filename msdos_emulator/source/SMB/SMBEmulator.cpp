@@ -91,13 +91,196 @@ void SMBEmulator::writeCHRData(uint16_t address, uint8_t value)
 {
     if (address >= 0x2000) return;
     
-    // Only allow writes for mappers that use CHR-RAM
-    if (nesHeader.mapper == 2) {  // UxROM uses CHR-RAM
-        if (address < chrSize) {
-            chrROM[address] = value;  // Note: chrROM is actually CHR-RAM for UxROM
-        }
+    // Handle CHR-RAM writes based on mapper type
+    switch (nesHeader.mapper) {
+        case 0:  // NROM
+            // NROM can have CHR-RAM if chrROMPages == 0
+            if (nesHeader.chrROMPages == 0) {
+                if (address < chrSize) {
+                    chrROM[address] = value;  // chrROM is actually CHR-RAM
+                    
+                    static int nromChrWriteCount = 0;
+                    if (nromChrWriteCount < 5) {
+                        printf("NROM CHR-RAM write: $%04X = $%02X\n", address, value);
+                        nromChrWriteCount++;
+                    }
+                }
+            }
+            // NROM with CHR-ROM: writes are ignored (read-only)
+            break;
+            
+        case 1:  // MMC1
+            if (nesHeader.chrROMPages == 0) {
+                // MMC1 with CHR-RAM (like Metroid)
+                if (address < chrSize) {
+                    chrROM[address] = value;  // Direct write to CHR-RAM
+                    
+                    static int mmc1ChrWriteCount = 0;
+                    if (mmc1ChrWriteCount < 10) {
+                        printf("MMC1 CHR-RAM write: $%04X = $%02X (count: %d)\n", 
+                               address, value, mmc1ChrWriteCount);
+                        mmc1ChrWriteCount++;
+                    }
+                }
+            }
+            // MMC1 with CHR-ROM: writes are ignored (banking controlled by registers)
+            break;
+            
+        case 2:  // UxROM
+            // UxROM always uses CHR-RAM
+            if (address < chrSize) {
+                chrROM[address] = value;  // chrROM is actually CHR-RAM for UxROM
+                
+                static int uxromChrWriteCount = 0;
+                if (uxromChrWriteCount < 5) {
+                    printf("UxROM CHR-RAM write: $%04X = $%02X\n", address, value);
+                    uxromChrWriteCount++;
+                }
+            }
+            break;
+            
+        case 3:  // CNROM
+            // CNROM typically uses CHR-ROM (read-only), but some variants have CHR-RAM
+            if (nesHeader.chrROMPages == 0) {
+                if (address < chrSize) {
+                    chrROM[address] = value;
+                    
+                    static int cnromChrWriteCount = 0;
+                    if (cnromChrWriteCount < 5) {
+                        printf("CNROM CHR-RAM write: $%04X = $%02X\n", address, value);
+                        cnromChrWriteCount++;
+                    }
+                }
+            }
+            // CNROM with CHR-ROM: writes ignored
+            break;
+            
+        case 4:  // MMC3
+            if (nesHeader.chrROMPages == 0) {
+                // MMC3 with CHR-RAM
+                if (address < chrSize) {
+                    chrROM[address] = value;
+                    
+                    static int mmc3ChrWriteCount = 0;
+                    if (mmc3ChrWriteCount < 5) {
+                        printf("MMC3 CHR-RAM write: $%04X = $%02X\n", address, value);
+                        mmc3ChrWriteCount++;
+                    }
+                }
+            }
+            // MMC3 with CHR-ROM: writes ignored (banking controlled)
+            break;
+            
+        case 66: // GxROM
+            if (nesHeader.chrROMPages == 0) {
+                // GxROM with CHR-RAM
+                if (address < chrSize) {
+                    chrROM[address] = value;
+                    
+                    static int gxromChrWriteCount = 0;
+                    if (gxromChrWriteCount < 5) {
+                        printf("GxROM CHR-RAM write: $%04X = $%02X\n", address, value);
+                        gxromChrWriteCount++;
+                    }
+                }
+            }
+            // GxROM with CHR-ROM: writes ignored
+            break;
+            
+        case 7:  // AxROM
+            // AxROM typically uses CHR-RAM
+            if (address < chrSize) {
+                chrROM[address] = value;
+                
+                static int axromChrWriteCount = 0;
+                if (axromChrWriteCount < 5) {
+                    printf("AxROM CHR-RAM write: $%04X = $%02X\n", address, value);
+                    axromChrWriteCount++;
+                }
+            }
+            break;
+            
+        case 9:  // MMC2
+        case 10: // MMC4
+            if (nesHeader.chrROMPages == 0) {
+                if (address < chrSize) {
+                    chrROM[address] = value;
+                    
+                    static int mmc2_4ChrWriteCount = 0;
+                    if (mmc2_4ChrWriteCount < 5) {
+                        printf("MMC2/4 CHR-RAM write: $%04X = $%02X\n", address, value);
+                        mmc2_4ChrWriteCount++;
+                    }
+                }
+            }
+            break;
+            
+        case 11: // Color Dreams
+            if (nesHeader.chrROMPages == 0) {
+                if (address < chrSize) {
+                    chrROM[address] = value;
+                    
+                    static int colorDreamsChrWriteCount = 0;
+                    if (colorDreamsChrWriteCount < 5) {
+                        printf("Color Dreams CHR-RAM write: $%04X = $%02X\n", address, value);
+                        colorDreamsChrWriteCount++;
+                    }
+                }
+            }
+            break;
+            
+        case 13: // CPROM
+            // CPROM uses CHR-RAM
+            if (address < chrSize) {
+                chrROM[address] = value;
+                
+                static int cpromChrWriteCount = 0;
+                if (cpromChrWriteCount < 5) {
+                    printf("CPROM CHR-RAM write: $%04X = $%02X\n", address, value);
+                    cpromChrWriteCount++;
+                }
+            }
+            break;
+            
+        case 28: // Action 53
+        case 30: // UNROM 512
+            // These modern homebrew mappers often use CHR-RAM
+            if (address < chrSize) {
+                chrROM[address] = value;
+                
+                static int homebrewChrWriteCount = 0;
+                if (homebrewChrWriteCount < 5) {
+                    printf("Homebrew mapper %d CHR-RAM write: $%04X = $%02X\n", 
+                           nesHeader.mapper, address, value);
+                    homebrewChrWriteCount++;
+                }
+            }
+            break;
+            
+        default:
+            // For unknown mappers, be safe and allow CHR-RAM writes if no CHR-ROM
+            if (nesHeader.chrROMPages == 0) {
+                if (address < chrSize) {
+                    chrROM[address] = value;
+                    
+                    static int unknownChrWriteCount = 0;
+                    if (unknownChrWriteCount < 3) {
+                        printf("Unknown mapper %d CHR-RAM write: $%04X = $%02X\n", 
+                               nesHeader.mapper, address, value);
+                        unknownChrWriteCount++;
+                    }
+                }
+            } else {
+                // Unknown mapper with CHR-ROM - log the attempt but don't write
+                static int unknownChrROMWriteCount = 0;
+                if (unknownChrROMWriteCount < 3) {
+                    printf("Warning: Mapper %d attempted CHR-ROM write: $%04X = $%02X (ignored)\n", 
+                           nesHeader.mapper, address, value);
+                    unknownChrROMWriteCount++;
+                }
+            }
+            break;
     }
-    // Add other CHR-RAM mappers here if needed
 }
 
 
@@ -2372,75 +2555,216 @@ uint8_t SMBEmulator::readCHRData(uint16_t address)
 {
     if (address >= 0x2000) return 0;
     
-    if (nesHeader.mapper == 4) {
-        // MMC3 - 1KB CHR banks
-        uint8_t bankIndex = address / 0x400;  // 0-7
-        uint16_t bankOffset = address % 0x400;
-        uint8_t physicalBank = mmc3.currentCHRBanks[bankIndex];
-        uint32_t chrAddr = (physicalBank * 0x400) + bankOffset;
-        
-        // Debug specific problematic addresses
-        static int debugCount = 0;
-        
-        // Critical: Check if CHR bank is valid
-        uint8_t totalCHRBanks = chrSize / 0x400;
-        if (physicalBank >= totalCHRBanks) {
-            return 0;
-        }
-        
-        if (chrAddr < chrSize) {
-            return chrROM[chrAddr];
-        } else {
-            return 0;
-        }
-    }
-    
-    // Handle other mappers...
-    if (nesHeader.mapper == 66) {
-        uint32_t chrAddr = (gxrom.chrBank * 0x2000) + address;
-        if (chrAddr < chrSize) {
-            return chrROM[chrAddr];
-        }
-    } else if (nesHeader.mapper == 1) {
-        if (mmc1.control & 0x10) {
-            if (address < 0x1000) {
-                uint32_t chrAddr = (mmc1.currentCHRBank0 * 0x1000) + address;
-                if (chrAddr < chrSize) {
-                    return chrROM[chrAddr];
+    // Handle CHR reads based on mapper type
+    switch (nesHeader.mapper) {
+        case 0:  // NROM
+            {
+                if (nesHeader.chrROMPages == 0) {
+                    // NROM with CHR-RAM - direct access
+                    if (address < chrSize) {
+                        return chrROM[address];  // chrROM is actually CHR-RAM
+                    }
+                } else {
+                    // NROM with CHR-ROM - direct access, no banking
+                    if (address < chrSize) {
+                        return chrROM[address];
+                    }
                 }
-            } else {
-                uint32_t chrAddr = (mmc1.currentCHRBank1 * 0x1000) + (address - 0x1000);
-                if (chrAddr < chrSize) {
-                    return chrROM[chrAddr];
+                return 0;
+            }
+            
+        case 1:  // MMC1
+            {
+                if (nesHeader.chrROMPages == 0) {
+                    // MMC1 with CHR-RAM (like Metroid) - direct access, no banking needed
+                    if (address < chrSize) {
+                        return chrROM[address];  // chrROM is actually CHR-RAM
+                    }
+                } else {
+                    // MMC1 with CHR-ROM - banking support
+                    if (mmc1.control & 0x10) {
+                        // 4KB CHR mode
+                        if (address < 0x1000) {
+                            // $0000-$0FFF: First 4KB bank
+                            uint32_t chrAddr = (mmc1.currentCHRBank0 * 0x1000) + address;
+                            if (chrAddr < chrSize) {
+                                return chrROM[chrAddr];
+                            }
+                        } else {
+                            // $1000-$1FFF: Second 4KB bank
+                            uint32_t chrAddr = (mmc1.currentCHRBank1 * 0x1000) + (address - 0x1000);
+                            if (chrAddr < chrSize) {
+                                return chrROM[chrAddr];
+                            }
+                        }
+                    } else {
+                        // 8KB CHR mode
+                        uint32_t chrAddr = (mmc1.currentCHRBank0 * 0x2000) + address;
+                        if (chrAddr < chrSize) {
+                            return chrROM[chrAddr];
+                        }
+                    }
                 }
+                return 0;
             }
-        } else {
-            uint32_t chrAddr = (mmc1.currentCHRBank0 * 0x2000) + address;
-            if (chrAddr < chrSize) {
-                return chrROM[chrAddr];
+            
+        case 2:  // UxROM
+            {
+                // UxROM always uses CHR-RAM - direct access, no banking
+                if (address < chrSize) {
+                    return chrROM[address];  // chrROM is actually CHR-RAM
+                }
+                return 0;
             }
-        }
-    } else if (nesHeader.mapper == 0) {
-        if (address < chrSize) {
-            return chrROM[address];
-        }
-    } else if (nesHeader.mapper == 3) {
-        uint32_t chrAddr = (cnrom.chrBank * 0x2000) + address;
-        if (chrAddr < chrSize) {
-            return chrROM[chrAddr];
-        }
-    } else if (nesHeader.mapper == 2) {
-        // UxROM - uses CHR-RAM (no banking, direct access)
-        static int debugCount = 0;
-        static bool hasNonZeroData = false;
-        
-        if (address < chrSize) {
-            uint8_t data = chrROM[address];            
-            return data;
-        }
+            
+        case 3:  // CNROM
+            {
+                if (nesHeader.chrROMPages == 0) {
+                    // CNROM with CHR-RAM - direct access
+                    if (address < chrSize) {
+                        return chrROM[address];
+                    }
+                } else {
+                    // CNROM with CHR-ROM - 8KB banking
+                    uint32_t chrAddr = (cnrom.chrBank * 0x2000) + address;
+                    if (chrAddr < chrSize) {
+                        return chrROM[chrAddr];
+                    }
+                }
+                return 0;
+            }
+            
+        case 4:  // MMC3
+            {
+                if (nesHeader.chrROMPages == 0) {
+                    // MMC3 with CHR-RAM - direct access
+                    if (address < chrSize) {
+                        return chrROM[address];
+                    }
+                } else {
+                    // MMC3 with CHR-ROM - 1KB banking
+                    uint8_t bankIndex = address / 0x400;  // 0-7 (1KB banks)
+                    uint16_t bankOffset = address % 0x400;
+                    
+                    if (bankIndex < 8) {
+                        uint8_t physicalBank = mmc3.currentCHRBanks[bankIndex];
+                        uint32_t chrAddr = (physicalBank * 0x400) + bankOffset;
+                        
+                        // Bounds check
+                        uint8_t totalCHRBanks = chrSize / 0x400;
+                        if (physicalBank < totalCHRBanks && chrAddr < chrSize) {
+                            return chrROM[chrAddr];
+                        }
+                    }
+                }
+                return 0;
+            }
+            
+        case 66: // GxROM
+            {
+                if (nesHeader.chrROMPages == 0) {
+                    // GxROM with CHR-RAM - direct access
+                    if (address < chrSize) {
+                        return chrROM[address];
+                    }
+                } else {
+                    // GxROM with CHR-ROM - 8KB banking
+                    uint32_t chrAddr = (gxrom.chrBank * 0x2000) + address;
+                    if (chrAddr < chrSize) {
+                        return chrROM[chrAddr];
+                    }
+                }
+                return 0;
+            }
+            
+        case 7:  // AxROM
+            {
+                // AxROM uses CHR-RAM - direct access, no banking
+                if (address < chrSize) {
+                    return chrROM[address];  // chrROM is actually CHR-RAM
+                }
+                return 0;
+            }
+            
+        case 9:  // MMC2
+        case 10: // MMC4
+            {
+                if (nesHeader.chrROMPages == 0) {
+                    // MMC2/4 with CHR-RAM - direct access
+                    if (address < chrSize) {
+                        return chrROM[address];
+                    }
+                } else {
+                    // MMC2/4 with CHR-ROM - complex banking (simplified here)
+                    // For now, treat as direct access - full implementation would need
+                    // sprite 0 hit detection and banking state tracking
+                    if (address < chrSize) {
+                        return chrROM[address];
+                    }
+                }
+                return 0;
+            }
+            
+        case 11: // Color Dreams
+            {
+                if (nesHeader.chrROMPages == 0) {
+                    // Color Dreams with CHR-RAM - direct access
+                    if (address < chrSize) {
+                        return chrROM[address];
+                    }
+                } else {
+                    // Color Dreams with CHR-ROM - banking (implementation depends on variant)
+                    if (address < chrSize) {
+                        return chrROM[address];  // Simplified - no banking for now
+                    }
+                }
+                return 0;
+            }
+            
+        case 13: // CPROM
+            {
+                // CPROM uses CHR-RAM with banking
+                if (address < chrSize) {
+                    return chrROM[address];  // Direct access for now
+                }
+                return 0;
+            }
+            
+        case 28: // Action 53
+        case 30: // UNROM 512
+            {
+                // Modern homebrew mappers - usually CHR-RAM
+                if (address < chrSize) {
+                    return chrROM[address];  // Direct access
+                }
+                return 0;
+            }
+            
+        default:
+            {
+                // Unknown mapper - handle gracefully
+                if (nesHeader.chrROMPages == 0) {
+                    // Assume CHR-RAM with direct access
+                    if (address < chrSize) {
+                        return chrROM[address];
+                    }
+                } else {
+                    // Assume CHR-ROM with direct access (no banking)
+                    if (address < chrSize) {
+                        return chrROM[address];
+                    }
+                }
+                
+                // Debug unknown mapper access
+                static int unknownMapperReadCount = 0;
+                if (unknownMapperReadCount < 3) {
+                    printf("Unknown mapper %d CHR read: $%04X\n", nesHeader.mapper, address);
+                    unknownMapperReadCount++;
+                }
+                
+                return 0;
+            }
     }
-    
-    return 0;
 }
 
 uint8_t SMBEmulator::readCHRDataFromBank(uint16_t address, uint8_t bank)
