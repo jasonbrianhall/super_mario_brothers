@@ -608,6 +608,9 @@ void SMBEmulator::executeInstruction()
     uint8_t opcode = fetchByte();
     uint8_t cycles = instructionCycles[opcode];
     
+#ifdef PRINTOPCODE    
+    printf("%x ");
+#endif    
     // Decode and execute instruction
     switch (opcode) {
         // ADC - Add with Carry
