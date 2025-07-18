@@ -242,6 +242,7 @@ void ALR(uint16_t addr); // AND + LSR
 void ARR(uint16_t addr); // AND + ROR
 void XAA(uint16_t addr); // Unstable AND
 void AXS(uint16_t addr); // (A & X) - immediate
+void KIL();
     
     // Save state structure
     struct EmulatorSaveState {

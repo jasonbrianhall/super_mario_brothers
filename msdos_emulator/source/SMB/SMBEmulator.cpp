@@ -689,6 +689,12 @@ void SMBEmulator::executeInstruction()
         // DEX, DEY - Decrement X, Y
         case 0xCA: DEX(); break;
         case 0x88: DEY(); break;
+
+        case 0x02: case 0x12: case 0x22: case 0x32: case 0x42: case 0x52: 
+        case 0x62: case 0x72: case 0x92: case 0xB2: case 0xD2: case 0xF2:
+           KIL(); 
+           break;
+
         
         // EOR - Exclusive OR
         case 0x49: EOR(addrImmediate()); break;
@@ -2171,6 +2177,21 @@ void SMBEmulator::SLO(uint16_t addr)
     writeByte(addr, value);
     regA |= value;
     updateZN(regA);
+}
+
+void SMBEmulator::KIL()
+{
+    // KIL/JAM/HLT - Halts the CPU
+    // In a real NES, this would lock up the system
+    // For emulation, we can either:
+    // 1. Actually halt (infinite loop)
+    // 2. Treat as NOP and continue
+    // 3. Reset the system
+    
+    // Option 2: Treat as NOP for compatibility
+    // This allows games that accidentally hit illegal opcodes to continue
+    totalCycles += 2;
+    frameCycles += 2;    
 }
 
 void SMBEmulator::RLA(uint16_t addr)
