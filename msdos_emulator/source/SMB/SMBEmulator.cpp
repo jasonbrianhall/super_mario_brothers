@@ -790,10 +790,47 @@ void SMBEmulator::executeInstruction()
 {
     uint8_t opcode = fetchByte();
     uint8_t cycles = instructionCycles[opcode];
-    
+
+
 #ifdef PRINTOPCODE    
-    printf("%x ");
-#endif    
+if (opcode == 0x02 || opcode == 0x03 || opcode == 0x04 || opcode == 0x07 || 
+    opcode == 0x0B || opcode == 0x0C || opcode == 0x0F || opcode == 0x12 || 
+    opcode == 0x13 || opcode == 0x14 || opcode == 0x17 || opcode == 0x1A || 
+    opcode == 0x1B || opcode == 0x1C || opcode == 0x1F || opcode == 0x22 || 
+    opcode == 0x23 || opcode == 0x27 || opcode == 0x2B || opcode == 0x2F || 
+    opcode == 0x32 || opcode == 0x33 || opcode == 0x34 || opcode == 0x37 || 
+    opcode == 0x3A || opcode == 0x3B || opcode == 0x3C || opcode == 0x3F || 
+    opcode == 0x42 || opcode == 0x43 || opcode == 0x44 || opcode == 0x47 || 
+    opcode == 0x4B || opcode == 0x4F || opcode == 0x52 || opcode == 0x53 || 
+    opcode == 0x54 || opcode == 0x57 || opcode == 0x5A || opcode == 0x5B || 
+    opcode == 0x5C || opcode == 0x5F || opcode == 0x62 || opcode == 0x63 || 
+    opcode == 0x64 || opcode == 0x67 || opcode == 0x6B || opcode == 0x6F || 
+    opcode == 0x72 || opcode == 0x73 || opcode == 0x74 || opcode == 0x77 || 
+    opcode == 0x7A || opcode == 0x7B || opcode == 0x7C || opcode == 0x7F || 
+    opcode == 0x80 || opcode == 0x82 || opcode == 0x83 || opcode == 0x87 || 
+    opcode == 0x89 || opcode == 0x8B || opcode == 0x8F || opcode == 0x92 || 
+    opcode == 0x93 || opcode == 0x97 || opcode == 0x9B || opcode == 0x9C || 
+    opcode == 0x9E || opcode == 0x9F || opcode == 0xA3 || opcode == 0xA7 || 
+    opcode == 0xAB || opcode == 0xAF || opcode == 0xB2 || opcode == 0xB3 || 
+    opcode == 0xB7 || opcode == 0xBB || opcode == 0xBF || opcode == 0xC2 || 
+    opcode == 0xC3 || opcode == 0xC7 || opcode == 0xCB || opcode == 0xCF || 
+    opcode == 0xD2 || opcode == 0xD3 || opcode == 0xD4 || opcode == 0xD7 || 
+    opcode == 0xDA || opcode == 0xDB || opcode == 0xDC || opcode == 0xDF || 
+    opcode == 0xE2 || opcode == 0xE3 || opcode == 0xE7 || opcode == 0xEB || 
+    opcode == 0xEF || opcode == 0xF2 || opcode == 0xF3 || opcode == 0xF4 || 
+    opcode == 0xF7 || opcode == 0xFA || opcode == 0xFB || opcode == 0xFC || 
+    opcode == 0xFF) {
+    
+    static int illegalCount = 0;
+    illegalCount++;
+    printf("ILLEGAL OPCODE[%d]: $%02X at PC=$%04X\n", 
+           illegalCount, opcode, regPC - 1);
+}
+    
+    printf("  LEGAL OPCODE[%d]: $%02X at PC=$%04X\n", 
+           illegalCount, opcode, regPC - 1);
+#endif   
+ 
     // Decode and execute instruction
     switch (opcode) {
         // ADC - Add with Carry
@@ -1116,15 +1153,15 @@ void SMBEmulator::executeInstruction()
         case 0x1A: case 0x3A: case 0x5A: case 0x7A: 
         case 0xDA: case 0xFA: NOP(); break;
         case 0x80: case 0x82: case 0x89: case 0xC2: case 0xE2: 
-            regPC++; cycles = 2; break; // NOP immediate
+            regPC++; break; // NOP immediate
         case 0x04: case 0x44: case 0x64: 
-            regPC++; cycles = 3; break; // NOP zero page
+            regPC++; break; // NOP zero page
         case 0x0C: 
-            regPC += 2; cycles = 4; break; // NOP absolute
+            regPC += 2;break; // NOP absolute
         case 0x14: case 0x34: case 0x54: case 0x74: case 0xD4: case 0xF4:
-            regPC++; cycles = 4; break; // NOP zero page,X
+            regPC++; break; // NOP zero page,X
         case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xDC: case 0xFC:
-            regPC += 2; cycles = 4; break; // NOP absolute,X
+            regPC += 2; break; // NOP absolute,X
         
         default:
             std::cerr << "Unknown opcode: $" << std::hex << (int)opcode << " at PC=$" << (regPC - 1) << std::dec << std::endl;
