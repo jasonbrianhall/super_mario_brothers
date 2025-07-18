@@ -1064,10 +1064,7 @@ void AllegroMainWindow::run(const char* romFilename)
 
     const double targetFrameMs = 1000.0 / Configuration::getFrameRate();
 
-    #ifdef __DJGPP__
-    unsigned long lastTicks = uclock();  // DOS: get current ticks
-    const double ticksPerMs = UCLOCKS_PER_SEC / 1000.0;
-    #else
+    #ifndef __DJGPP__
     auto lastFrameTime = std::chrono::high_resolution_clock::now();
     #endif
 
@@ -1076,6 +1073,7 @@ void AllegroMainWindow::run(const char* romFilename)
 
         if (!gamePaused && !showingMenu && currentDialog == DIALOG_NONE) {
             engine.update();
+#ifndef __DJGPP__             
             frameCount++;
             if (frameCount % 300 == 0) {
                 clock_t now = clock();
@@ -1083,6 +1081,7 @@ void AllegroMainWindow::run(const char* romFilename)
                 double fps = 300.0 / elapsed;
                 lastPerfCheck = now;
             }
+#endif
 
             if (dosAudioInitialized && Configuration::getAudioEnabled() && audiostream) {
                 void* audiobuf = get_audio_stream_buffer(audiostream);
@@ -1101,7 +1100,7 @@ void AllegroMainWindow::run(const char* romFilename)
         updateAndDraw();
 
         #ifdef __DJGPP__
-        vsync();
+        //vsync();
         #else
         auto now = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> elapsed = now - lastFrameTime;
