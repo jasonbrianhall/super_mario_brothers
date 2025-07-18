@@ -622,13 +622,9 @@ void SMBEmulator::updateCycleAccurate()
             ppuCycleState.inVBlank = false;
             ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
         } else if (scanline == VBLANK_START_SCANLINE) {
-            // VBlank starts
             ppuCycleState.inVBlank = true;
             ppu->setVBlankFlag(true);
             ppu->captureFrameScroll();
-            
-            // NMI timing - happens on cycle 1 of scanline 241
-            // We'll handle this in the cycle loop
         } else if (scanline == 261) {
             // Pre-render scanline
             ppuCycleState.inVBlank = false;
@@ -674,44 +670,15 @@ void SMBEmulator::updateCycleAccurate()
                 checkMMC3IRQ(scanline, cycle);
             }
             
-            // MMC1 CHR bank switching can happen mid-frame
-            if (nesHeader.mapper == 1) {
-                // MMC1 writes can happen anytime, no special PPU timing needed
-            }
-            
-            // UxROM CHR-RAM writes can happen anytime  
-            if (nesHeader.mapper == 2) {
-                // CHR-RAM updates are immediate
-            }
-            
             // === CPU EXECUTION ===
             
             // Run CPU every 3 PPU cycles
             cpuCycleCounter++;
             if (cpuCycleCounter >= CPU_DIVIDER) {
                 cpuCycleCounter = 0;
+                
+                // Execute one CPU instruction
                 executeInstruction();
-                
-                // Check for infinite loops in CPU
-                static uint16_t lastCPU_PC = 0;
-                static int samePCCount = 0;
-                
-                if (regPC == lastCPU_PC) {
-                    samePCCount++;
-                    if (samePCCount > 10000) {  // Stuck for too long
-                        printf("CRITICAL: CPU stuck at PC=$%04X during cycle-accurate emulation\n", regPC);
-                        printf("Scanline: %d, Cycle: %d\n", scanline, cycle);
-                        printf("PPU State: VBlank=%d, Rendering=%d\n", ppuCycleState.inVBlank, ppuCycleState.renderingEnabled);
-                        printf("Next opcode: $%02X\n", readByte(regPC));
-                        
-                        // Emergency recovery
-                        samePCCount = 0;
-                        regPC++;  // Force PC to advance
-                    }
-                } else {
-                    samePCCount = 0;
-                    lastCPU_PC = regPC;
-                }
             }
             
             // === STEP PPU INTERNAL STATE ===
@@ -720,7 +687,6 @@ void SMBEmulator::updateCycleAccurate()
         
         // End of scanline processing
         if (scanline < VISIBLE_SCANLINES && ppuCycleState.renderingEnabled) {
-            // Handle any end-of-scanline PPU events
             stepPPUEndOfScanline(scanline);
         }
     }
@@ -734,14 +700,14 @@ void SMBEmulator::updateCycleAccurate()
         apu->stepFrame();
     }
     
-    // Frame completion debug
+    // Debug output every 60 frames
     static int frameCount = 0;
     frameCount++;
-    if (frameCount % 60 == 0) {  // Every second
-        printf("Cycle-accurate frame %d completed, PC=$%04X\n", frameCount, regPC);
+    if (frameCount % 60 == 0) {
+        printf("Cycle-accurate frame %d completed, PC=$%04X, total cycles=%llu\n", 
+               frameCount, regPC, totalCycles);
     }
 }
-
 void SMBEmulator::checkSprite0Hit(int scanline, int cycle)
 {
     // More accurate sprite 0 hit timing
