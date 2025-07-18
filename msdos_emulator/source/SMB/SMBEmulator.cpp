@@ -50,7 +50,8 @@ const uint8_t SMBEmulator::instructionCycles[256] = {
 SMBEmulator::SMBEmulator()
     : regA(0), regX(0), regY(0), regSP(0xFF), regPC(0), regP(0x24),
       totalCycles(0), frameCycles(0), prgROM(nullptr), chrROM(nullptr),
-      prgSize(0), chrSize(0), romLoaded(false) {
+      prgSize(0), chrSize(0), romLoaded(false),
+      masterCycles(0), ppuCycles(0), nmiPending(false) {
   // Initialize RAM
   memset(ram, 0, sizeof(ram));
   memset(&nesHeader, 0, sizeof(nesHeader));
@@ -644,130 +645,133 @@ void SMBEmulator::updateFrameBased() {
 }
 
 void SMBEmulator::updateCycleAccurate() {
-  if (!romLoaded)
-    return;
-
-  // Sync PPU state at start of frame
-  ppuCycleAccurate->syncWithMainPPU(ppu);
-
-  frameCycles = 0;
-  ppuCycleState.scanline = 0;
-  ppuCycleState.cycle = 0;
-  ppuCycleState.inVBlank = false;
-  ppuCycleState.renderingEnabled = false;
-
-  // NTSC PPU timing constants
-  const int CYCLES_PER_SCANLINE = 341;
-  const int VISIBLE_SCANLINES = 240;
-  const int VBLANK_START_SCANLINE = 241;
-  const int TOTAL_SCANLINES = 262;
-  const int CPU_DIVIDER = 3; // CPU runs every 3 PPU cycles
-
-  // Frame timing state
-  bool frameEven =
-      (totalCycles / (TOTAL_SCANLINES * CYCLES_PER_SCANLINE)) % 2 == 0;
-  int cpuCycleCounter = 0;
-
-  // CRITICAL FIX: Track NMI delay properly
-  bool nmiRequested = false;
-  int nmiDelayCycles = 0;
-
-  for (int scanline = 0; scanline < TOTAL_SCANLINES; scanline++) {
-    ppuCycleState.scanline = scanline;
-
-    // Determine scanline state
-    if (scanline < VISIBLE_SCANLINES) {
-      ppuCycleState.inVBlank = false;
-      ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
-    } else if (scanline == VBLANK_START_SCANLINE) {
-      ppuCycleState.inVBlank = true;
-      // DON'T set VBlank flag here - do it at the right cycle
-    } else if (scanline == 261) {
-      // Pre-render scanline
-      ppuCycleState.inVBlank = false;
-      ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
+    if (!romLoaded) return;
+    
+    // Sync PPU state at start of frame (if available)
+    if (ppuCycleAccurate) {
+        ppuCycleAccurate->syncWithMainPPU(ppu);
     }
-
-    // Calculate cycles for this scanline (handle odd frame skip)
-    int cyclesThisScanline = CYCLES_PER_SCANLINE;
-    if (scanline == 261 && frameEven && ppuCycleState.renderingEnabled) {
-      cyclesThisScanline = 340; // Skip cycle 340 on odd frames when rendering
-    }
-
-    for (int cycle = 0; cycle < cyclesThisScanline; cycle++) {
-      ppuCycleState.cycle = cycle;
-
-      // === PPU CYCLE-SPECIFIC EVENTS ===
-
-      // CRITICAL FIX: VBlank flag set on cycle 1 of scanline 241
-      if (scanline == VBLANK_START_SCANLINE && cycle == 1) {
-        ppu->setVBlankFlag(true);
-        ppu->captureFrameScroll();
-
-        // Request NMI with proper delay (don't trigger immediately)
-        if (ppu->getControl() & 0x80) {
-          nmiRequested = true;
-          nmiDelayCycles = 2; // 2 CPU cycle delay minimum
+    
+    frameCycles = 0;
+    ppuCycleState.scanline = 0;
+    ppuCycleState.cycle = 0;
+    ppuCycleState.inVBlank = false;
+    ppuCycleState.renderingEnabled = false;
+    
+    // NTSC PPU timing constants
+    const int CYCLES_PER_SCANLINE = 341;
+    const int VISIBLE_SCANLINES = 240;
+    const int VBLANK_START_SCANLINE = 241;
+    const int TOTAL_SCANLINES = 262;
+    const int CPU_DIVIDER = 3;  // CPU runs every 3 PPU cycles
+    
+    // Frame timing state
+    bool frameEven = (totalCycles / (TOTAL_SCANLINES * CYCLES_PER_SCANLINE)) % 2 == 0;
+    int cpuCycleCounter = 0;
+    
+    // IMPORTANT: Don't update masterCycles/ppuCycles in the loop!
+    // They should only be updated during actual CPU instruction execution
+    
+    for (int scanline = 0; scanline < TOTAL_SCANLINES; scanline++) {
+        ppuCycleState.scanline = scanline;
+        
+        // Determine scanline state
+        if (scanline < VISIBLE_SCANLINES) {
+            ppuCycleState.inVBlank = false;
+            ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
+        } else if (scanline == VBLANK_START_SCANLINE) {
+            ppuCycleState.inVBlank = true;
+            // Don't set VBlank flag here - do it at the right cycle
+        } else if (scanline == 261) {
+            // Pre-render scanline
+            ppuCycleState.inVBlank = false;
+            ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
         }
-      }
-
-      // VBlank flag cleared on cycle 1 of pre-render scanline (261)
-      if (scanline == 261 && cycle == 1) {
-        ppu->setVBlankFlag(false);
-        ppu->setSprite0Hit(false);
-      }
-
-      // === STEP CYCLE-ACCURATE PPU ===
-      ppuCycleAccurate->stepCycle(scanline, cycle);
-
-      // === MAPPER-SPECIFIC PPU EVENTS ===
-
-      // MMC3 IRQ counter - decrements on A12 rising edge during rendering
-      if (nesHeader.mapper == 4) {
-        checkMMC3IRQ(scanline, cycle);
-      }
-
-      // === CPU EXECUTION ===
-
-      // CRITICAL FIX: Run CPU every 3 PPU cycles with proper timing
-      cpuCycleCounter++;
-      if (cpuCycleCounter >= CPU_DIVIDER) {
-        cpuCycleCounter = 0;
-
-        // Handle delayed NMI before executing instruction
-        if (nmiRequested && nmiDelayCycles > 0) {
-          nmiDelayCycles--;
-          if (nmiDelayCycles == 0) {
-            handleNMI();
-            nmiRequested = false;
-          }
+        
+        // Calculate cycles for this scanline (handle odd frame skip)
+        int cyclesThisScanline = CYCLES_PER_SCANLINE;
+        if (scanline == 261 && frameEven && ppuCycleState.renderingEnabled) {
+            cyclesThisScanline = 340;  // Skip cycle 340 on odd frames when rendering
         }
-
-        // Execute one CPU instruction
-        executeInstruction();
-      }
-
-      // === STEP PPU INTERNAL STATE (for compatibility) ===
-      stepPPUCycle();
+        
+        for (int cycle = 0; cycle < cyclesThisScanline; cycle++) {
+            ppuCycleState.cycle = cycle;
+            
+            // === PPU CYCLE-SPECIFIC EVENTS ===
+            
+            // VBlank flag set on cycle 1 of scanline 241
+            if (scanline == VBLANK_START_SCANLINE && cycle == 1) {
+                ppu->setVBlankFlag(true);
+                ppu->captureFrameScroll();
+                
+                // Trigger NMI if enabled
+                if (ppu->getControl() & 0x80) {
+                    nmiPending = true;  // Queue NMI for next CPU cycle
+                }
+            }
+            
+            // VBlank flag cleared on cycle 1 of pre-render scanline (261)
+            if (scanline == 261 && cycle == 1) {
+                ppu->setVBlankFlag(false);
+                ppu->setSprite0Hit(false);
+            }
+            
+            // === STEP CYCLE-ACCURATE PPU ===
+            if (ppuCycleAccurate) {
+                ppuCycleAccurate->stepCycle(scanline, cycle);
+            }
+            
+            // === MAPPER-SPECIFIC PPU EVENTS ===
+            
+            // MMC3 IRQ counter - decrements on A12 rising edge during rendering
+            if (nesHeader.mapper == 4) {
+                checkMMC3IRQ(scanline, cycle);
+            }
+            
+            // === CPU EXECUTION ===
+            
+            // Run CPU every 3 PPU cycles (same as original)
+            cpuCycleCounter++;
+            if (cpuCycleCounter >= CPU_DIVIDER) {
+                cpuCycleCounter = 0;
+                
+                // Check for pending NMI before executing instruction
+                if (nmiPending) {
+                    handleNMI();
+                    nmiPending = false;
+                }
+                
+                // Execute one CPU instruction
+                // NOTE: executeInstruction() will update masterCycles internally
+                // via the cycles added at the end of that function
+                executeInstruction();
+                
+                // CRITICAL: Update ppuCycles to match CPU execution
+                // Since CPU runs every 3 PPU cycles, we add 3 PPU cycles per instruction
+                ppuCycles += 3;
+            }
+            
+            // === STEP PPU INTERNAL STATE (for compatibility) ===
+            stepPPUCycle();
+        }
+        
+        // End of scanline processing
+        if (scanline < VISIBLE_SCANLINES && ppuCycleState.renderingEnabled) {
+            stepPPUEndOfScanline(scanline);
+        }
     }
-
-    // End of scanline processing
-    if (scanline < VISIBLE_SCANLINES && ppuCycleState.renderingEnabled) {
-      stepPPUEndOfScanline(scanline);
+    
+    // End of frame cleanup
+    ppu->setVBlankFlag(false);
+    ppu->setSprite0Hit(false);
+    
+    // Clear any pending NMI
+    nmiPending = false;
+    
+    // Audio frame advance
+    if (Configuration::getAudioEnabled()) {
+        apu->stepFrame();
     }
-  }
-
-  // End of frame cleanup
-  ppu->setVBlankFlag(false);
-  ppu->setSprite0Hit(false);
-
-  // Clear any pending NMI
-  nmiRequested = false;
-
-  // Audio frame advance
-  if (Configuration::getAudioEnabled()) {
-    apu->stepFrame();
-  }
 }
 
 void SMBEmulator::checkSprite0Hit(int scanline, int cycle) {
@@ -1859,6 +1863,53 @@ void SMBEmulator::executeInstruction() {
   // Update cycle counters
   totalCycles += cycles;
   frameCycles += cycles;
+  masterCycles += cycles;
+}
+
+void SMBEmulator::catchUpPPU() {
+    // Only sync if we're behind (this prevents infinite loops)
+    uint64_t targetPPUCycles = masterCycles * 3;
+    
+    // Prevent infinite loop - only catch up if we're not too far behind
+    if (ppuCycles >= targetPPUCycles || (targetPPUCycles - ppuCycles) > 1000) {
+        return;  // Already synced or something is wrong
+    }
+    
+    while (ppuCycles < targetPPUCycles) {
+        // Convert to scanline/cycle
+        uint64_t framePos = ppuCycles % (341 * 262);
+        int scanline = framePos / 341;
+        int cycle = framePos % 341;
+        
+        // Handle critical PPU events during catch-up
+        if (scanline == 241 && cycle == 1) {
+            ppu->setVBlankFlag(true);
+            ppu->captureFrameScroll();
+            if (ppu->getControl() & 0x80) {
+                nmiPending = true;
+            }
+        }
+        else if (scanline == 261 && cycle == 1) {
+            ppu->setVBlankFlag(false);
+            ppu->setSprite0Hit(false);
+        }
+        
+        ppuCycles++;
+        
+        // Safety valve to prevent infinite loops
+        if ((ppuCycles % 1000) == 0) {
+            break;
+        }
+    }
+}
+
+
+void SMBEmulator::checkPendingInterrupts()
+{
+    if (nmiPending) {
+        handleNMI();
+        nmiPending = false;
+    }
 }
 
 // Memory access functions
@@ -1868,6 +1919,7 @@ uint8_t SMBEmulator::readByte(uint16_t address) {
     return ram[address & 0x7FF];
   } else if (address < 0x4000) {
     // PPU registers (mirrored every 8 bytes)
+    catchUpPPU();
     uint16_t ppuAddr = 0x2000 + (address & 0x7);
     return ppu->readRegister(ppuAddr);
   } else if (address < 0x4020) {
@@ -2128,43 +2180,53 @@ void SMBEmulator::stepMMC3IRQ() {
   }
 }
 
-void SMBEmulator::writeByte(uint16_t address, uint8_t value) {
-  if (address < 0x2000) {
-    // RAM (mirrored every 2KB)
-    ram[address & 0x7FF] = value;
-  } else if (address < 0x4000) {
-    // PPU registers (mirrored every 8 bytes)
-    ppu->writeRegister(0x2000 + (address & 0x7), value);
-  } else if (address < 0x4020) {
-    // APU and I/O registers
-    switch (address) {
-    case 0x4014:
-      ppu->writeDMA(value);
-      break;
-    case 0x4016:
-      controller1->writeByte(value);
-      controller2->writeByte(value);
-      break;
-    default:
-      apu->writeRegister(address, value);
-      break;
+void SMBEmulator::writeByte(uint16_t address, uint8_t value)
+{
+    if (address < 0x2000) {
+        // RAM (mirrored every 2KB)
+        ram[address & 0x7FF] = value;
     }
-  } else if (address >= 0x8000) {
-    // Mapper registers
-    if (nesHeader.mapper == 1) {
-      writeMMC1Register(address, value);
-    } else if (nesHeader.mapper == 66) {
-      writeGxROMRegister(address, value);
-    } else if (nesHeader.mapper == 3) {
-      writeCNROMRegister(address, value);
-    } else if (nesHeader.mapper == 4) {
-      writeMMC3Register(address, value);
-    } else if (nesHeader.mapper == 2) {
-      writeUxROMRegister(address, value);
-      // Other writes to ROM area are ignored
+    else if (address < 0x4000) {
+        // PPU registers - SYNC POINT!
+        catchUpPPU();  // Make sure PPU is current
+        ppu->writeRegister(0x2000 + (address & 0x7), value);
     }
-  }
+    else if (address < 0x4020) {
+        // APU and I/O registers - keep your existing code
+        switch (address) {
+            case 0x4014:
+                catchUpPPU();  // DMA needs sync
+                ppu->writeDMA(value);
+                masterCycles += 513;  // DMA cycles
+                break;
+            case 0x4016:
+                controller1->writeByte(value);
+                controller2->writeByte(value);
+                break;
+            default:
+                apu->writeRegister(address, value);
+                break;
+        }
+    }
+    else if (address >= 0x8000) {
+        // Mapper registers - CRITICAL SYNC POINT!
+        catchUpPPU();  // Sync before bank switch
+        
+        // Keep your existing mapper write logic exactly as-is
+        if (nesHeader.mapper == 1) {
+            writeMMC1Register(address, value);
+        } else if (nesHeader.mapper == 66) {
+            writeGxROMRegister(address, value);
+        } else if (nesHeader.mapper == 3) {
+            writeCNROMRegister(address, value);
+        } else if (nesHeader.mapper == 4) {
+            writeMMC3Register(address, value);
+        } else if (nesHeader.mapper == 2) {
+            writeUxROMRegister(address, value);  
+        }
+   }  
 }
+
 
 uint16_t SMBEmulator::readWord(uint16_t address) {
   return readByte(address) | (readByte(address + 1) << 8);

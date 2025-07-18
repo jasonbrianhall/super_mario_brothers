@@ -436,6 +436,12 @@ private:
   uint64_t ppuCycles; // Total PPU cycles executed
   bool nmiPending;    // NMI waiting to be processed
   int nmiDelay;       // Cycles until NMI triggers
+
+  uint64_t masterCycles;
+    
+  void catchUpPPU();
+  void checkPendingInterrupts();
+
 };
 
 #endif // SMB_EMULATOR_HPP
