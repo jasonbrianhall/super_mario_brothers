@@ -155,58 +155,29 @@ void PPUCycleAccurate::stepBackgroundFetch(int scanline, int cycle)
         return;
     }
     
-    // Debug which fetch cycle we're in
-    static int fetchCycleDebugCount = 0;
-    if (fetchCycleDebugCount < 10) {
-        printf("FetchCycle: cycle=%d, fetchCycle=%d\n", cycle, fetchCycle);
-        fetchCycleDebugCount++;
-    }
-    
     switch (fetchCycle) {
-        case 1: // Fetch nametable byte
-            fetchNametableByte(scanline, cycle);
-            break;
-            
-        case 3: // Fetch attribute byte
-            fetchAttributeByte(scanline, cycle);
-            break;
-            
-        case 5: // Fetch pattern low byte
-            fetchPatternLow(scanline, cycle);
-            break;
-            
-        case 7: // Fetch pattern high byte
-            fetchPatternHigh(scanline, cycle);
-            break;
-            
-        case 8: // Load shift registers on cycles 8, 16, 24, etc.
-            printf("About to load shift registers on cycle %d\n", cycle);
-            loadShiftRegisters();
-            break;
-            
-        default:
-            // This should never happen if our math is right
-            static int defaultCount = 0;
-            if (defaultCount < 5) {
-                printf("UNEXPECTED fetchCycle: %d on cycle %d\n", fetchCycle, cycle);
-                defaultCount++;
-            }
-            break;
+        case 1: fetchNametableByte(scanline, cycle); break;
+        case 3: fetchAttributeByte(scanline, cycle); break;
+        case 5: fetchPatternLow(scanline, cycle); break;
+        case 7: fetchPatternHigh(scanline, cycle); break;
+        case 8: loadShiftRegisters(); break;
     }
 }
+
 void PPUCycleAccurate::fetchNametableByte(int scanline, int cycle)
 {
     int pixelX = cycle - 1;
     
-    // Add scroll offset
+    // Simple approach: fetch tile for current position
     int scrolledX = (pixelX + ppuScrollX) / 8;
     int scrolledY = (scanline + ppuScrollY) / 8;
     
-    // Handle nametable boundaries
     int nametableX = scrolledX % 64;
     int nametableY = scrolledY % 60;
     
-    // Determine which nametable
+    if (nametableX < 0) nametableX += 64;
+    if (nametableY < 0) nametableY += 60;
+    
     uint16_t baseAddr = 0x2000;
     if (nametableX >= 32) {
         baseAddr = 0x2400;
@@ -220,35 +191,14 @@ void PPUCycleAccurate::fetchNametableByte(int scanline, int cycle)
     uint16_t addr = baseAddr + (nametableY * 32) + nametableX;
     addr = applyNametableMirroring(addr);
     
-    if ((addr - 0x2000) < 2048) {
+    if ((addr - 0x2000) < 2048 && (addr - 0x2000) >= 0) {
         state.bgTileIndex = nametable[addr - 0x2000];
     } else {
-        state.bgTileIndex = 0;
+        state.bgTileIndex = 0x20;
     }
     
-    // Store for attribute fetch
     state.currentTileX = nametableX;
     state.currentTileY = nametableY;
-    
-    // Enhanced debug
-    static int fetchCount = 0;
-    if (fetchCount < 20) {
-        printf("FetchNT[%d]: cycle=%d, scroll=(%d,%d), pos=(%d,%d), "
-               "nt=(%d,%d), addr=$%04X, tile=0x%02X\n",
-               fetchCount, cycle, ppuScrollX, ppuScrollY, pixelX, scanline,
-               nametableX, nametableY, addr, state.bgTileIndex);
-        
-        // Also check if nametable has any non-zero data
-        if (fetchCount == 0) {
-            int nonZeroCount = 0;
-            for (int i = 0; i < 2048; i++) {
-                if (nametable[i] != 0) nonZeroCount++;
-            }
-            printf("Nametable debug: %d non-zero bytes out of 2048\n", nonZeroCount);
-        }
-        
-        fetchCount++;
-    }
 }
 
 void PPUCycleAccurate::fetchAttributeByte(int scanline, int cycle)
@@ -288,28 +238,20 @@ void PPUCycleAccurate::fetchPatternLow(int scanline, int cycle)
     uint16_t tileIndex = state.bgTileIndex;
     uint8_t fineY = (scanline + ppuScrollY) % 8;
     
-    // CRITICAL FIX: Check the actual pattern table selection
-    // PPUCTRL bit 4: 0 = $0000, 1 = $1000
+    // Make sure fineY is positive
+    if (fineY < 0) fineY += 8;
+    
+    // Pattern table selection
     uint16_t patternTableBase = (ppuCtrl & 0x10) ? 0x1000 : 0x0000;
     
-    // Calculate pattern address
+    // Calculate pattern address with bounds checking
     uint16_t patternAddr = patternTableBase + (tileIndex * 16) + fineY;
-    state.bgPatternLow = engine.readCHRData(patternAddr);
     
-    // Enhanced debug
-    static int patternLowCount = 0;
-    if (patternLowCount < 20) {
-        printf("PatternLow[%d]: tile=0x%02X, ctrl=0x%02X, ptBase=0x%04X, "
-               "fineY=%d, addr=0x%04X, data=0x%02X\n",
-               patternLowCount, tileIndex, ppuCtrl, patternTableBase,
-               fineY, patternAddr, state.bgPatternLow);
-        
-        // Check if we're reading from valid CHR area
-        if (patternAddr >= 0x2000) {
-            printf("ERROR: Pattern address 0x%04X is outside CHR range!\n", patternAddr);
-        }
-        
-        patternLowCount++;
+    // Ensure we're reading from valid CHR range
+    if (patternAddr < 0x2000) {
+        state.bgPatternLow = engine.readCHRData(patternAddr);
+    } else {
+        state.bgPatternLow = 0x00; // Default to empty pattern
     }
 }
 
@@ -318,50 +260,32 @@ void PPUCycleAccurate::fetchPatternHigh(int scanline, int cycle)
     uint16_t tileIndex = state.bgTileIndex;
     uint8_t fineY = (scanline + ppuScrollY) % 8;
     
-    // CRITICAL FIX: Use the same pattern table base
+    // Make sure fineY is positive
+    if (fineY < 0) fineY += 8;
+    
+    // Pattern table selection
     uint16_t patternTableBase = (ppuCtrl & 0x10) ? 0x1000 : 0x0000;
     
-    // Calculate pattern address (+8 for high byte)
+    // Calculate pattern address with bounds checking
     uint16_t patternAddr = patternTableBase + (tileIndex * 16) + fineY + 8;
-    state.bgPatternHigh = engine.readCHRData(patternAddr);
     
-    // Enhanced debug
-    static int patternHighCount = 0;
-    if (patternHighCount < 20) {
-        printf("PatternHigh[%d]: tile=0x%02X, ctrl=0x%02X, ptBase=0x%04X, "
-               "fineY=%d, addr=0x%04X, data=0x%02X\n",
-               patternHighCount, tileIndex, ppuCtrl, patternTableBase,
-               fineY, patternAddr, state.bgPatternHigh);
-        patternHighCount++;
+    // Ensure we're reading from valid CHR range
+    if (patternAddr < 0x2000) {
+        state.bgPatternHigh = engine.readCHRData(patternAddr);
+    } else {
+        state.bgPatternHigh = 0x00; // Default to empty pattern
     }
 }
 
 
+
 void PPUCycleAccurate::loadShiftRegisters()
 {
-    // Store old values for comparison
-    uint16_t oldShiftLow = state.bgPatternShiftLow;
-    uint16_t oldShiftHigh = state.bgPatternShiftHigh;
-    
-    // Load new data into the LOW 8 bits
+    // Load new tile data into the LOW 8 bits
     state.bgPatternShiftLow = (state.bgPatternShiftLow & 0xFF00) | state.bgPatternLow;
     state.bgPatternShiftHigh = (state.bgPatternShiftHigh & 0xFF00) | state.bgPatternHigh;
     
-    // Update attribute latch
     state.bgAttributeLatch0 = state.bgAttribute;
-    
-    // Enhanced debug
-    static int loadCount = 0;
-    if (loadCount < 20) {
-        printf("Load[%d]: tile=0x%02X, patterns=(0x%02X,0x%02X), "
-               "shifts: 0x%04X->0x%04X, 0x%04X->0x%04X, attr=%d\n",
-               loadCount, state.bgTileIndex,
-               state.bgPatternLow, state.bgPatternHigh,
-               oldShiftLow, state.bgPatternShiftLow,
-               oldShiftHigh, state.bgPatternShiftHigh,
-               state.bgAttribute);
-        loadCount++;
-    }
 }
 
 void PPUCycleAccurate::shiftBackgroundRegisters()
@@ -425,9 +349,20 @@ void PPUCycleAccurate::renderPixel(int scanline, int cycle)
     
     // Get background pixel
     if (ppuMask & 0x08) {
-        // Use fine X from scroll register
         int fineX = ppuScrollX & 0x07;
         finalPixel = getBackgroundPixel(fineX);
+        
+        // Debug the boundary area where 0's appear
+        if (scanline < 10 && pixelX < 32) {
+            static int boundaryDebugCount = 0;
+            if (boundaryDebugCount < 20) {
+                printf("Boundary: (%d,%d), scroll=%d, fineX=%d, "
+                       "shifts=(0x%04X,0x%04X), pixel=0x%04X\n",
+                       pixelX, scanline, ppuScrollX, fineX,
+                       state.bgPatternShiftLow, state.bgPatternShiftHigh, finalPixel);
+                boundaryDebugCount++;
+            }
+        }
     }
     
     // Get sprite pixel
@@ -446,25 +381,29 @@ void PPUCycleAccurate::renderPixel(int scanline, int cycle)
     frameBuffer[scanline * 256 + pixelX] = finalPixel;
 }
 
-
 uint16_t PPUCycleAccurate::getBackgroundPixel(int fineX)
 {
-    // Read from the HIGH bits of shift registers
-    int bitPosition = 15;
+    // Read from the shift register based on fine X scroll
+    // The shift registers are shifted left every cycle
+    // Bit 15 is the leftmost pixel of the current tile, bit 8 is the rightmost
+    
+    int bitPosition = 15 - fineX;
+    
+    // Clamp bit position to valid range
+    if (bitPosition < 8) bitPosition = 8;
+    if (bitPosition > 15) bitPosition = 15;
     
     uint8_t pixel = 0;
     if (state.bgPatternShiftLow & (1 << bitPosition)) pixel |= 1;
     if (state.bgPatternShiftHigh & (1 << bitPosition)) pixel |= 2;
     
-    // Enhanced debug for first few pixels
-    static int pixelDebugCount = 0;
-    if (pixelDebugCount < 10) {
-        printf("GetBGPixel[%d]: fineX=%d, bitPos=%d, "
-               "shifts=(0x%04X,0x%04X), pixel=%d, palette=%d\n",
-               pixelDebugCount, fineX, bitPosition,
-               state.bgPatternShiftLow, state.bgPatternShiftHigh,
-               pixel, state.bgAttributeLatch0);
-        pixelDebugCount++;
+    // Debug to see what's happening at the boundary
+    static int debugCount = 0;
+    if (debugCount < 10) {
+        printf("GetPixel[%d]: fineX=%d, bitPos=%d, shifts=(0x%04X,0x%04X), pixel=%d\n",
+               debugCount, fineX, bitPosition, 
+               state.bgPatternShiftLow, state.bgPatternShiftHigh, pixel);
+        debugCount++;
     }
     
     if (pixel == 0) {
@@ -476,6 +415,8 @@ uint16_t PPUCycleAccurate::getBackgroundPixel(int fineX)
     
     return convertToRGB565(palette[paletteIndex]);
 }
+
+
 
 uint16_t PPUCycleAccurate::getSpritePixel(int pixelX, bool& sprite0Hit, bool& spritePriority)
 {

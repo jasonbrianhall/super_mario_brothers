@@ -507,7 +507,7 @@ void SMBEmulator::handleNMI()
 void SMBEmulator::update()
 {
     if (!romLoaded) return;
-    
+    updateFrameBased();
     // Choose update method based on mapper capabilities
     if (needsCycleAccuracy()) {
         updateCycleAccurate();
@@ -519,6 +519,7 @@ void SMBEmulator::update()
 
 bool SMBEmulator::needsCycleAccuracy() const
 {
+    if (zapperEnabled) { return true;};
     switch (nesHeader.mapper) {
         case 0:  // NROM - no banking, use fast path
             return false;
@@ -2299,10 +2300,13 @@ void SMBEmulator::scaleBuffer16(uint16_t* nesBuffer, uint16_t* screenBuffer, int
 void SMBEmulator::renderScaled16(uint16_t* buffer, int screenWidth, int screenHeight)
 {
     // First render the game using PPU scaling
-    //ppu->renderScaled(buffer, screenWidth, screenHeight);
-        static uint16_t nesBuffer[256 * 240];
-        ppuCycleAccurate->getFrameBuffer(nesBuffer);
-        scaleBuffer16(nesBuffer, buffer, screenWidth, screenHeight);
+        if (needsCycleAccuracy()) {
+            static uint16_t nesBuffer[256 * 240];
+            ppuCycleAccurate->getFrameBuffer(nesBuffer);
+            scaleBuffer16(nesBuffer, buffer, screenWidth, screenHeight);
+        } else {
+            ppu->renderScaled(buffer, screenWidth, screenHeight);
+        }
     
     if (zapperEnabled && zapper) {
         // Get the raw mouse coordinates (these should be in NES coordinates 0-255, 0-239)
