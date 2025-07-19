@@ -811,11 +811,11 @@ void PPU::render16(uint16_t* buffer)
     if (ppuMask & (1 << 3))
     {
         // Status bar (rows 0-3) - ALWAYS from nametable 0, never scrolled
-        for (int x = 0; x < 32; x++) {
+        /*for (int x = 0; x < 32; x++) {
             for (int y = 0; y < 4; y++) {
                 renderCachedTile(buffer, 0x2000 + 32 * y + x, x * 8, y * 8, false, false);
             }
-        }
+        }*/
         
         // Game area (rows 4-29) - use captured scroll and nametable
         int leftmostTile = scrollOffset / 8;
