@@ -563,6 +563,7 @@ void SMBEmulator::update() {
 }
 
 bool SMBEmulator::needsCycleAccuracy() const {
+  return true;
   if (zapperEnabled) {
     return true;
   };
@@ -647,11 +648,6 @@ void SMBEmulator::updateFrameBased() {
 void SMBEmulator::updateCycleAccurate() {
     if (!romLoaded) return;
     
-    // Sync PPU state at start of frame (if available)
-    if (ppuCycleAccurate) {
-        ppuCycleAccurate->syncWithMainPPU(ppu);
-    }
-    
     frameCycles = 0;
     ppuCycleState.scanline = 0;
     ppuCycleState.cycle = 0;
@@ -701,8 +697,8 @@ void SMBEmulator::updateCycleAccurate() {
             
             // VBlank flag set on cycle 1 of scanline 241
             if (scanline == VBLANK_START_SCANLINE && cycle == 1) {
-                ppu->setVBlankFlag(true);
-                ppu->captureFrameScroll();
+                ppuCycleAccurate->setVBlankFlag(true);
+                ppuCycleAccurate->captureFrameScroll();
                 
                 // Trigger NMI if enabled
                 if (ppu->getControl() & 0x80) {
@@ -762,8 +758,8 @@ void SMBEmulator::updateCycleAccurate() {
     }
     
     // End of frame cleanup
-    ppu->setVBlankFlag(false);
-    ppu->setSprite0Hit(false);
+    ppuCycleAccurate->setVBlankFlag(false);
+    ppuCycleAccurate->setSprite0Hit(false);
     
     // Clear any pending NMI
     nmiPending = false;

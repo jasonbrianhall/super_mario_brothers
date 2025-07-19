@@ -1,6 +1,5 @@
 #include "PPUCycleAccurate.hpp"
 #include "../SMB/SMBEmulator.hpp"
-#include "PPU.hpp"
 
 // NES palette
 static const uint32_t nesPalette[64] = {
@@ -22,6 +21,15 @@ void bitmap8x8::create(uint8_t* patternLow, uint8_t* patternHigh) {
             if (patternLow[y] & (0x80 >> x)) s[y][x] |= 1;
             if (patternHigh[y] & (0x80 >> x)) s[y][x] |= 2;
         }
+    }
+}
+
+void PPUCycleAccurate::setVBlankFlag(bool flag)
+{
+    if (flag) {
+        ppuStatus |= 0x80;  // Set VBlank flag
+    } else {
+        ppuStatus &= 0x7F;  // Clear VBlank flag
     }
 }
 
@@ -252,9 +260,16 @@ PPUCycleAccurate::PPUCycleAccurate(SMBEmulator& eng) : engine(eng) {
     for (int i = 0; i < 4; i++) {
         ntc[i] = new natablecache();
     }
-    
+    frameScrollX = 0;
+    frameCtrl = 0;
+    ppuScrollX = 0;
     setMirroring(0);
     reset();
+    sprite0Hit=false;
+}
+
+void PPUCycleAccurate::setSprite0Hit(bool hit) {
+    sprite0Hit = hit;
 }
 
 PPUCycleAccurate::~PPUCycleAccurate() {
@@ -448,28 +463,11 @@ void PPUCycleAccurate::drawSprites(uint16_t* frameBuffer) {
     }
 }
 
-// Compatibility methods for existing SMBEmulator code
-void PPUCycleAccurate::syncWithMainPPU(PPU* mainPPU) {
-    if (!mainPPU) return;
-    
-    ppuCtrl = mainPPU->getControl();
-    ppuMask = mainPPU->getMask();
-    ppuStatus = mainPPU->getStatus();
-    scrollX = mainPPU->getScrollX();
-    scrollY = mainPPU->getScrollY();
-    
-    memcpy(paletteRAM, mainPPU->getPaletteRAM(), 32);
-    memcpy(oam, mainPPU->getOAM(), 256);
-    
-    uint8_t* vram = mainPPU->getVRAM();
-    if (vram) {
-        for (int i = 0; i < 4; i++) {
-            for (int addr = 0; addr < 1024; addr++) {
-                ntc[i]->write(addr, vram[i * 1024 + addr]);
-            }
-        }
-    }
-}
+void PPUCycleAccurate::captureFrameScroll() {
+    // Capture the current scroll value AND control register at the start of VBlank
+    frameScrollX = ppuScrollX;
+    frameCtrl = ppuCtrl;
+}  
 
 void PPUCycleAccurate::stepCycle(int scanline, int cycle) {
     // No-op for frame-based rendering

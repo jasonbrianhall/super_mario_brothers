@@ -5,7 +5,6 @@
 #include <cstring>
 
 class SMBEmulator; // Forward declaration
-class PPU; // Forward declaration
 
 // Adapted from nesticle's nesvideo.cpp
 struct bitmap8x8 {
@@ -109,8 +108,6 @@ public:
     void markCHRUpdated(uint16_t addr);
     void render(uint16_t* frameBuffer);
     
-    // Methods needed for compatibility with existing SMBEmulator code
-    void syncWithMainPPU(class PPU* mainPPU);
     void stepCycle(int scanline, int cycle);
     void getFrameBuffer(uint16_t* buffer);
     
@@ -122,6 +119,13 @@ public:
     uint8_t getStatus() const { return ppuStatus; }
     uint8_t getScrollX() const { return scrollX; }
     uint8_t getScrollY() const { return scrollY; }
+    void setVBlankFlag(bool flag);
+    void captureFrameScroll();
+    void setSprite0Hit(bool hit);
+    uint8_t frameScrollX; 
+    uint8_t frameCtrl;
+    uint8_t ppuScrollX;
+    bool sprite0Hit;
 };
 
 #endif // PPU_CYCLE_ACCURATE_HPP
