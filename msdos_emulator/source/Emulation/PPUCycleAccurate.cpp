@@ -327,21 +327,178 @@ void PPUCycleAccurate::updatePatternTables() {
     }
 }
 
-void PPUCycleAccurate::writeRegister(uint16_t addr, uint8_t value) {
-    switch (addr) {
-        case 0x2000: ppuCtrl = value; break;
-        case 0x2001: ppuMask = value; break;
-        case 0x2005: 
-            static bool firstWrite = true;
-            if (firstWrite) {
-                scrollX = value;
-            } else {
-                scrollY = value;
+void PPUCycleAccurate::writeAddressRegister(uint8_t value)
+{
+    if (!writeToggle)
+    {
+        // Upper byte
+        currentAddress = (currentAddress & 0xff) | (((uint16_t)value << 8) & 0xff00);
+    }
+    else
+    {
+        // Lower byte
+        currentAddress = (currentAddress & 0xff00) | (uint16_t)value;
+    }
+    writeToggle = !writeToggle;
+}
+
+void PPUCycleAccurate::writeDataRegister(uint8_t value)
+{
+    static bool debugPalette = true;
+    
+    writeByte(currentAddress, value);
+    if (!(ppuCtrl & (1 << 2)))
+    {
+        currentAddress++;
+    }
+    else
+    {
+        currentAddress += 32;
+    }
+}
+
+void PPUCycleAccurate::writeByte(uint16_t address, uint8_t value)
+{
+    // Mirror all addresses above $3fff
+    address &= 0x3fff;
+
+    if (address < 0x2000)
+    {
+        // CHR-RAM write
+        engine.writeCHRData(address, value);
+        // Mark CHR pattern updated for cache invalidation
+        markCHRUpdated(address);
+    }
+    else if (address < 0x3f00)
+    {
+        // Nametable write
+        uint16_t nametableAddr = getNametableIndex(address);
+        
+        // Determine which nametable cache to update based on mirroring
+        int nametableIndex = getNametableCacheIndex(address);
+        if (nametableIndex >= 0 && nametableIndex < 4) {
+            // Convert to local address within the nametable
+            uint16_t localAddr = nametableAddr % 0x400;
+            ntc[nametableIndex]->write(localAddr, value);
+        }
+    }
+    else if (address < 0x3f20)
+    {
+        // Palette data
+        uint8_t paletteIndex = address - 0x3f00;
+        
+        // Handle palette mirroring
+        if (paletteIndex >= 16) {
+            paletteIndex = 16 + ((paletteIndex - 16) % 4);
+        }
+        
+        paletteRAM[paletteIndex] = value;
+
+        // Handle special mirroring cases for universal background color
+        if (address == 0x3f10 || address == 0x3f14 || address == 0x3f18 || address == 0x3f1c)
+        {
+            paletteRAM[address - 0x3f10] = value;
+        }
+        
+        // Mark all nametable caches for update when palette changes
+        for (int i = 0; i < 4; i++) {
+            ntc[i]->totalupdate();
+        }
+    }
+}
+
+// Helper function to get nametable index with mirroring
+uint16_t PPUCycleAccurate::getNametableIndex(uint16_t address)
+{
+    // Nametable mirroring lookup table
+    static const uint8_t nametableMirrorLookup[][4] = {
+        {0, 0, 1, 1}, // Horizontal mirroring
+        {0, 1, 0, 1}  // Vertical mirroring
+    };
+    
+    address = (address - 0x2000) % 0x1000;
+    int table = address / 0x400;
+    int offset = address % 0x400;
+    
+    return (nametableMirrorLookup[mirroring][table] * 0x400 + offset) % 2048;
+}
+
+// Helper function to determine which nametable cache to use
+int PPUCycleAccurate::getNametableCacheIndex(uint16_t address)
+{
+    static const uint8_t nametableMirrorLookup[][4] = {
+        {0, 0, 1, 1}, // Horizontal mirroring
+        {0, 1, 0, 1}  // Vertical mirroring
+    };
+    
+    address = (address - 0x2000) % 0x1000;
+    int table = address / 0x400;
+    
+    return nametableMirrorLookup[mirroring][table];
+}
+
+void PPUCycleAccurate::writeRegister(uint16_t address, uint8_t value)
+{
+    static bool debugPPU = true; // Set to false to disable
+    
+    switch(address)
+    {
+    // PPUCTRL
+    case 0x2000:
+        ppuCtrl = value;
+        // Cache for next frame's rendering
+        cachedCtrl = value;
+        break;
+        
+    // PPUMASK
+    case 0x2001:
+        ppuMask = value;
+        break;
+        
+    // OAMADDR
+    case 0x2003:
+        oamAddress = value;
+        break;
+        
+    // OAMDATA
+    case 0x2004:
+        oam[oamAddress] = value;
+        oamAddress++;
+        break;
+        
+    // PPUSCROLL
+    case 0x2005:
+    if (!writeToggle)
+    {
+        // SMB alternates between $00 (status bar) and $C6 (game area)
+        // We want to keep the non-zero value as the "real" scroll
+        if (value != 0) {
+            // This is likely the game area scroll value
+            if (gameAreaScrollX != value) {
+                gameAreaScrollX = value;
             }
-            firstWrite = !firstWrite;
-            break;
-        case 0x2007: 
-            break;
+        }
+        ppuScrollX = value;  // Still update the register for compatibility
+    }
+    else
+    {
+        ppuScrollY = value;
+    }
+    writeToggle = !writeToggle;
+    break;
+        
+    // PPUADDR
+    case 0x2006:
+        writeAddressRegister(value);
+        break;
+        
+    // PPUDATA
+    case 0x2007:
+        writeDataRegister(value);
+        break;
+        
+    default:
+        break;
     }
 }
 

@@ -122,10 +122,22 @@ public:
     void setVBlankFlag(bool flag);
     void captureFrameScroll();
     void setSprite0Hit(bool hit);
+    void writeAddressRegister(uint8_t value);
+    void writeDataRegister(uint8_t value);
+    void writeByte(uint16_t address, uint8_t value);
+    uint16_t getNametableIndex(uint16_t address);
+    int getNametableCacheIndex(uint16_t address);
     uint8_t frameScrollX; 
     uint8_t frameCtrl;
-    uint8_t ppuScrollX;
     bool sprite0Hit;
+    uint8_t oamAddress; /**< $2003 */
+    uint8_t ppuScrollX; /**< $2005 */
+    uint8_t ppuScrollY; /**< $2005 */
+    uint8_t cachedCtrl;
+    uint16_t currentAddress; /**< Address that will be accessed on the next PPU read/write. */
+    bool writeToggle; /**< Toggles whether the low or high bit of the current address will be set on the next write to PPUADDR. */
+    uint8_t gameAreaScrollX;  // The "real" scroll value for the game area
+    
 };
 
 #endif // PPU_CYCLE_ACCURATE_HPP
