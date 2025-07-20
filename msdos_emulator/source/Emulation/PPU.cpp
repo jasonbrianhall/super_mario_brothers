@@ -213,8 +213,6 @@ uint8_t PPU::readDataRegister()
     if (currentAddress < 0x3F00) {
         // Normal VRAM - return buffered value
         value = vramBuffer;
-   printf("Palette write: $%04X = $%02X\n", currentAddress, value);
-
         vramBuffer = readByte(currentAddress);
     } else {
         // Palette RAM - return immediately but also update buffer
