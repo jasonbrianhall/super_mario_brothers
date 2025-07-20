@@ -807,27 +807,22 @@ void PPU::render16(uint16_t* buffer)
         buffer[index] = bgColor16;
     }
 
-    // Use the captured frame scroll AND control values
-    int scrollOffset = frameScrollX;
-    uint8_t baseNametable = frameCtrl & 0x01;  // Use captured nametable selection
-    
-    static uint8_t lastFrameScroll = 255;
-    static uint8_t lastFrameCtrl = 255;
-    if (frameScrollX != lastFrameScroll || frameCtrl != lastFrameCtrl) {
-        lastFrameScroll = frameScrollX;
-        lastFrameCtrl = frameCtrl;
-    }
-
     if (ppuMask & (1 << 3))
     {
-        // Status bar (rows 0-3) - ALWAYS from nametable 0, never scrolled
-        /*for (int x = 0; x < 32; x++) {
+        // CRITICAL: Render status bar FIRST using CURRENT scroll/ctrl values
+        // Status bar (rows 0-3) - uses the current PPU state, not captured frame state
+        for (int x = 0; x < 32; x++) {
             for (int y = 0; y < 4; y++) {
-                renderCachedTile(buffer, 0x2000 + 32 * y + x, x * 8, y * 8, false, false);
+                // Use current nametable (usually 0 for status bar)
+                uint16_t statusBarAddr = 0x2000 + (y * 32) + x;
+                renderCachedTile(buffer, statusBarAddr, x * 8, y * 8, false, false);
             }
-        }*/
+        }
         
-        // Game area (rows 4-29) - use captured scroll and nametable
+        // Game area (rows 4-29) - use captured scroll and nametable from frame start
+        int scrollOffset = frameScrollX;
+        uint8_t baseNametable = frameCtrl & 0x01;  // Use captured nametable selection
+        
         int leftmostTile = scrollOffset / 8;
         int rightmostTile = (scrollOffset + 256) / 8 + 1;
         
@@ -872,8 +867,7 @@ void PPU::render16(uint16_t* buffer)
 
             y++;
             
-            // FIXED: Use the raw sprite index, let readCHR handle pattern table selection
-            uint16_t tile = index;  // Remove the +256 offset!
+            uint16_t tile = index;
             
             bool flipX = attributes & (1 << 6);
             bool flipY = attributes & (1 << 7);
@@ -1608,6 +1602,21 @@ void PPU::stepCycle(int scanline, int cycle)
     // Handle VBlank end (pre-render scanline)
     if (scanline == PRERENDER_SCANLINE && cycle == 1) {
         handleVBlankEnd();
+    }
+    
+    // CRITICAL: Handle mid-frame scroll register changes during visible scanlines
+    if (scanline >= 0 && scanline < VISIBLE_SCANLINES) {
+        // During visible scanlines, immediately update rendering state
+        // This allows status bar updates to be visible mid-frame
+        if (cycle == 1) {
+            // At the start of each visible scanline, check for scroll changes
+            // Status bar area (scanlines 0-31) uses current scroll values
+            if (scanline <= 31) {
+                // Status bar can be updated mid-frame - use current scroll values
+                renderScrollX = ppuScrollX;
+                renderCtrl = ppuCtrl;
+            }
+        }
     }
     
     // Handle rendering events during visible scanlines
