@@ -810,7 +810,6 @@ void PPU::render16(uint16_t* buffer)
     if (ppuMask & (1 << 3))
     {
 
-        // Game area (rows 4-29) - use captured scroll and nametable from frame start
         int scrollOffset = frameScrollX;
         uint8_t baseNametable = frameCtrl & 0x01;  // Use captured nametable selection
         
