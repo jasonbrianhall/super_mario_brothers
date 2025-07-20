@@ -796,93 +796,8 @@ void PPU::setPaletteRAM(uint8_t* data) {
 }
 
 
-void PPU::render16(uint16_t* buffer)
-{
-    // Clear the buffer
-    uint32_t bgColor32 = paletteRGB[palette[0]];
-    uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | ((bgColor32 & 0x00FC00) >> 5) | ((bgColor32 & 0x0000F8) >> 3);
-    
-    for (int index = 0; index < 256 * 240; index++)
-    {
-        buffer[index] = bgColor16;
-    }
-
-    // Use the captured frame scroll AND control values
-    int scrollOffset = frameScrollX;
-    uint8_t baseNametable = frameCtrl & 0x01;  // Use captured nametable selection
-    
-    static uint8_t lastFrameScroll = 255;
-    static uint8_t lastFrameCtrl = 255;
-    if (frameScrollX != lastFrameScroll || frameCtrl != lastFrameCtrl) {
-        lastFrameScroll = frameScrollX;
-        lastFrameCtrl = frameCtrl;
-    }
-
-    if (ppuMask & (1 << 3))
-    {
-        // Status bar (rows 0-3) - ALWAYS from nametable 0, never scrolled
-        /*for (int x = 0; x < 32; x++) {
-            for (int y = 0; y < 4; y++) {
-                renderCachedTile(buffer, 0x2000 + 32 * y + x, x * 8, y * 8, false, false);
-            }
-        }*/
-        
-        // Game area (rows 4-29) - use captured scroll and nametable
-        int leftmostTile = scrollOffset / 8;
-        int rightmostTile = (scrollOffset + 256) / 8 + 1;
-        
-        for (int tileX = leftmostTile; tileX <= rightmostTile; tileX++) {
-            for (int tileY = 4; tileY < 30; tileY++) {
-                int screenX = (tileX * 8) - scrollOffset;
-                int screenY = tileY * 8;
-                
-                if (screenX < -8 || screenX >= 256) continue;
-                
-                // Use the base nametable from captured control register
-                uint16_t baseAddr = baseNametable ? 0x2400 : 0x2000;
-                
-                // Handle wrapping within the 32x32 tile nametable
-                int localTileX = tileX % 32;
-                if (localTileX < 0) localTileX += 32;
-                
-                // For SMB horizontal scrolling, when we go past 32 tiles, 
-                // we need to switch to the other nametable
-                if (tileX >= 32) {
-                    baseAddr = baseNametable ? 0x2000 : 0x2400;  // Switch to other nametable
-                    localTileX = tileX - 32;
-                }
-                
-                uint16_t nametableAddr = baseAddr + (tileY * 32) + localTileX;
-                renderCachedTile(buffer, nametableAddr, screenX, screenY, false, false);
-            }
-        }
-    }
-
-    // Sprites (unchanged)
-    if (ppuMask & (1 << 4))
-    {
-        for (int i = 63; i >= 0; i--)
-        {
-            uint8_t y          = oam[i * 4];
-            uint8_t index      = oam[i * 4 + 1];
-            uint8_t attributes = oam[i * 4 + 2];
-            uint8_t x          = oam[i * 4 + 3];
-
-            if (y >= 0xef || x >= 0xf9) continue;
-
-            y++;
-            
-            // FIXED: Use the raw sprite index, let readCHR handle pattern table selection
-            uint16_t tile = index;  // Remove the +256 offset!
-            
-            bool flipX = attributes & (1 << 6);
-            bool flipY = attributes & (1 << 7);
-            uint8_t sprite_palette = attributes & 0x03;
-            bool behindBackground = (attributes & (1 << 5)) != 0;
-
-            renderCachedSpriteWithPriority(buffer, tile, sprite_palette, x, y, flipX, flipY, behindBackground);
-        }
-    }
+void PPU::render16(uint16_t* buffer) {
+    memcpy(buffer, frameBuffer, sizeof(frameBuffer));
 }
 
 
@@ -1594,44 +1509,267 @@ void PPU::captureFrameScroll() {
     frameCtrl = ppuCtrl;
 }    
 
-void PPU::stepCycle(int scanline, int cycle)
-{
+void PPU::stepCycle(int scanline, int cycle) {
     currentScanline = scanline;
     currentCycle = cycle;
     
-    // Minimal PPU cycle processing - just track state
-    // Don't do heavy processing here since we're called every PPU cycle
-    
-    // Handle critical VBlank events only
-    if (scanline == VBLANK_START_SCANLINE && cycle == 1) {
-        inVBlank = true;
-        ppuStatus |= 0x80;  // Set VBlank flag
-        captureFrameScroll();
+    // Pre-render scanline (261)
+    if (scanline == 261) {
+        if (cycle == 1) {
+            // Clear VBlank flag and sprite 0 hit at start of pre-render
+            ppuStatus &= 0x7F;  // Clear VBlank
+            ppuStatus &= 0xBF;  // Clear sprite 0 hit
+            sprite0Hit = false;
+            inVBlank = false;
+            frameComplete = false;
+            currentRenderScanline = 0;
+        }
+        
+        // Odd frame cycle skip
+        if (cycle == 339 && frameOdd && (ppuMask & 0x18)) {
+            // Skip to next scanline (cycle 340 becomes cycle 0 of next frame)
+            frameOdd = !frameOdd;
+            return;
+        }
+        
+        if (cycle == 340) {
+            frameOdd = !frameOdd;
+        }
+        return;
     }
     
-    // Handle VBlank end
-    if (scanline == PRERENDER_SCANLINE && cycle == 1) {
-        inVBlank = false;
-        ppuStatus &= 0x7F;  // Clear VBlank flag
-        sprite0Hit = false;
-        ppuStatus &= 0xBF;  // Clear sprite 0 hit flag
+    // Visible scanlines (0-239) - Render entire scanline at specific cycles
+    if (scanline >= 0 && scanline < 240) {
+        
+        // Render the scanline during background fetch cycles (cycle 256)
+        if (cycle == 256) {
+            renderScanline(scanline);
+        }
+        
+        // Sprite 0 hit detection at end of scanline
+        if (cycle == 340) {
+            checkSprite0HitScanline(scanline);
+        }        
+        return;
     }
     
-    // Light sprite 0 hit detection during visible scanlines
-    if (scanline >= 0 && scanline < VISIBLE_SCANLINES && (ppuMask & 0x18)) {
-        if (cycle >= 1 && cycle <= 256) {
-            // Simple sprite 0 hit check
-            if (!sprite0Hit && scanline >= 30 && scanline <= 35) {
-                uint8_t sprite0_y = oam[0] + 1; // +1 for sprite delay
-                uint8_t sprite0_x = oam[3];
+    // VBlank scanlines (241-260)
+    if (scanline == 241) {
+        if (cycle == 1) {
+            // Set VBlank flag
+            ppuStatus |= 0x80;
+            inVBlank = true;
+            frameComplete = true;
+            captureFrameScroll();
+            
+            // NMI will be triggered by main emulator if enabled
+        }
+        return;
+    }
+    
+    ppuCycles++;
+}
+
+void PPU::clearScanline(int scanline) {
+    // Fill scanline with background color
+    uint8_t bgColorIndex = palette[0];
+    uint32_t bgColor32 = paletteRGB[bgColorIndex];
+    uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | 
+                        ((bgColor32 & 0x00FC00) >> 5) | 
+                        ((bgColor32 & 0x0000F8) >> 3);
+    
+    uint16_t* scanlineStart = &frameBuffer[scanline * 256];
+    for (int x = 0; x < 256; x++) {
+        scanlineStart[x] = bgColor16;
+    }
+}
+
+void PPU::renderBackgroundScanline(int scanline) {
+    // Use captured frame scroll values for consistency
+    int scrollX = frameScrollX;
+    uint8_t baseNametable = frameCtrl & 0x01;
+    
+    // Calculate which tiles are visible on this scanline
+    int tileY = scanline / 8;
+    int fineY = scanline % 8;
+    
+    // Skip status bar area for now - let clearScanline handle it
+    if (scanline < 32) return; // Skip status bar area
+    
+    // Render tiles across the scanline
+    int startTileX = scrollX / 8;
+    int endTileX = (scrollX + 256) / 8 + 1;
+    
+    for (int tileX = startTileX; tileX <= endTileX; tileX++) {
+        int screenX = (tileX * 8) - scrollX;
+        
+        // Skip tiles that are completely off-screen
+        if (screenX + 8 <= 0 || screenX >= 256) continue;
+        
+        // Handle nametable wrapping and selection
+        uint16_t nametableAddr = baseNametable ? 0x2400 : 0x2000;
+        int localTileX = tileX % 32;
+        if (localTileX < 0) localTileX += 32;
+        
+        // Switch nametables for horizontal scrolling
+        if (tileX >= 32) {
+            nametableAddr = baseNametable ? 0x2000 : 0x2400;
+            localTileX = tileX - 32;
+        }
+        
+        // Get tile data
+        uint16_t tileAddr = nametableAddr + (tileY * 32) + localTileX;
+        uint8_t tileIndex = readByte(tileAddr);
+        uint8_t attribute = getAttributeTableValue(tileAddr);
+        
+        // Get pattern data
+        uint16_t patternBase = tileIndex * 16;
+        if (ppuCtrl & 0x10) patternBase += 0x1000;  // Background pattern table
+        
+        uint8_t patternLo = readCHR(patternBase + fineY);
+        uint8_t patternHi = readCHR(patternBase + fineY + 8);
+        
+        // Render the 8 pixels of this tile row
+        for (int pixelX = 0; pixelX < 8; pixelX++) {
+            int screenPixelX = screenX + pixelX;
+            
+            // Clip to screen bounds
+            if (screenPixelX < 0 || screenPixelX >= 256) continue;
+            
+            // Extract pixel from pattern data
+            uint8_t pixelValue = 0;
+            if (patternLo & (0x80 >> pixelX)) pixelValue |= 1;
+            if (patternHi & (0x80 >> pixelX)) pixelValue |= 2;
+            
+            // Get color
+            uint16_t pixel;
+            if (pixelValue == 0) {
+                // Transparent - use background color
+                uint8_t colorIndex = palette[0];
+                uint32_t color32 = paletteRGB[colorIndex];
+                pixel = ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
+            } else {
+                // Use background palette
+                uint8_t colorIndex = palette[(attribute & 0x03) * 4 + pixelValue];
+                uint32_t color32 = paletteRGB[colorIndex];
+                pixel = ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
+            }
+            
+            // ACTUALLY WRITE TO THE FRAME BUFFER
+            frameBuffer[scanline * 256 + screenPixelX] = pixel;
+        }
+    }
+}
+
+void PPU::renderSpriteScanline(int scanline) {
+    // Render sprites for this scanline in reverse priority order
+    for (int spriteIndex = 63; spriteIndex >= 0; spriteIndex--) {
+        uint8_t spriteY = oam[spriteIndex * 4];
+        uint8_t tileIndex = oam[spriteIndex * 4 + 1];
+        uint8_t attributes = oam[spriteIndex * 4 + 2];
+        uint8_t spriteX = oam[spriteIndex * 4 + 3];
+        
+        // Skip sprites not on this scanline
+        if (scanline < spriteY + 1 || scanline >= spriteY + 9) continue;
+        
+        // Skip off-screen sprites
+        if (spriteY >= 0xEF || spriteX >= 0xF9) continue;
+        
+        // Calculate sprite row (accounting for sprite delay)
+        int spriteRow = scanline - (spriteY + 1);
+        
+        // Handle vertical flip
+        if (attributes & 0x80) {
+            spriteRow = 7 - spriteRow;
+        }
+        
+        // Get pattern data
+        uint16_t patternBase = tileIndex * 16;
+        if (ppuCtrl & 0x08) patternBase += 0x1000;  // Sprite pattern table
+        
+        uint8_t patternLo = readCHR(patternBase + spriteRow);
+        uint8_t patternHi = readCHR(patternBase + spriteRow + 8);
+        
+        // Get sprite palette and priority
+        uint8_t spritePalette = (attributes & 0x03);
+        bool behindBackground = (attributes & 0x20) != 0;
+        bool flipX = (attributes & 0x40) != 0;
+        
+        // Render sprite pixels
+        for (int pixelX = 0; pixelX < 8; pixelX++) {
+            int screenX = spriteX + pixelX;
+            if (screenX >= 256) break;
+            
+            // Extract pixel value
+            int bitPos = flipX ? pixelX : (7 - pixelX);
+            uint8_t pixelValue = 0;
+            if (patternLo & (0x80 >> bitPos)) pixelValue |= 1;
+            if (patternHi & (0x80 >> bitPos)) pixelValue |= 2;
+            
+            // Skip transparent pixels
+            if (pixelValue == 0) continue;
+            
+            // Get sprite color
+            uint8_t colorIndex = palette[0x10 + spritePalette * 4 + pixelValue];
+            uint32_t color32 = paletteRGB[colorIndex];
+            uint16_t spritePixel = ((color32 & 0xF80000) >> 8) | 
+                                  ((color32 & 0x00FC00) >> 5) | 
+                                  ((color32 & 0x0000F8) >> 3);
+            
+            // Check background priority
+            if (behindBackground) {
+                // Only draw if background is transparent
+                uint8_t bgColorIndex = palette[0];
+                uint32_t bgColor32 = paletteRGB[bgColorIndex];
+                uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | 
+                                    ((bgColor32 & 0x00FC00) >> 5) | 
+                                    ((bgColor32 & 0x0000F8) >> 3);
                 
-                if (scanline >= sprite0_y && scanline < sprite0_y + 8 &&
-                    cycle >= sprite0_x && cycle < sprite0_x + 8) {
-                    sprite0Hit = true;
-                    ppuStatus |= 0x40; // Set sprite 0 hit flag
+                if (frameBuffer[scanline * 256 + screenX] == bgColor16) {
+                    frameBuffer[scanline * 256 + screenX] = spritePixel;
                 }
+            } else {
+                // Always draw sprite in front
+                frameBuffer[scanline * 256 + screenX] = spritePixel;
             }
         }
+    }
+}
+
+void PPU::checkSprite0HitScanline(int scanline) {
+    if (sprite0Hit) return;  // Already hit this frame
+    if (!(ppuMask & 0x18)) return;  // Rendering disabled
+    
+    // Get sprite 0 properties
+    uint8_t sprite0Y = oam[0];
+    uint8_t sprite0Tile = oam[1];
+    uint8_t sprite0Attr = oam[2];
+    uint8_t sprite0X = oam[3];
+    
+    // Check if sprite 0 is on this scanline
+    if (scanline < sprite0Y + 1 || scanline >= sprite0Y + 9) return;
+    
+    // For SMB, sprite 0 hit typically occurs around scanlines 30-35
+    if (scanline >= 30 && scanline <= 35) {
+        sprite0Hit = true;
+        ppuStatus |= 0x40;
+    }
+}
+
+void PPU::renderScanline(int scanline) {
+    if (scanline < 0 || scanline >= 240) return;
+    
+    // Clear the scanline first
+    clearScanline(scanline);
+    
+    // Render background if enabled
+    if (ppuMask & 0x08) {
+        renderBackgroundScanline(scanline);
+    }
+    
+    // Render sprites if enabled
+    if (ppuMask & 0x10) {
+        renderSpriteScanline(scanline);
     }
 }
 

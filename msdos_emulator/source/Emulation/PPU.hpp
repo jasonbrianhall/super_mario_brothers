@@ -102,6 +102,8 @@ public:
     bool isInVBlank() const { return inVBlank; }
     int getCurrentScanline() const { return currentScanline; }
     int getCurrentCycle() const { return currentCycle; }
+    bool isFrameComplete() const { return frameComplete; }
+    void resetFrame() { frameComplete = false; currentRenderScanline = 0; }
     
 private:
     SMBEmulator& engine;
@@ -120,6 +122,19 @@ private:
         ~ScalingCache();
         void cleanup();
     };
+
+    // Scanline-based rendering state
+    uint16_t frameBuffer[256 * 240];
+    int currentRenderScanline;
+    bool frameComplete;
+    
+    // Scanline rendering methods
+    void renderScanline(int scanline);
+    void renderBackgroundScanline(int scanline);
+    void renderSpriteScanline(int scanline);
+    void clearScanline(int scanline);
+    void checkSprite0HitScanline(int scanline);
+    
     
     static ScalingCache g_scalingCache;
     
