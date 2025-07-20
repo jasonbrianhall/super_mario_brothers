@@ -1538,15 +1538,8 @@ void PPU::stepCycle(int scanline, int cycle) {
         // CRITICAL: Latch scroll values at the START of each scanline
         if (cycle == 0) {
             // For SMB: status bar uses scroll=0, game area uses frameScrollX
-            if (scanline < 32) {
-                // Status bar area - always use 0 scroll
-                scanlineScrollX[scanline] = 0;
-                scanlineCtrl[scanline] = ppuCtrl;
-            } else {
-                // Game area - use the scroll value captured during VBlank
-                scanlineScrollX[scanline] = frameScrollX;
-                scanlineCtrl[scanline] = frameCtrl;
-            }
+            scanlineScrollX[scanline] = frameScrollX;
+            scanlineCtrl[scanline] = frameCtrl;
         }
         
         // Render the scanline at cycle 256
