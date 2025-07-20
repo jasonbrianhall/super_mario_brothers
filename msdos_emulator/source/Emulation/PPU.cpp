@@ -1153,14 +1153,11 @@ void PPU::writeDMA(uint8_t page)
 
 void PPU::writeRegister(uint16_t address, uint8_t value)
 {
-    static bool debugPPU = false; // Set to true for debugging
-    
     switch(address)
     {
     // PPUCTRL
     case 0x2000:
         ppuCtrl = value;
-        // Cache for next frame's rendering
         cachedCtrl = value;
         break;
         
@@ -1184,15 +1181,15 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
     case 0x2005:
         if (!writeToggle)
         {
-            // SMB alternates between $00 (status bar) and $C6 (game area)
-            // We want to keep the non-zero value as the "real" scroll
-            if (value != 0) {
-                // This is likely the game area scroll value
-                if (gameAreaScrollX != value) {
-                    gameAreaScrollX = value;
+            // CRITICAL: Detect mid-frame scroll changes
+            if (currentScanline >= 0 && currentScanline < 240) {
+                // We're in the middle of rendering - this is a mid-frame scroll change
+                // Update the scroll for all remaining scanlines
+                for (int i = currentScanline; i < 240; i++) {
+                    scanlineScrollX[i] = value;
                 }
             }
-            ppuScrollX = value;  // Still update the register for compatibility
+            ppuScrollX = value;
         }
         else
         {
@@ -1538,13 +1535,21 @@ void PPU::stepCycle(int scanline, int cycle) {
     // Visible scanlines (0-239)
     if (scanline >= 0 && scanline < 240) {
         
-        // Capture scroll values at start of each scanline (cycle 0)
+        // CRITICAL: Latch scroll values at the START of each scanline
         if (cycle == 0) {
-            scanlineScrollX[scanline] = ppuScrollX;
-            scanlineCtrl[scanline] = ppuCtrl;
+            // For SMB: status bar uses scroll=0, game area uses frameScrollX
+            if (scanline < 32) {
+                // Status bar area - always use 0 scroll
+                scanlineScrollX[scanline] = 0;
+                scanlineCtrl[scanline] = ppuCtrl;
+            } else {
+                // Game area - use the scroll value captured during VBlank
+                scanlineScrollX[scanline] = frameScrollX;
+                scanlineCtrl[scanline] = frameCtrl;
+            }
         }
         
-        // Render the scanline at end of visible area (cycle 256)
+        // Render the scanline at cycle 256
         if (cycle == 256) {
             renderScanline(scanline);
         }
