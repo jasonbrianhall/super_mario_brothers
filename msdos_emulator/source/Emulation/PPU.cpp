@@ -807,75 +807,58 @@ void PPU::render16(uint16_t* buffer)
         buffer[index] = bgColor16;
     }
 
+    // Use the captured frame scroll AND control values
+    int scrollOffset = frameScrollX;
+    uint8_t baseNametable = frameCtrl & 0x01;  // Use captured nametable selection
+    
+    static uint8_t lastFrameScroll = 255;
+    static uint8_t lastFrameCtrl = 255;
+    if (frameScrollX != lastFrameScroll || frameCtrl != lastFrameCtrl) {
+        lastFrameScroll = frameScrollX;
+        lastFrameCtrl = frameCtrl;
+    }
+
     if (ppuMask & (1 << 3))
     {
-        // Use current scroll and control values for all rendering
-        int scrollOffset = ppuScrollX + ((ppuCtrl & 0x01) ? 256 : 0);
-        int scrollY = ppuScrollY;
-        uint8_t baseNametable = ppuCtrl & 0x01;
+        // Status bar (rows 0-3) - ALWAYS from nametable 0, never scrolled
+        /*for (int x = 0; x < 32; x++) {
+            for (int y = 0; y < 4; y++) {
+                renderCachedTile(buffer, 0x2000 + 32 * y + x, x * 8, y * 8, false, false);
+            }
+        }*/
         
-        // Calculate which tiles need to be rendered
+        // Game area (rows 4-29) - use captured scroll and nametable
         int leftmostTile = scrollOffset / 8;
         int rightmostTile = (scrollOffset + 256) / 8 + 1;
-        int topmostTile = scrollY / 8;
-        int bottommostTile = (scrollY + 240) / 8 + 1;
         
-        // Render all visible tiles
         for (int tileX = leftmostTile; tileX <= rightmostTile; tileX++) {
-            for (int tileY = topmostTile; tileY <= bottommostTile; tileY++) {
+            for (int tileY = 4; tileY < 30; tileY++) {
                 int screenX = (tileX * 8) - scrollOffset;
-                int screenY = (tileY * 8) - scrollY;
+                int screenY = tileY * 8;
                 
-                // Skip tiles that are completely off-screen
-                if (screenX < -8 || screenX >= 256 || screenY < -8 || screenY >= 240) 
-                    continue;
+                if (screenX < -8 || screenX >= 256) continue;
                 
-                // Determine which nametable to use
-                uint16_t baseAddr = 0x2000;
-                int localTileX = tileX;
-                int localTileY = tileY;
+                // Use the base nametable from captured control register
+                uint16_t baseAddr = baseNametable ? 0x2400 : 0x2000;
                 
-                // Handle horizontal nametable wrapping
-                if (localTileX >= 32) {
-                    baseAddr += 0x400;  // Switch to right nametable
-                    localTileX -= 32;
-                }
-                if (localTileX < 0) {
-                    baseAddr += 0x400;  // Switch to right nametable
-                    localTileX += 32;
-                }
-                
-                // Handle vertical nametable wrapping
-                if (localTileY >= 30) {
-                    baseAddr += 0x800;  // Switch to bottom nametable
-                    localTileY -= 30;
-                }
-                if (localTileY < 0) {
-                    baseAddr += 0x800;  // Switch to bottom nametable  
-                    localTileY += 30;
-                }
-                
-                // Apply nametable selection from PPUCTRL
-                if (baseNametable) {
-                    if (baseAddr == 0x2000) baseAddr = 0x2400;
-                    else if (baseAddr == 0x2400) baseAddr = 0x2000;
-                    else if (baseAddr == 0x2800) baseAddr = 0x2C00;
-                    else if (baseAddr == 0x2C00) baseAddr = 0x2800;
-                }
-                
-                // Ensure coordinates are within bounds
-                localTileX = localTileX % 32;
-                localTileY = localTileY % 30;
+                // Handle wrapping within the 32x32 tile nametable
+                int localTileX = tileX % 32;
                 if (localTileX < 0) localTileX += 32;
-                if (localTileY < 0) localTileY += 30;
                 
-                uint16_t nametableAddr = baseAddr + (localTileY * 32) + localTileX;
+                // For SMB horizontal scrolling, when we go past 32 tiles, 
+                // we need to switch to the other nametable
+                if (tileX >= 32) {
+                    baseAddr = baseNametable ? 0x2000 : 0x2400;  // Switch to other nametable
+                    localTileX = tileX - 32;
+                }
+                
+                uint16_t nametableAddr = baseAddr + (tileY * 32) + localTileX;
                 renderCachedTile(buffer, nametableAddr, screenX, screenY, false, false);
             }
         }
     }
 
-    // Render sprites if enabled
+    // Sprites (unchanged)
     if (ppuMask & (1 << 4))
     {
         for (int i = 63; i >= 0; i--)
@@ -889,7 +872,8 @@ void PPU::render16(uint16_t* buffer)
 
             y++;
             
-            uint16_t tile = index;
+            // FIXED: Use the raw sprite index, let readCHR handle pattern table selection
+            uint16_t tile = index;  // Remove the +256 offset!
             
             bool flipX = attributes & (1 << 6);
             bool flipY = attributes & (1 << 7);
@@ -900,6 +884,7 @@ void PPU::render16(uint16_t* buffer)
         }
     }
 }
+
 
 void PPU::updateRenderRegisters()
 {
