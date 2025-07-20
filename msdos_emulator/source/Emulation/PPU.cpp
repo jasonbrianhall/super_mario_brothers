@@ -798,7 +798,7 @@ void PPU::setPaletteRAM(uint8_t* data) {
 
 void PPU::render16(uint16_t* buffer)
 {
-    // Clear the buffer with universal background color
+    // Clear the buffer
     uint32_t bgColor32 = paletteRGB[palette[0]];
     uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | ((bgColor32 & 0x00FC00) >> 5) | ((bgColor32 & 0x0000F8) >> 3);
     
@@ -807,59 +807,69 @@ void PPU::render16(uint16_t* buffer)
         buffer[index] = bgColor16;
     }
 
-    // Render background if enabled
     if (ppuMask & (1 << 3))
     {
-        // Use current scroll values instead of hardcoded frame capture
-        int scrollX = ppuScrollX + ((ppuCtrl & 0x01) ? 256 : 0);
+        // Use current scroll and control values for all rendering
+        int scrollOffset = ppuScrollX + ((ppuCtrl & 0x01) ? 256 : 0);
         int scrollY = ppuScrollY;
+        uint8_t baseNametable = ppuCtrl & 0x01;
         
-        // Calculate which tiles need to be rendered based on scroll position
-        int startTileX = scrollX / 8;
-        int startTileY = scrollY / 8;
-        int endTileX = (scrollX + 256 + 7) / 8;  // +7 for partial tiles
-        int endTileY = (scrollY + 240 + 7) / 8;
+        // Calculate which tiles need to be rendered
+        int leftmostTile = scrollOffset / 8;
+        int rightmostTile = (scrollOffset + 256) / 8 + 1;
+        int topmostTile = scrollY / 8;
+        int bottommostTile = (scrollY + 240) / 8 + 1;
         
         // Render all visible tiles
-        for (int tileX = startTileX; tileX <= endTileX; tileX++) {
-            for (int tileY = startTileY; tileY <= endTileY; tileY++) {
-                // Calculate screen position
-                int screenX = (tileX * 8) - scrollX;
+        for (int tileX = leftmostTile; tileX <= rightmostTile; tileX++) {
+            for (int tileY = topmostTile; tileY <= bottommostTile; tileY++) {
+                int screenX = (tileX * 8) - scrollOffset;
                 int screenY = (tileY * 8) - scrollY;
                 
                 // Skip tiles that are completely off-screen
                 if (screenX < -8 || screenX >= 256 || screenY < -8 || screenY >= 240) 
                     continue;
                 
-                // Determine which nametable to use based on scroll position
-                int actualTileX = tileX;
-                int actualTileY = tileY;
+                // Determine which nametable to use
                 uint16_t baseAddr = 0x2000;
+                int localTileX = tileX;
+                int localTileY = tileY;
                 
-                // Handle horizontal nametable switching
-                if (actualTileX >= 32) {
-                    baseAddr += 0x400;  // Switch to next horizontal nametable
-                    actualTileX -= 32;
+                // Handle horizontal nametable wrapping
+                if (localTileX >= 32) {
+                    baseAddr += 0x400;  // Switch to right nametable
+                    localTileX -= 32;
+                }
+                if (localTileX < 0) {
+                    baseAddr += 0x400;  // Switch to right nametable
+                    localTileX += 32;
                 }
                 
-                // Handle vertical nametable switching  
-                if (actualTileY >= 30) {
-                    baseAddr += 0x800;  // Switch to next vertical nametable
-                    actualTileY -= 30;
+                // Handle vertical nametable wrapping
+                if (localTileY >= 30) {
+                    baseAddr += 0x800;  // Switch to bottom nametable
+                    localTileY -= 30;
+                }
+                if (localTileY < 0) {
+                    baseAddr += 0x800;  // Switch to bottom nametable  
+                    localTileY += 30;
                 }
                 
-                // Wrap coordinates within nametable bounds
-                actualTileX = actualTileX % 32;
-                actualTileY = actualTileY % 30;
+                // Apply nametable selection from PPUCTRL
+                if (baseNametable) {
+                    if (baseAddr == 0x2000) baseAddr = 0x2400;
+                    else if (baseAddr == 0x2400) baseAddr = 0x2000;
+                    else if (baseAddr == 0x2800) baseAddr = 0x2C00;
+                    else if (baseAddr == 0x2C00) baseAddr = 0x2800;
+                }
                 
-                // Ensure coordinates are positive
-                if (actualTileX < 0) actualTileX += 32;
-                if (actualTileY < 0) actualTileY += 30;
+                // Ensure coordinates are within bounds
+                localTileX = localTileX % 32;
+                localTileY = localTileY % 30;
+                if (localTileX < 0) localTileX += 32;
+                if (localTileY < 0) localTileY += 30;
                 
-                // Calculate final nametable address
-                uint16_t nametableAddr = baseAddr + (actualTileY * 32) + actualTileX;
-                
-                // Render the tile
+                uint16_t nametableAddr = baseAddr + (localTileY * 32) + localTileX;
                 renderCachedTile(buffer, nametableAddr, screenX, screenY, false, false);
             }
         }
@@ -868,34 +878,25 @@ void PPU::render16(uint16_t* buffer)
     // Render sprites if enabled
     if (ppuMask & (1 << 4))
     {
-        // Render sprites in reverse order for proper priority
         for (int i = 63; i >= 0; i--)
         {
             uint8_t y          = oam[i * 4];
-            uint8_t tileIndex  = oam[i * 4 + 1];
+            uint8_t index      = oam[i * 4 + 1];
             uint8_t attributes = oam[i * 4 + 2];
             uint8_t x          = oam[i * 4 + 3];
 
-            // Skip off-screen sprites
             if (y >= 0xef || x >= 0xf9) continue;
 
-            // Sprite coordinates are delayed by 1 scanline
             y++;
             
-            // Extract sprite properties
-            bool flipX = (attributes & (1 << 6)) != 0;
-            bool flipY = (attributes & (1 << 7)) != 0;
-            uint8_t spritePalette = attributes & 0x03;
+            uint16_t tile = index;
+            
+            bool flipX = attributes & (1 << 6);
+            bool flipY = attributes & (1 << 7);
+            uint8_t sprite_palette = attributes & 0x03;
             bool behindBackground = (attributes & (1 << 5)) != 0;
-            
-            // Determine sprite tile based on sprite pattern table selection
-            uint16_t tile = tileIndex;
-            if (ppuCtrl & (1 << 3)) {
-                tile += 256;  // Use second pattern table for sprites
-            }
-            
-            // Render the sprite with priority handling
-            renderCachedSpriteWithPriority(buffer, tile, spritePalette, x, y, flipX, flipY, behindBackground);
+
+            renderCachedSpriteWithPriority(buffer, tile, sprite_palette, x, y, flipX, flipY, behindBackground);
         }
     }
 }
@@ -1610,26 +1611,43 @@ void PPU::captureFrameScroll() {
 
 void PPU::stepCycle(int scanline, int cycle)
 {
-    static int totalCalls = 0;
-
     currentScanline = scanline;
     currentCycle = cycle;
     
-    // Handle critical VBlank events
+    // Minimal PPU cycle processing - just track state
+    // Don't do heavy processing here since we're called every PPU cycle
+    
+    // Handle critical VBlank events only
     if (scanline == VBLANK_START_SCANLINE && cycle == 1) {
         inVBlank = true;
-        ppuStatus |= 0x80;
+        ppuStatus |= 0x80;  // Set VBlank flag
         captureFrameScroll();
     }
     
+    // Handle VBlank end
     if (scanline == PRERENDER_SCANLINE && cycle == 1) {
         inVBlank = false;
         ppuStatus &= 0x7F;  // Clear VBlank flag
-        sprite0Hit = false; // Clear sprite 0 hit
-        ppuStatus &= 0xBF;  // Clear sprite 0 hit flag in status register
+        sprite0Hit = false;
+        ppuStatus &= 0xBF;  // Clear sprite 0 hit flag
     }
     
-    // Don't do additional sprite 0 hit detection here - it's handled in checkSprite0Hit
+    // Light sprite 0 hit detection during visible scanlines
+    if (scanline >= 0 && scanline < VISIBLE_SCANLINES && (ppuMask & 0x18)) {
+        if (cycle >= 1 && cycle <= 256) {
+            // Simple sprite 0 hit check
+            if (!sprite0Hit && scanline >= 30 && scanline <= 35) {
+                uint8_t sprite0_y = oam[0] + 1; // +1 for sprite delay
+                uint8_t sprite0_x = oam[3];
+                
+                if (scanline >= sprite0_y && scanline < sprite0_y + 8 &&
+                    cycle >= sprite0_x && cycle < sprite0_x + 8) {
+                    sprite0Hit = true;
+                    ppuStatus |= 0x40; // Set sprite 0 hit flag
+                }
+            }
+        }
+    }
 }
 
 void PPU::catchUp(uint64_t targetCycles)

@@ -553,7 +553,7 @@ Based") << ")\n"; logFile.close();
 void SMBEmulator::update() {
   if (!romLoaded)
     return;
-    updateFrameBased();
+    updateCycleAccurate();
 
 }
 
