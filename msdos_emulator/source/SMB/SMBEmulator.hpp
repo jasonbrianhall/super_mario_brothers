@@ -124,7 +124,7 @@ private:
   Zapper *zapper;
   bool zapperEnabled;
   uint16_t *currentFrameBuffer;
-
+  bool isPixelBright(uint16_t pixelColor);
   // Status flag helpers
   enum StatusFlags {
     FLAG_CARRY = 0x01,

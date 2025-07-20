@@ -1898,3 +1898,174 @@ void PPU::stepScanline()
         frameOdd = !frameOdd;
     }
 }
+
+uint16_t PPU::getCurrentPixelColor(int x, int y) {
+    // Bounds check
+    if (x < 0 || x >= 256 || y < 0 || y >= 240) {
+        return 0x0000; // Return black for out-of-bounds
+    }
+    
+    // If rendering is disabled, return background color
+    if (!(ppuMask & 0x18)) {
+        uint8_t bgColorIndex = palette[0];
+        uint32_t bgColor32 = paletteRGB[bgColorIndex];
+        return ((bgColor32 & 0xF80000) >> 8) | ((bgColor32 & 0x00FC00) >> 5) | ((bgColor32 & 0x0000F8) >> 3);
+    }
+    
+    // Start with background color
+    uint8_t bgColorIndex = palette[0];
+    uint32_t finalColor32 = paletteRGB[bgColorIndex];
+    uint16_t finalPixel = ((finalColor32 & 0xF80000) >> 8) | ((finalColor32 & 0x00FC00) >> 5) | ((finalColor32 & 0x0000F8) >> 3);
+    
+    // Render background if enabled
+    if (ppuMask & 0x08) {
+        // Get background pixel color
+        uint16_t bgPixel = getBackgroundPixelColor(x, y);
+        if (bgPixel != finalPixel) {  // Non-transparent background
+            finalPixel = bgPixel;
+        }
+    }
+    
+    // Render sprites if enabled (check all sprites for this pixel)
+    if (ppuMask & 0x10) {
+        // Check sprites in reverse priority order (highest priority last)
+        for (int spriteIndex = 63; spriteIndex >= 0; spriteIndex--) {
+            uint8_t spriteY = oam[spriteIndex * 4];
+            uint8_t tileIndex = oam[spriteIndex * 4 + 1];
+            uint8_t attributes = oam[spriteIndex * 4 + 2];
+            uint8_t spriteX = oam[spriteIndex * 4 + 3];
+            
+            // Skip sprites not covering this pixel
+            if (x < spriteX || x >= spriteX + 8) continue;
+            if (y < spriteY + 1 || y >= spriteY + 9) continue;  // +1 for sprite delay
+            
+            // Skip off-screen sprites
+            if (spriteY >= 0xEF || spriteX >= 0xF9) continue;
+            
+            // Get sprite pixel color
+            uint16_t spritePixel = getSpritePixelColor(x, y, spriteIndex);
+            
+            if (spritePixel != 0) {  // Non-transparent sprite pixel
+                bool behindBackground = (attributes & 0x20) != 0;
+                
+                // Check background collision for priority
+                if (!behindBackground) {
+                    // Sprite in front - always visible
+                    finalPixel = spritePixel;
+                } else {
+                    // Sprite behind background - only visible if background is transparent
+                    uint32_t bgColor32 = paletteRGB[palette[0]];
+                    uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | ((bgColor32 & 0x00FC00) >> 5) | ((bgColor32 & 0x0000F8) >> 3);
+                    
+                    if (finalPixel == bgColor16) {  // Background is transparent
+                        finalPixel = spritePixel;
+                    }
+                }
+            }
+        }
+    }
+    
+    return finalPixel;
+}
+
+uint16_t PPU::getBackgroundPixelColor(int x, int y) {
+    // Get current scroll values
+    int scrollX = frameScrollX;
+    uint8_t ctrl = frameCtrl;
+    
+    // For SMB: status bar (top 4 rows) doesn't scroll
+    if (y < 32) {  // Status bar area
+        scrollX = 0;
+    }
+    
+    // Calculate tile position
+    int worldX = x + scrollX;
+    int tileX = worldX / 8;
+    int tileY = y / 8;
+    int pixelX = worldX % 8;
+    int pixelY = y % 8;
+    
+    // Determine nametable
+    uint16_t nametableAddr = 0x2000;
+    int localTileX = tileX % 32;
+    
+    if (ctrl & 0x01) {  // Base nametable bit
+        nametableAddr = 0x2400;
+    }
+    
+    // Handle horizontal nametable wrapping
+    if (tileX >= 32) {
+        nametableAddr = (nametableAddr == 0x2000) ? 0x2400 : 0x2000;
+        localTileX = tileX - 32;
+    }
+    
+    // Get tile data
+    uint16_t tileAddr = nametableAddr + (tileY * 32) + localTileX;
+    uint8_t tileIndex = readByte(tileAddr);
+    uint8_t attribute = getAttributeTableValue(tileAddr);
+    
+    // Get pattern data
+    uint16_t patternBase = tileIndex * 16;
+    if (ctrl & 0x10) {  // Background pattern table select
+        patternBase += 0x1000;
+    }
+    
+    uint8_t patternLo = readCHR(patternBase + pixelY);
+    uint8_t patternHi = readCHR(patternBase + pixelY + 8);
+    
+    // Extract pixel value
+    uint8_t pixelValue = 0;
+    if (patternLo & (0x80 >> pixelX)) pixelValue |= 1;
+    if (patternHi & (0x80 >> pixelX)) pixelValue |= 2;
+    
+    // Get final color
+    uint8_t colorIndex;
+    if (pixelValue == 0) {
+        colorIndex = palette[0];  // Background color
+    } else {
+        colorIndex = palette[(attribute & 0x03) * 4 + pixelValue];
+    }
+    
+    uint32_t color32 = paletteRGB[colorIndex];
+    return ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
+}
+
+uint16_t PPU::getSpritePixelColor(int x, int y, int spriteIndex) {
+    uint8_t spriteY = oam[spriteIndex * 4];
+    uint8_t tileIndex = oam[spriteIndex * 4 + 1];
+    uint8_t attributes = oam[spriteIndex * 4 + 2];
+    uint8_t spriteX = oam[spriteIndex * 4 + 3];
+    
+    // Calculate pixel position within sprite
+    int pixelX = x - spriteX;
+    int pixelY = y - (spriteY + 1);  // +1 for sprite delay
+    
+    // Handle flipping
+    bool flipX = (attributes & 0x40) != 0;
+    bool flipY = (attributes & 0x80) != 0;
+    
+    if (flipX) pixelX = 7 - pixelX;
+    if (flipY) pixelY = 7 - pixelY;
+    
+    // Get pattern data
+    uint16_t patternBase = tileIndex * 16;
+    if (ppuCtrl & 0x08) {  // Sprite pattern table select
+        patternBase += 0x1000;
+    }
+    
+    uint8_t patternLo = readCHR(patternBase + pixelY);
+    uint8_t patternHi = readCHR(patternBase + pixelY + 8);
+    
+    // Extract pixel value - match the working render logic exactly
+    uint8_t paletteIndex = 0;
+    if (patternLo & (1 << pixelX)) paletteIndex |= 1;
+    if (patternHi & (1 << pixelX)) paletteIndex |= 2;
+    
+    // Return 0 for transparent pixels
+    if (paletteIndex == 0) return 0;
+    
+    // Get sprite color
+    uint8_t colorIndex = palette[0x10 + (attributes & 0x03) * 4 + paletteIndex];
+    uint32_t color32 = paletteRGB[colorIndex];
+    return ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
+}

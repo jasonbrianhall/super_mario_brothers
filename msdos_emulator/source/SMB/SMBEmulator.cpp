@@ -703,6 +703,35 @@ void SMBEmulator::updateCycleAccurate() {
                 // DON'T clear sprite0hit here - it persists until end of frame
             }
             
+            // FIXED: Check Zapper during visible scanlines when rendering
+            if (zapperEnabled && zapper && scanline >= 0 && scanline < VISIBLE_SCANLINES && ppuCycleState.renderingEnabled) {
+                // Check if we're at the current mouse position
+                int nesMouseX = zapper->getMouseX();
+                int nesMouseY = zapper->getMouseY();
+                
+                // Only check during visible pixel output (cycles 1-256)
+                if (cycle >= 1 && cycle <= 256) {
+                    int pixelX = cycle - 1;  // Convert cycle to pixel position
+                    int pixelY = scanline;
+                    
+                    // Check if zapper is aimed at this pixel and trigger is pressed
+                    if (zapper->isTriggerPressed() && 
+                        pixelX >= nesMouseX - 2 && pixelX <= nesMouseX + 2 &&
+                        pixelY >= nesMouseY - 2 && pixelY <= nesMouseY + 2) {
+                        
+                        // Get the current pixel color from PPU
+                        // This would need to be implemented in your PPU class
+                        uint16_t pixelColor = ppu->getCurrentPixelColor(pixelX, pixelY);
+                        printf("pixelcolor %i brigth %i\n", pixelColor, isPixelBright(pixelColor));
+                        // Duck Hunt looks for bright colors (white/light colors)
+                        // Check if pixel is bright enough to trigger light detection
+                        if (isPixelBright(pixelColor)) {
+                            zapper->setLightDetected(true);
+                        }
+                    }
+                }
+            }
+            
             if (scanline >= 0 && scanline < VISIBLE_SCANLINES && ppuCycleState.renderingEnabled) {
                 checkSprite0Hit(scanline, cycle);
             }
@@ -742,12 +771,35 @@ void SMBEmulator::updateCycleAccurate() {
     // End of frame cleanup
     ppu->setVBlankFlag(false);
     ppu->setSprite0Hit(false);
-    // REMOVED: nmiPending = false; (not using pending system anymore)
+    
+    // Clear zapper light detection at end of frame if trigger not pressed
+    if (zapperEnabled && zapper && !zapper->isTriggerPressed()) {
+        //zapper->setLightDetected(false);
+    }
     
     // Audio frame advance
     if (Configuration::getAudioEnabled()) {
         apu->stepFrame();
     }
+}
+
+bool SMBEmulator::isPixelBright(uint16_t pixelColor) {
+    // Convert 16-bit color to RGB components
+    // Assuming 5-6-5 RGB format (adjust based on your actual format)
+    uint8_t r = (pixelColor >> 11) & 0x1F;
+    uint8_t g = (pixelColor >> 5) & 0x3F;
+    uint8_t b = pixelColor & 0x1F;
+    
+    // Scale to 8-bit values
+    r = (r * 255) / 31;
+    g = (g * 255) / 63;
+    b = (b * 255) / 31;
+    
+    // Calculate brightness (simple luminance formula)
+    int brightness = (r * 299 + g * 587 + b * 114) / 1000;
+    
+    // Duck Hunt typically detects white/light colors (brightness > 200)
+    return brightness > 200;
 }
 
 void SMBEmulator::checkSprite0Hit(int scanline, int cycle) {

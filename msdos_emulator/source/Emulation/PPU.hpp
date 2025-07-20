@@ -104,6 +104,7 @@ public:
     int getCurrentCycle() const { return currentCycle; }
     bool isFrameComplete() const { return frameComplete; }
     void resetFrame() { frameComplete = false; currentRenderScanline = 0; }
+    uint16_t getCurrentPixelColor(int x, int y);
     
 private:
     SMBEmulator& engine;
@@ -233,6 +234,9 @@ private:
     uint8_t frameScrollX; 
     uint8_t frameCtrl;     // The control register for this entire frame
     uint8_t frameCHRBank;
+    uint16_t getBackgroundPixelColor(int x, int y);
+    uint16_t getSpritePixelColor(int x, int y, int spriteIndex);
+
 
 };
 
