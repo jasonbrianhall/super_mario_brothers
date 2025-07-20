@@ -742,7 +742,7 @@ void SMBEmulator::updateCycleAccurate() {
     
     // End of frame cleanup
     ppu->setVBlankFlag(false);
-    ppu->setSprite0Hit(false);
+    ppu->setSprite0Hit(true);
     // REMOVED: nmiPending = false; (not using pending system anymore)
     
     // Audio frame advance
