@@ -1181,13 +1181,13 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
     case 0x2005:
         if (!writeToggle)
         {
-            // CRITICAL: Detect mid-frame scroll changes
-            if (currentScanline >= 0 && currentScanline < 240) {
-                // We're in the middle of rendering - this is a mid-frame scroll change
-                // Update the scroll for all remaining scanlines
-                for (int i = currentScanline; i < 240; i++) {
-                    scanlineScrollX[i] = value;
-                }
+            if (currentScanline < 240) {
+                printf("PPUScroll %i %i\n", currentScanline, value);
+                scanlineScrollX[currentScanline] = value;
+            }
+            else
+            {
+                printf("PPUScroll %i %i\n", currentScanline, value);
             }
             ppuScrollX = value;
         }
@@ -1587,9 +1587,19 @@ void PPU::renderBackgroundScanline(int scanline) {
     if (scanline < 0 || scanline >= 240) return;
     
     // Use the scroll values that were captured at the start of this scanline
-    int scrollX = scanlineScrollX[scanline];
-    uint8_t ctrl = scanlineCtrl[scanline];
-    uint8_t baseNametable = ctrl & 0x01;
+    int scrollX;
+    /*if (scanline<39)
+    {
+        scrollX=false;
+    }
+    else
+    {
+        scrollX = scanlineScrollX[scanline];
+    }*/
+    //printf("scallineScrollX %i %i\n", scanline, scanlineScrollX[scanline]);
+    scrollX = scanlineScrollX[scanline];
+        uint8_t ctrl = scanlineCtrl[scanline];
+        uint8_t baseNametable = ctrl & 0x01;
     
     // Calculate which tiles are visible on this scanline
     int tileY = scanline / 8;

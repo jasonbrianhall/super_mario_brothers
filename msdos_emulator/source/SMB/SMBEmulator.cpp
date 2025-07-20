@@ -664,7 +664,6 @@ void SMBEmulator::updateCycleAccurate() {
     
     for (int scanline = 0; scanline < TOTAL_SCANLINES; scanline++) {
         ppuCycleState.scanline = scanline;
-        
         // Determine scanline state
         if (scanline < VISIBLE_SCANLINES) {
             ppuCycleState.inVBlank = false;
@@ -742,7 +741,7 @@ void SMBEmulator::updateCycleAccurate() {
     
     // End of frame cleanup
     ppu->setVBlankFlag(false);
-    ppu->setSprite0Hit(true);
+    ppu->setSprite0Hit(false);
     // REMOVED: nmiPending = false; (not using pending system anymore)
     
     // Audio frame advance
@@ -752,42 +751,24 @@ void SMBEmulator::updateCycleAccurate() {
 }
 
 void SMBEmulator::checkSprite0Hit(int scanline, int cycle) {
-    // Don't check if already hit this frame
-    if (ppu->getStatus() & 0x40) return;
-    
-    // Only check during rendering
-    if (!ppuCycleState.renderingEnabled) return;
-    
-    // Sprite 0 hit can only occur on visible scanlines during rendering cycles
-    if (scanline >= 240 || cycle < 1 || cycle > 256) return;
-    
-    // Get sprite 0 properties from OAM
-    uint8_t sprite0_y = ppu->getOAM()[0];
-    uint8_t sprite0_tile = ppu->getOAM()[1];
-    uint8_t sprite0_attr = ppu->getOAM()[2];
-    uint8_t sprite0_x = ppu->getOAM()[3];
-    
-    // Sprite coordinates are delayed by 1 scanline
-    sprite0_y++;
-    
-    // Check if we're in the sprite 0 area
-    if (scanline >= sprite0_y && scanline < sprite0_y + 8) {
-        if (cycle >= sprite0_x && cycle < sprite0_x + 8) {
-            if (scanline >= 8 && scanline <= 40) {
-                static int sprite0HitCount = 0;
-                sprite0HitCount++;
-                ppu->setSprite0Hit(true);
-                return;
-            }
-            
-            // Also check for common SMB sprite 0 hit area (scanlines 30-35)
-            if (scanline >= 30 && scanline <= 35) {
-                ppu->setSprite0Hit(true);
-                return;
-            }
-        }
-    }
+   if (ppu->getStatus() & 0x40) return;  // Already hit
+   if (!ppuCycleState.renderingEnabled) return;  // Rendering disabled
+   if (scanline >= 240) return;  // Not visible scanline
+   
+   uint8_t sprite0_y = ppu->getOAM()[0];
+   uint8_t sprite0_x = ppu->getOAM()[3];
+   
+   sprite0_y++;  // Sprite delay
+   
+   // Simple collision detection - if we're in sprite 0's area
+   if (scanline >= sprite0_y && scanline < sprite0_y + 8) {
+       if (cycle >= sprite0_x && cycle < sprite0_x + 8) {
+           // WE GOT A HIT!
+           ppu->setSprite0Hit(true);
+       }
+   }
 }
+
 
 void SMBEmulator::checkMMC3IRQ() {
   if (nesHeader.mapper != 4)
@@ -2133,6 +2114,11 @@ void SMBEmulator::stepMMC3IRQ() {
 
 void SMBEmulator::writeByte(uint16_t address, uint8_t value)
 {
+    if (address == 0x2005) {
+        printf("$2005 write attempt: value=$%02X, scanline=%d, PC=$%04X\n", 
+               value, ppuCycleState.scanline, regPC);
+    }
+
     if (address < 0x2000) {
         ram[address & 0x7FF] = value;
     }
