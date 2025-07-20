@@ -165,7 +165,7 @@ private:
     uint8_t palette[32]; /**< Palette data. */
     uint8_t nametable[2048]; /**< Background table. */
     uint8_t oam[256]; /**< Sprite memory. */
-
+    uint8_t nextFrameScrollX[240]; 
     // PPU Address control
     uint16_t currentAddress; /**< Address that will be accessed on the next PPU read/write. */
     bool writeToggle; /**< Toggles whether the low or high bit of the current address will be set on the next write to PPUADDR. */

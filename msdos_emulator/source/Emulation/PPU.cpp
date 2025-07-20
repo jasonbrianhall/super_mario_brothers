@@ -1179,24 +1179,24 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
         
     // PPUSCROLL
     case 0x2005:
-        if (!writeToggle)
-        {
-            if (currentScanline < 240) {
-                printf("PPUScroll %i %i\n", currentScanline, value);
-                scanlineScrollX[currentScanline] = value;
-            }
-            else
-            {
-                printf("PPUScroll %i %i\n", currentScanline, value);
-            }
+        if (!writeToggle) {
+            //printf("PPUScroll %i %i\n", currentScanline, value);
             ppuScrollX = value;
+        
+            if (currentScanline < 240) {
+                // Mid-frame write - apply to current frame
+                for (int i = currentScanline; i < 240; i++) {
+                    printf("Setting scanline %i to %i\n", i, value);
+                    scanlineScrollX[i] = value;
+                }
+            } else {
+                // VBlank write - apply to next frame
+                printf("Clearing scan lines\n");
+                for (int i = 0; i < 240; i++) {
+                    scanlineScrollX[i] = 0;
+                }
+            }
         }
-        else
-        {
-            ppuScrollY = value;
-        }
-        writeToggle = !writeToggle;
-        break;
         
     // PPUADDR
     case 0x2006:
@@ -1538,7 +1538,7 @@ void PPU::stepCycle(int scanline, int cycle) {
         // CRITICAL: Latch scroll values at the START of each scanline
         if (cycle == 0) {
             // For SMB: status bar uses scroll=0, game area uses frameScrollX
-            scanlineScrollX[scanline] = frameScrollX;
+            //scanlineScrollX[scanline] = frameScrollX;
             scanlineCtrl[scanline] = frameCtrl;
         }
         
@@ -1584,77 +1584,68 @@ void PPU::clearScanline(int scanline) {
 }
 
 void PPU::renderBackgroundScanline(int scanline) {
-    if (scanline < 0 || scanline >= 240) return;
-    
-    // Use the scroll values that were captured at the start of this scanline
-    int scrollX;
-    /*if (scanline<39)
-    {
-        scrollX=false;
-    }
-    else
-    {
-        scrollX = scanlineScrollX[scanline];
-    }*/
-    //printf("scallineScrollX %i %i\n", scanline, scanlineScrollX[scanline]);
-    scrollX = scanlineScrollX[scanline];
-        uint8_t ctrl = scanlineCtrl[scanline];
-        uint8_t baseNametable = ctrl & 0x01;
-    
-    // Calculate which tiles are visible on this scanline
-    int tileY = scanline / 8;
-    int fineY = scanline % 8;
-    
-    // Render tiles across the scanline
-    int startTileX = scrollX / 8;
-    int endTileX = (scrollX + 256) / 8 + 1;
-    
-    for (int tileX = startTileX; tileX <= endTileX; tileX++) {
-        int screenX = (tileX * 8) - scrollX;
-        
-        if (screenX + 8 <= 0 || screenX >= 256) continue;
-        
-        uint16_t nametableAddr = baseNametable ? 0x2400 : 0x2000;
-        int localTileX = tileX % 32;
-        if (localTileX < 0) localTileX += 32;
-        
-        if (tileX >= 32) {
-            nametableAddr = baseNametable ? 0x2000 : 0x2400;
-            localTileX = tileX - 32;
-        }
-        
-        uint16_t tileAddr = nametableAddr + (tileY * 32) + localTileX;
-        uint8_t tileIndex = readByte(tileAddr);
-        uint8_t attribute = getAttributeTableValue(tileAddr);
-        
-        uint16_t patternBase = tileIndex * 16;
-        if (ctrl & 0x10) patternBase += 0x1000;  // Use captured ctrl value
-        
-        uint8_t patternLo = readCHR(patternBase + fineY);
-        uint8_t patternHi = readCHR(patternBase + fineY + 8);
-        
-        for (int pixelX = 0; pixelX < 8; pixelX++) {
-            int screenPixelX = screenX + pixelX;
-            if (screenPixelX < 0 || screenPixelX >= 256) continue;
-            
-            uint8_t pixelValue = 0;
-            if (patternLo & (0x80 >> pixelX)) pixelValue |= 1;
-            if (patternHi & (0x80 >> pixelX)) pixelValue |= 2;
-            
-            uint16_t pixel;
-            if (pixelValue == 0) {
-                uint8_t colorIndex = palette[0];
-                uint32_t color32 = paletteRGB[colorIndex];
-                pixel = ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
-            } else {
-                uint8_t colorIndex = palette[(attribute & 0x03) * 4 + pixelValue];
-                uint32_t color32 = paletteRGB[colorIndex];
-                pixel = ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
-            }
-            
-            frameBuffer[scanline * 256 + screenPixelX] = pixel;
-        }
-    }
+   if (scanline < 0 || scanline >= 240) return;
+   
+   // Use the scroll value that was set for this specific scanline
+   int scrollX = scanlineScrollX[scanline];
+   //printf("Scrollx %i %i\n", scanline, scrollX);
+   uint8_t ctrl = scanlineCtrl[scanline];
+   uint8_t baseNametable = ctrl & 0x01;
+   
+   // Calculate which tiles are visible on this scanline
+   int tileY = scanline / 8;
+   int fineY = scanline % 8;
+   
+   // Render tiles across the scanline
+   int startTileX = scrollX / 8;
+   int endTileX = (scrollX + 256) / 8 + 1;
+   
+   for (int tileX = startTileX; tileX <= endTileX; tileX++) {
+       int screenX = (tileX * 8) - scrollX;
+       
+       if (screenX + 8 <= 0 || screenX >= 256) continue;
+       
+       uint16_t nametableAddr = baseNametable ? 0x2400 : 0x2000;
+       int localTileX = tileX % 32;
+       if (localTileX < 0) localTileX += 32;
+       
+       if (tileX >= 32) {
+           nametableAddr = baseNametable ? 0x2000 : 0x2400;
+           localTileX = tileX - 32;
+       }
+       
+       uint16_t tileAddr = nametableAddr + (tileY * 32) + localTileX;
+       uint8_t tileIndex = readByte(tileAddr);
+       uint8_t attribute = getAttributeTableValue(tileAddr);
+       
+       uint16_t patternBase = tileIndex * 16;
+       if (ctrl & 0x10) patternBase += 0x1000;
+       
+       uint8_t patternLo = readCHR(patternBase + fineY);
+       uint8_t patternHi = readCHR(patternBase + fineY + 8);
+       
+       for (int pixelX = 0; pixelX < 8; pixelX++) {
+           int screenPixelX = screenX + pixelX;
+           if (screenPixelX < 0 || screenPixelX >= 256) continue;
+           
+           uint8_t pixelValue = 0;
+           if (patternLo & (0x80 >> pixelX)) pixelValue |= 1;
+           if (patternHi & (0x80 >> pixelX)) pixelValue |= 2;
+           
+           uint16_t pixel;
+           if (pixelValue == 0) {
+               uint8_t colorIndex = palette[0];
+               uint32_t color32 = paletteRGB[colorIndex];
+               pixel = ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
+           } else {
+               uint8_t colorIndex = palette[(attribute & 0x03) * 4 + pixelValue];
+               uint32_t color32 = paletteRGB[colorIndex];
+               pixel = ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
+           }
+           
+           frameBuffer[scanline * 256 + screenPixelX] = pixel;
+       }
+   }
 }
 
 void PPU::renderSpriteScanline(int scanline) {
