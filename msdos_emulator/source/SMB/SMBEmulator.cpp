@@ -550,7 +550,7 @@ Based") << ")\n"; logFile.close();
 void SMBEmulator::update() {
   if (!romLoaded)
     return;
-    updateFrameBased();
+    updateCycleAccurate();
 
 /*  if (needsCycleAccuracy()) {
     updateCycleAccurate();
@@ -643,7 +643,7 @@ void SMBEmulator::updateFrameBased() {
   }
 }
 
-/*void SMBEmulator::updateCycleAccurate() {
+void SMBEmulator::updateCycleAccurate() {
     if (!romLoaded) return;
     
     frameCycles = 0;
@@ -766,7 +766,7 @@ void SMBEmulator::updateFrameBased() {
     if (Configuration::getAudioEnabled()) {
         apu->stepFrame();
     }
-}*/
+}
 
 void SMBEmulator::checkSprite0Hit(int scanline, int cycle) {
   // More accurate sprite 0 hit timing
@@ -1841,40 +1841,23 @@ void SMBEmulator::executeInstruction() {
 }
 
 void SMBEmulator::catchUpPPU() {
-    // Only sync if we're behind (this prevents infinite loops)
+    // Calculate target PPU cycles (PPU runs 3x faster than CPU)
     uint64_t targetPPUCycles = masterCycles * 3;
     
-    // Prevent infinite loop - only catch up if we're not too far behind
-    if (ppuCycles >= targetPPUCycles || (targetPPUCycles - ppuCycles) > 1000) {
-        return;  // Already synced or something is wrong
+    // Get current PPU cycles
+    uint64_t currentPPUCycles = ppu->getCurrentCycles();
+    
+    // Only sync if we're behind and not too far behind (safety check)
+    if (currentPPUCycles >= targetPPUCycles || 
+        (targetPPUCycles - currentPPUCycles) > 10000) {
+        return;
     }
     
-    while (ppuCycles < targetPPUCycles) {
-        // Convert to scanline/cycle
-        uint64_t framePos = ppuCycles % (341 * 262);
-        int scanline = framePos / 341;
-        int cycle = framePos % 341;
-        
-        // Handle critical PPU events during catch-up
-        if (scanline == 241 && cycle == 1) {
-            ppu->setVBlankFlag(true);
-            ppu->captureFrameScroll();
-            if (ppu->getControl() & 0x80) {
-                nmiPending = true;
-            }
-        }
-        else if (scanline == 261 && cycle == 1) {
-            ppu->setVBlankFlag(false);
-            ppu->setSprite0Hit(false);
-        }
-        
-        ppuCycles++;
-        
-        // Safety valve to prevent infinite loops
-        if ((ppuCycles % 1000) == 0) {
-            break;
-        }
-    }
+    // Use PPU's cycle-accurate catch-up
+    ppu->catchUp(targetPPUCycles);
+    
+    // Update our internal ppuCycles to match
+    ppuCycles = ppu->getCurrentCycles();
 }
 
 

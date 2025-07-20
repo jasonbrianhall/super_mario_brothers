@@ -91,6 +91,17 @@ public:
     void captureFrameScroll();
     void invalidateTileCache();
     
+    // PPU cycle tracking and catch-up (DJGPP compatible)
+    void stepCycle(int scanline, int cycle);
+    void catchUp(uint64_t targetCycles);
+    uint64_t getCurrentCycles() const { return ppuCycles; }
+    void setCycles(uint64_t cycles) { ppuCycles = cycles; }
+    void addCycles(uint64_t cycles) { ppuCycles += cycles; }
+    
+    // Frame state tracking
+    bool isInVBlank() const { return inVBlank; }
+    int getCurrentScanline() const { return currentScanline; }
+    int getCurrentCycle() const { return currentCycle; }
     
 private:
     SMBEmulator& engine;
@@ -143,6 +154,28 @@ private:
     bool writeToggle; /**< Toggles whether the low or high bit of the current address will be set on the next write to PPUADDR. */
     uint8_t vramBuffer; /**< Stores the last read byte from VRAM to delay reads by 1 byte. */
 
+    // PPU cycle tracking
+    uint64_t ppuCycles;      // Total PPU cycles executed
+    int currentScanline;     // Current scanline (0-261)
+    int currentCycle;        // Current cycle within scanline (0-340)
+    bool inVBlank;           // VBlank state
+    bool frameOdd;           // Odd frame flag (for cycle skipping)
+    
+    // PPU timing constants (NTSC)
+    static const int CYCLES_PER_SCANLINE = 341;
+    static const int VISIBLE_SCANLINES = 240;
+    static const int VBLANK_START_SCANLINE = 241;
+    static const int PRERENDER_SCANLINE = 261;
+    static const int TOTAL_SCANLINES = 262;
+    
+    // Internal cycle stepping methods
+    void stepScanline();
+    void handleVBlankStart();
+    void handleVBlankEnd();
+    void handleSpriteEvaluation();
+    void handleBackgroundFetch();
+    void checkSprite0Hit();
+    
     // Internal helper methods
     uint8_t getAttributeTableValue(uint16_t nametableAddress);
     uint16_t getNametableIndex(uint16_t address);
@@ -183,6 +216,7 @@ private:
     uint8_t frameScrollX; 
     uint8_t frameCtrl;     // The control register for this entire frame
     uint8_t frameCHRBank;
+
 };
 
 #endif // PPU_HPP
