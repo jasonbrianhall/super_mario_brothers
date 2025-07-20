@@ -322,31 +322,29 @@ private:
     uint8_t reserved[64]; // Future expansion
   };
 
-  struct MMC1State {
+struct MMC1State {
     uint8_t shiftRegister;
     uint8_t shiftCount;
-    uint8_t control;  // $8000-$9FFF
-    uint8_t chrBank0; // $A000-$BFFF
-    uint8_t chrBank1; // $C000-$DFFF
-    uint8_t prgBank;  // $E000-$FFFF
-
-    // Current bank selections
+    uint8_t control;
+    uint8_t chrBank0;
+    uint8_t chrBank1;
+    uint8_t prgBank;
     uint8_t currentPRGBank;
     uint8_t currentCHRBank0;
     uint8_t currentCHRBank1;
 
     MMC1State() {
-      shiftRegister = 0x10; // Reset state
-      shiftCount = 0;
-      control = 0x0C; // 16KB PRG mode, fixed high bank
-      chrBank0 = 0;
-      chrBank1 = 0;
-      prgBank = 0;
-      currentPRGBank = 0;
-      currentCHRBank0 = 0;
-      currentCHRBank1 = 1;
+        shiftRegister = 0x10;
+        shiftCount = 0;
+        control = 0x0C;
+        chrBank0 = 0;
+        chrBank1 = 0;
+        prgBank = 0;
+        currentPRGBank = 0;
+        currentCHRBank0 = 0;
+        currentCHRBank1 = 1;
     }
-  } mmc1;
+} mmc1;
 
   void writeMMC1Register(uint16_t address, uint8_t value);
   void updateMMC1Banks();

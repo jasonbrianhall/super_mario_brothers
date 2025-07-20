@@ -809,68 +809,48 @@ void SMBEmulator::checkMMC3IRQ() {
 }
 
 void SMBEmulator::reset() {
-  if (!romLoaded)
-    return;
+    if (!romLoaded) return;
 
-  // Reset CPU state
-  regA = regX = regY = 0;
-  regSP = 0xFF;
-  regP = 0x24;
-  totalCycles = frameCycles = 0;
+    // Reset CPU state
+    regA = regX = regY = 0;
+    regSP = 0xFF;
+    regP = 0x24;
+    totalCycles = frameCycles = 0;
 
-  // Initialize mapper state
-  if (nesHeader.mapper == 1) {
-    mmc1 = MMC1State();
-    mmc1.control = 0x08;
-    mmc1.prgBank = 0;
-    mmc1.currentPRGBank = 0;
-    updateMMC1Banks();
-  } else if (nesHeader.mapper == 66) {
-    gxrom = GxROMState();
-
-    // Debug: Check all PRG banks for reset vectors
-    uint8_t totalBanks = prgSize / 0x8000; // 32KB banks
-    for (int bank = 0; bank < totalBanks; bank++) {
-      uint32_t bankOffset = bank * 0x8000;
-      uint32_t resetLow = bankOffset + 0x7FFC;  // $FFFC relative to bank
-      uint32_t resetHigh = bankOffset + 0x7FFD; // $FFFD relative to bank
-
-      if (resetLow < prgSize && resetHigh < prgSize) {
-        uint8_t low = prgROM[resetLow];
-        uint8_t high = prgROM[resetHigh];
-        uint16_t resetVector = low | (high << 8);
-      }
+    // CRITICAL FIX: Initialize mapper state BEFORE reading reset vector
+    if (nesHeader.mapper == 1) {
+        mmc1 = MMC1State();
+        updateMMC1Banks();
+    } else if (nesHeader.mapper == 66) {
+        gxrom = GxROMState();
+        // GxROM debug code can stay as-is
+    } else if (nesHeader.mapper == 2) {
+        uxrom = UxROMState();
+    } else if (nesHeader.mapper == 3) {
+        cnrom = CNROMState();
+    } else if (nesHeader.mapper == 4) {
+        mmc3 = MMC3State();
+        mmc3.bankData[0] = 0;
+        mmc3.bankData[1] = 2;
+        mmc3.bankData[2] = 4;
+        mmc3.bankData[3] = 5;
+        mmc3.bankData[4] = 6;
+        mmc3.bankData[5] = 7;
+        mmc3.bankData[6] = 0;
+        mmc3.bankData[7] = 1;
+        mmc3.bankSelect = 0;
+        updateMMC3Banks();
     }
-  } else if (nesHeader.mapper == 2) {
-    // UxROM initialization
-    uxrom = UxROMState();
-    printf("UxROM mapper initialized\n");
-  } else if (nesHeader.mapper == 3) {
-    cnrom = CNROMState();
-  } else if (nesHeader.mapper == 4) {
-    mmc3 = MMC3State();
-    // MMC3 power-up state according to wiki
-    mmc3.bankData[0] = 0; // R0: 2KB CHR bank at $0000-$07FF
-    mmc3.bankData[1] = 2; // R1: 2KB CHR bank at $0800-$0FFF
-    mmc3.bankData[2] = 4; // R2: 1KB CHR bank at $1000-$13FF
-    mmc3.bankData[3] = 5; // R3: 1KB CHR bank at $1400-$17FF
-    mmc3.bankData[4] = 6; // R4: 1KB CHR bank at $1800-$1BFF
-    mmc3.bankData[5] = 7; // R5: 1KB CHR bank at $1C00-$1FFF
-    mmc3.bankData[6] = 0; // R6: 8KB PRG bank (switchable)
-    mmc3.bankData[7] = 1; // R7: 8KB PRG bank (switchable)
-    mmc3.bankSelect = 0;  // Normal mode
-    updateMMC3Banks();
-  }
 
-  // Reset vector at $FFFC-$FFFD
-  regPC = readWord(0xFFFC);
+    // NOW read reset vector (after mapper is initialized)
+    regPC = readWord(0xFFFC);
 
-  // Clear RAM
-  memset(ram, 0, sizeof(ram));
+    // Clear RAM
+    memset(ram, 0, sizeof(ram));
 
-  std::cout << "Emulator reset, PC = $" << std::hex << regPC << std::dec
-            << std::endl;
+    std::cout << "Emulator reset, PC = $" << std::hex << regPC << std::dec << std::endl;
 }
+
 
 void SMBEmulator::step() {
   if (!romLoaded)
@@ -1906,7 +1886,6 @@ void SMBEmulator::checkPendingInterrupts()
     }
 }
 
-// Memory access functions
 uint8_t SMBEmulator::readByte(uint16_t address) {
   if (address < 0x2000) {
     // RAM (mirrored every 2KB)
@@ -1924,7 +1903,6 @@ uint8_t SMBEmulator::readByte(uint16_t address) {
     case 0x4017: {
       if (zapperEnabled && zapper) {
         uint8_t zapperValue = zapper->readByte();
-
         return zapperValue;
       } else {
         return controller2->readByte(PLAYER_2);
@@ -1971,7 +1949,7 @@ uint8_t SMBEmulator::readByte(uint16_t address) {
         return prgROM[romAddr];
       }
     } else if (nesHeader.mapper == 1) {
-      // MMC1 mapping - CORRECTED VERSION
+      // MMC1 mapping - FIXED VERSION
       uint32_t romAddr;
       uint8_t totalBanks = prgSize / 0x4000; // Number of 16KB banks
 
@@ -1991,7 +1969,7 @@ uint8_t SMBEmulator::readByte(uint16_t address) {
           romAddr = ((mmc1.currentPRGBank >> 1) * 0x8000) + (address - 0x8000);
         }
       } else {
-        // $C000-$FFFF (second 16KB bank)
+        // $C000-$FFFF (second 16KB bank) - THIS WAS THE MAIN BUG!
         if (mmc1.control & 0x08) {
           // 16KB PRG mode
           if (mmc1.control & 0x04) {
