@@ -1516,7 +1516,6 @@ void PPU::stepCycle(int scanline, int cycle) {
     // Pre-render scanline (261)
     if (scanline == 261) {
         if (cycle == 1) {
-            // Clear VBlank flag and sprite 0 hit at start of pre-render
             ppuStatus &= 0x7F;  // Clear VBlank
             ppuStatus &= 0xBF;  // Clear sprite 0 hit
             sprite0Hit = false;
@@ -1525,9 +1524,7 @@ void PPU::stepCycle(int scanline, int cycle) {
             currentRenderScanline = 0;
         }
         
-        // Odd frame cycle skip
         if (cycle == 339 && frameOdd && (ppuMask & 0x18)) {
-            // Skip to next scanline (cycle 340 becomes cycle 0 of next frame)
             frameOdd = !frameOdd;
             return;
         }
@@ -1538,31 +1535,35 @@ void PPU::stepCycle(int scanline, int cycle) {
         return;
     }
     
-    // Visible scanlines (0-239) - Render entire scanline at specific cycles
+    // Visible scanlines (0-239)
     if (scanline >= 0 && scanline < 240) {
         
-        // Render the scanline during background fetch cycles (cycle 256)
+        // Capture scroll values at start of each scanline (cycle 0)
+        if (cycle == 0) {
+            scanlineScrollX[scanline] = ppuScrollX;
+            scanlineCtrl[scanline] = ppuCtrl;
+        }
+        
+        // Render the scanline at end of visible area (cycle 256)
         if (cycle == 256) {
             renderScanline(scanline);
         }
         
-        // Sprite 0 hit detection at end of scanline
+        // Sprite 0 hit detection
         if (cycle == 340) {
             checkSprite0HitScanline(scanline);
-        }        
+        }
+        
         return;
     }
     
     // VBlank scanlines (241-260)
     if (scanline == 241) {
         if (cycle == 1) {
-            // Set VBlank flag
             ppuStatus |= 0x80;
             inVBlank = true;
             frameComplete = true;
             captureFrameScroll();
-            
-            // NMI will be triggered by main emulator if enabled
         }
         return;
     }
@@ -1585,16 +1586,16 @@ void PPU::clearScanline(int scanline) {
 }
 
 void PPU::renderBackgroundScanline(int scanline) {
-    // Use captured frame scroll values for consistency
-    int scrollX = frameScrollX;
-    uint8_t baseNametable = frameCtrl & 0x01;
+    if (scanline < 0 || scanline >= 240) return;
+    
+    // Use the scroll values that were captured at the start of this scanline
+    int scrollX = scanlineScrollX[scanline];
+    uint8_t ctrl = scanlineCtrl[scanline];
+    uint8_t baseNametable = ctrl & 0x01;
     
     // Calculate which tiles are visible on this scanline
     int tileY = scanline / 8;
     int fineY = scanline % 8;
-    
-    // Skip status bar area for now - let clearScanline handle it
-    if (scanline < 32) return; // Skip status bar area
     
     // Render tiles across the scanline
     int startTileX = scrollX / 8;
@@ -1603,59 +1604,46 @@ void PPU::renderBackgroundScanline(int scanline) {
     for (int tileX = startTileX; tileX <= endTileX; tileX++) {
         int screenX = (tileX * 8) - scrollX;
         
-        // Skip tiles that are completely off-screen
         if (screenX + 8 <= 0 || screenX >= 256) continue;
         
-        // Handle nametable wrapping and selection
         uint16_t nametableAddr = baseNametable ? 0x2400 : 0x2000;
         int localTileX = tileX % 32;
         if (localTileX < 0) localTileX += 32;
         
-        // Switch nametables for horizontal scrolling
         if (tileX >= 32) {
             nametableAddr = baseNametable ? 0x2000 : 0x2400;
             localTileX = tileX - 32;
         }
         
-        // Get tile data
         uint16_t tileAddr = nametableAddr + (tileY * 32) + localTileX;
         uint8_t tileIndex = readByte(tileAddr);
         uint8_t attribute = getAttributeTableValue(tileAddr);
         
-        // Get pattern data
         uint16_t patternBase = tileIndex * 16;
-        if (ppuCtrl & 0x10) patternBase += 0x1000;  // Background pattern table
+        if (ctrl & 0x10) patternBase += 0x1000;  // Use captured ctrl value
         
         uint8_t patternLo = readCHR(patternBase + fineY);
         uint8_t patternHi = readCHR(patternBase + fineY + 8);
         
-        // Render the 8 pixels of this tile row
         for (int pixelX = 0; pixelX < 8; pixelX++) {
             int screenPixelX = screenX + pixelX;
-            
-            // Clip to screen bounds
             if (screenPixelX < 0 || screenPixelX >= 256) continue;
             
-            // Extract pixel from pattern data
             uint8_t pixelValue = 0;
             if (patternLo & (0x80 >> pixelX)) pixelValue |= 1;
             if (patternHi & (0x80 >> pixelX)) pixelValue |= 2;
             
-            // Get color
             uint16_t pixel;
             if (pixelValue == 0) {
-                // Transparent - use background color
                 uint8_t colorIndex = palette[0];
                 uint32_t color32 = paletteRGB[colorIndex];
                 pixel = ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
             } else {
-                // Use background palette
                 uint8_t colorIndex = palette[(attribute & 0x03) * 4 + pixelValue];
                 uint32_t color32 = paletteRGB[colorIndex];
                 pixel = ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
             }
             
-            // ACTUALLY WRITE TO THE FRAME BUFFER
             frameBuffer[scanline * 256 + screenPixelX] = pixel;
         }
     }

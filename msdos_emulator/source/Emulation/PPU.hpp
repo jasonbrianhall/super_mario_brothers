@@ -116,12 +116,14 @@ private:
         int destWidth, destHeight;
         int destOffsetX, destOffsetY;
         int screenWidth, screenHeight;
-        bool isValid;
-        
+        bool isValid;        
         ScalingCache();
         ~ScalingCache();
         void cleanup();
     };
+
+    uint8_t scanlineScrollX[240];   // Scroll X value for each scanline
+    uint8_t scanlineCtrl[240];      // Control register value for each scanline
 
     // Scanline-based rendering state
     uint16_t frameBuffer[256 * 240];
