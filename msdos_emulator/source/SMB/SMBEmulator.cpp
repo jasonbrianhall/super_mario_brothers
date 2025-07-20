@@ -3,7 +3,6 @@
 #include "../Emulation/APU.hpp"
 #include "../Emulation/Controller.hpp"
 #include "../Emulation/PPU.hpp"
-#include "../Emulation/PPUCycleAccurate.hpp"
 #include "../Zapper.hpp"
 #include <chrono>
 #include <cstdint>
@@ -59,7 +58,6 @@ SMBEmulator::SMBEmulator()
   // Create components - they'll get CHR data when ROM is loaded
   apu = new APU();
   ppu = new PPU(*this);
-  ppuCycleAccurate = new PPUCycleAccurate(*this);
   controller1 = new Controller();
   controller2 = new Controller();
   zapper = new Zapper();
@@ -69,7 +67,6 @@ SMBEmulator::SMBEmulator()
 SMBEmulator::~SMBEmulator() {
   delete apu;
   delete ppu;
-  delete ppuCycleAccurate;
   delete controller1;
   delete controller2;
   delete zapper;
@@ -84,7 +81,7 @@ void SMBEmulator::writeCNROMRegister(uint16_t address, uint8_t value) {
 
   // Invalidate cache if CHR bank changed
   /*if (oldCHRBank != cnrom.chrBank) {
-      ppuCycleAccurate->invalidateTileCache();
+      ppu->invalidateTileCache();
   }*/
 }
 
@@ -553,13 +550,14 @@ Based") << ")\n"; logFile.close();
 void SMBEmulator::update() {
   if (!romLoaded)
     return;
+    updateFrameBased();
 
-  if (needsCycleAccuracy()) {
+/*  if (needsCycleAccuracy()) {
     updateCycleAccurate();
   } else {
     // Use the existing fast frame-based update for simple mappers
     updateFrameBased();
-  }
+  }*/
 }
 
 bool SMBEmulator::needsCycleAccuracy() const {
@@ -604,16 +602,16 @@ void SMBEmulator::updateFrameBased() {
     }
 
     // Simulate sprite 0 hit around scanline 32 (status bar area)
-    if (scanline == 32 && (ppuCycleAccurate->getMask() & 0x18)) { // If rendering enabled
-      ppuCycleAccurate->setSprite0Hit(true);
+    if (scanline == 32 && (ppu->getMask() & 0x18)) { // If rendering enabled
+      ppu->setSprite0Hit(true);
     }
   }
 
   // CAPTURE SCROLL VALUE RIGHT BEFORE VBLANK
-  ppuCycleAccurate->captureFrameScroll();
+  ppu->captureFrameScroll();
 
   // Start VBlank on scanline 241
-  ppuCycleAccurate->setVBlankFlag(true);
+  ppu->setVBlankFlag(true);
 
   // Execute a few cycles to let the game see VBlank before NMI
   for (int i = 0; i < 3; i++) {
@@ -621,7 +619,7 @@ void SMBEmulator::updateFrameBased() {
   }
 
   // Trigger NMI if enabled
-  if (ppuCycleAccurate->getControl() & 0x80) {
+  if (ppu->getControl() & 0x80) {
     handleNMI();
   }
 
@@ -634,8 +632,8 @@ void SMBEmulator::updateFrameBased() {
   }
 
   // Clear VBlank flag and sprite 0 hit at start of next frame
-  ppuCycleAccurate->setVBlankFlag(false);
-  ppuCycleAccurate->setSprite0Hit(false);
+  ppu->setVBlankFlag(false);
+  ppu->setSprite0Hit(false);
 
   frameCount++;
 
@@ -645,7 +643,7 @@ void SMBEmulator::updateFrameBased() {
   }
 }
 
-void SMBEmulator::updateCycleAccurate() {
+/*void SMBEmulator::updateCycleAccurate() {
     if (!romLoaded) return;
     
     frameCycles = 0;
@@ -674,14 +672,14 @@ void SMBEmulator::updateCycleAccurate() {
         // Determine scanline state
         if (scanline < VISIBLE_SCANLINES) {
             ppuCycleState.inVBlank = false;
-            ppuCycleState.renderingEnabled = (ppuCycleAccurate->getMask() & 0x18) != 0;
+            ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
         } else if (scanline == VBLANK_START_SCANLINE) {
             ppuCycleState.inVBlank = true;
             // Don't set VBlank flag here - do it at the right cycle
         } else if (scanline == 261) {
             // Pre-render scanline
             ppuCycleState.inVBlank = false;
-            ppuCycleState.renderingEnabled = (ppuCycleAccurate->getMask() & 0x18) != 0;
+            ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
         }
         
         // Calculate cycles for this scanline (handle odd frame skip)
@@ -697,24 +695,24 @@ void SMBEmulator::updateCycleAccurate() {
             
             // VBlank flag set on cycle 1 of scanline 241
             if (scanline == VBLANK_START_SCANLINE && cycle == 1) {
-                ppuCycleAccurate->setVBlankFlag(true);
-                ppuCycleAccurate->captureFrameScroll();
+                ppu->setVBlankFlag(true);
+                ppu->captureFrameScroll();
                 
                 // Trigger NMI if enabled
-                if (ppuCycleAccurate->getControl() & 0x80) {
+                if (ppu->getControl() & 0x80) {
                     nmiPending = true;  // Queue NMI for next CPU cycle
                 }
             }
             
             // VBlank flag cleared on cycle 1 of pre-render scanline (261)
             if (scanline == 261 && cycle == 1) {
-                ppuCycleAccurate->setVBlankFlag(false);
-                ppuCycleAccurate->setSprite0Hit(false);
+                ppu->setVBlankFlag(false);
+                ppu->setSprite0Hit(false);
             }
             
             // === STEP CYCLE-ACCURATE PPU ===
             if (ppuCycleAccurate) {
-                ppuCycleAccurate->stepCycle(scanline, cycle);
+                ppu->stepCycle(scanline, cycle);
             }
             
             // === MAPPER-SPECIFIC PPU EVENTS ===
@@ -758,8 +756,8 @@ void SMBEmulator::updateCycleAccurate() {
     }
     
     // End of frame cleanup
-    ppuCycleAccurate->setVBlankFlag(false);
-    ppuCycleAccurate->setSprite0Hit(false);
+    ppu->setVBlankFlag(false);
+    ppu->setSprite0Hit(false);
     
     // Clear any pending NMI
     nmiPending = false;
@@ -768,7 +766,7 @@ void SMBEmulator::updateCycleAccurate() {
     if (Configuration::getAudioEnabled()) {
         apu->stepFrame();
     }
-}
+}*/
 
 void SMBEmulator::checkSprite0Hit(int scanline, int cycle) {
   // More accurate sprite 0 hit timing
@@ -780,8 +778,8 @@ void SMBEmulator::checkSprite0Hit(int scanline, int cycle) {
     return;
 
   // Check if sprite 0 is visible and enabled
-  uint8_t sprite0_y = ppuCycleAccurate->getOAM()[0];
-  uint8_t sprite0_x = ppuCycleAccurate->getOAM()[3];
+  uint8_t sprite0_y = ppu->getOAM()[0];
+  uint8_t sprite0_x = ppu->getOAM()[3];
 
   // Sprite coordinates are delayed by 1 scanline
   sprite0_y++;
@@ -790,7 +788,7 @@ void SMBEmulator::checkSprite0Hit(int scanline, int cycle) {
   if (scanline >= sprite0_y && scanline < sprite0_y + 8) {
     if (cycle >= sprite0_x && cycle < sprite0_x + 8) {
       // This is a simplified check - real hardware does pixel-level collision
-      ppuCycleAccurate->setSprite0Hit(true);
+      ppu->setSprite0Hit(true);
     }
   }
 }
@@ -1879,15 +1877,15 @@ void SMBEmulator::catchUpPPU() {
         
         // Handle critical PPU events during catch-up
         if (scanline == 241 && cycle == 1) {
-            ppuCycleAccurate->setVBlankFlag(true);
-            ppuCycleAccurate->captureFrameScroll();
-            if (ppuCycleAccurate->getControl() & 0x80) {
+            ppu->setVBlankFlag(true);
+            ppu->captureFrameScroll();
+            if (ppu->getControl() & 0x80) {
                 nmiPending = true;
             }
         }
         else if (scanline == 261 && cycle == 1) {
-            ppuCycleAccurate->setVBlankFlag(false);
-            ppuCycleAccurate->setSprite0Hit(false);
+            ppu->setVBlankFlag(false);
+            ppu->setSprite0Hit(false);
         }
         
         ppuCycles++;
@@ -1917,7 +1915,7 @@ uint8_t SMBEmulator::readByte(uint16_t address) {
     // PPU registers (mirrored every 8 bytes)
     catchUpPPU();
     uint16_t ppuAddr = 0x2000 + (address & 0x7);
-    return ppuCycleAccurate->readRegister(ppuAddr);
+    return ppu->readRegister(ppuAddr);
   } else if (address < 0x4020) {
     // APU and I/O registers
     switch (address) {
@@ -2156,7 +2154,7 @@ void SMBEmulator::updateMMC3Banks() {
         mmc3.bankData[5] % totalCHRBanks; // R5 -> $1C00-$1FFF
   }
 
-  // ppuCycleAccurate->invalidateTileCache();
+  // ppu->invalidateTileCache();
 }
 
 void SMBEmulator::stepMMC3IRQ() {
@@ -2185,14 +2183,14 @@ void SMBEmulator::writeByte(uint16_t address, uint8_t value)
     else if (address < 0x4000) {
         // PPU registers - SYNC POINT!
         catchUpPPU();  // Make sure PPU is current
-        ppuCycleAccurate->writeRegister(0x2000 + (address & 0x7), value);
+        ppu->writeRegister(0x2000 + (address & 0x7), value);
     }
     else if (address < 0x4020) {
         // APU and I/O registers - keep your existing code
         switch (address) {
             case 0x4014:
                 catchUpPPU();  // DMA needs sync
-                ppuCycleAccurate->writeDMA(value);
+                ppu->writeDMA(value);
                 masterCycles += 513;  // DMA cycles
                 break;
             case 0x4016:
@@ -2726,13 +2724,17 @@ void SMBEmulator::scaleBuffer16(uint16_t *nesBuffer, uint16_t *screenBuffer,
   }
 }
 
-void SMBEmulator::render16(uint16_t *buffer) { ppuCycleAccurate->render(buffer); }
+void SMBEmulator::render16(uint16_t *buffer) { 
+    //ppu->render(buffer); 
+    ppu->render16(buffer); 
+}
 
 void SMBEmulator::renderScaled16(uint16_t *buffer, int screenWidth,
                                  int screenHeight) {
   // First render the game using PPU scaling
     static uint16_t nesBuffer[256 * 240];
-    ppuCycleAccurate->getFrameBuffer(nesBuffer);
+    //ppu->getFrameBuffer(nesBuffer);
+    ppu->render16(nesBuffer);
     scaleBuffer16(nesBuffer, buffer, screenWidth, screenHeight);
 
     if (zapperEnabled && zapper) {
@@ -2795,7 +2797,7 @@ void SMBEmulator::renderScaled16(uint16_t *buffer, int screenWidth,
 /*void SMBEmulator::renderScaled32(uint32_t* buffer, int screenWidth, int
 screenHeight)
 {
-    ppuCycleAccurate->renderScaled32(buffer, screenWidth, screenHeight);
+    ppu->renderScaled32(buffer, screenWidth, screenHeight);
 }*/
 
 // Audio functions (delegate to APU)
@@ -3152,7 +3154,7 @@ void SMBEmulator::updateMMC1Banks() {
 
   // INVALIDATE CACHES IF CHR BANKS CHANGED
   /*if (oldCHRBank0 != mmc1.currentCHRBank0 || oldCHRBank1 !=
-  mmc1.currentCHRBank1) { ppuCycleAccurate->invalidateTileCache();
+  mmc1.currentCHRBank1) { ppu->invalidateTileCache();
   }*/
 }
 
@@ -3165,7 +3167,7 @@ void SMBEmulator::writeGxROMRegister(uint16_t address, uint8_t value) {
 
   // Invalidate cache if CHR bank changed
   /*if (oldCHRBank != gxrom.chrBank) {
-      ppuCycleAccurate->invalidateTileCache();
+      ppu->invalidateTileCache();
   }*/
 }
 

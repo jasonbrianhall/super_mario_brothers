@@ -66,7 +66,6 @@ void bitmap8x8::draw_sprite(uint16_t* dest, int x, int y, uint8_t attributes, ui
     bool flipX = attributes & 0x40;
     bool flipY = attributes & 0x80;
     bool priority = attributes & 0x20;
-    uint8_t palette = (attributes & 0x03) * 4;
     
     for (int py = 0; py < 8; py++) {
         for (int px = 0; px < 8; px++) {
@@ -77,7 +76,7 @@ void bitmap8x8::draw_sprite(uint16_t* dest, int x, int y, uint8_t attributes, ui
             
             uint8_t pixel = s[py][px];
             if (pixel != 0) {
-                uint8_t colorIndex = spritePalette[palette + pixel];
+                uint8_t colorIndex = spritePalette[0x10 + (attributes & 0x03) * 4 + pixel];
                 dest[screenY * 256 + screenX] = convertToRGB565(colorIndex);
             }
         }
@@ -294,7 +293,8 @@ void PPUCycleAccurate::reset() {
     bgPatternTable.setbank(3, 3, pt1k);
     
     spritePatternTable = bgPatternTable;
-    
+    memset(paletteRAM, 0, sizeof(paletteRAM));
+    paletteRAM[0] = 0x0F;  // Set default background color to black
     updatePatternTables();
 }
 
@@ -359,52 +359,50 @@ void PPUCycleAccurate::writeDataRegister(uint8_t value)
 
 void PPUCycleAccurate::writeByte(uint16_t address, uint8_t value)
 {
-    // Mirror all addresses above $3fff
-    address &= 0x3fff;
+   // Mirror all addresses above $3fff
+   address &= 0x3fff;
 
-    if (address < 0x2000)
-    {
-        // CHR-RAM write
-        engine.writeCHRData(address, value);
-        // Mark CHR pattern updated for cache invalidation
-        markCHRUpdated(address);
-    }
-    else if (address < 0x3f00)
-    {
-        // Nametable write
-        uint16_t nametableAddr = getNametableIndex(address);
-        
-        // Determine which nametable cache to update based on mirroring
-        int nametableIndex = getNametableCacheIndex(address);
-        if (nametableIndex >= 0 && nametableIndex < 4) {
-            // Convert to local address within the nametable
-            uint16_t localAddr = nametableAddr % 0x400;
-            ntc[nametableIndex]->write(localAddr, value);
-        }
-    }
-    else if (address < 0x3f20)
-    {
-        // Palette data
-        uint8_t paletteIndex = address - 0x3f00;
-        
-        // Handle palette mirroring
-        if (paletteIndex >= 16) {
-            paletteIndex = 16 + ((paletteIndex - 16) % 4);
-        }
-        
-        paletteRAM[paletteIndex] = value;
+   if (address < 0x2000)
+   {
+       // CHR-RAM write
+       engine.writeCHRData(address, value);
+       // Mark CHR pattern updated for cache invalidation
+       markCHRUpdated(address);
+   }
+   else if (address < 0x3f00)
+   {
+       // Nametable write
+       uint16_t nametableAddr = getNametableIndex(address);
+       
+       // Determine which nametable cache to update based on mirroring
+       int nametableIndex = getNametableCacheIndex(address);
+       if (nametableIndex >= 0 && nametableIndex < 4) {
+           // Convert to local address within the nametable
+           uint16_t localAddr = nametableAddr % 0x400;
+           ntc[nametableIndex]->write(localAddr, value);
+       }
+   }
+   else if (address < 0x3f20)
+   {
+       // Palette data - ONLY invalidate if the palette actually changed
+       uint8_t paletteIndex = address - 0x3f00;
+       uint8_t oldPaletteValue = paletteRAM[paletteIndex];
+       
+       if (oldPaletteValue != value) {
+           paletteRAM[paletteIndex] = value;
 
-        // Handle special mirroring cases for universal background color
-        if (address == 0x3f10 || address == 0x3f14 || address == 0x3f18 || address == 0x3f1c)
-        {
-            paletteRAM[address - 0x3f10] = value;
-        }
-        
-        // Mark all nametable caches for update when palette changes
-        for (int i = 0; i < 4; i++) {
-            ntc[i]->totalupdate();
-        }
-    }
+           // Handle mirroring
+           if (address == 0x3f10 || address == 0x3f14 || address == 0x3f18 || address == 0x3f1c)
+           {
+               paletteRAM[address - 0x3f10] = value;
+           }
+           
+           // Mark all nametable caches for update when palette changes
+           for (int i = 0; i < 4; i++) {
+               ntc[i]->totalupdate();
+           }
+       }
+   }
 }
 
 void PPUCycleAccurate::writeDMA(uint8_t page)
@@ -615,6 +613,7 @@ void PPUCycleAccurate::drawBackground(uint16_t* frameBuffer) {
 void PPUCycleAccurate::drawSprites(uint16_t* frameBuffer) {
     bool sprite8x16 = ppuCtrl & 0x20;
     
+    // Draw sprites behind background first (priority bit set)
     for (int i = 63; i >= 0; i--) {
         uint8_t spriteY = oam[i * 4];
         uint8_t tileIndex = oam[i * 4 + 1];
@@ -623,11 +622,50 @@ void PPUCycleAccurate::drawSprites(uint16_t* frameBuffer) {
         
         if (spriteY >= 240) continue;
         
+        // Check if sprite has priority behind background
+        if (!(attributes & 0x20)) continue; // Only render behind-background sprites
+        
+        spriteY++; // Sprite data is delayed by one scanline
+        
+        // FIXED: Add pattern table selection for sprites
+        uint16_t tile = tileIndex + (ppuCtrl & 0x08 ? 256 : 0);
+        
         if (sprite8x16) {
-            spritePatternTable[tileIndex & 0xFE].draw_sprite(frameBuffer, spriteX, spriteY, attributes, &paletteRAM[16]);
-            spritePatternTable[tileIndex | 0x01].draw_sprite(frameBuffer, spriteX, spriteY + 8, attributes, &paletteRAM[16]);
+            spritePatternTable[tile & 0xFE].draw_sprite(frameBuffer, spriteX, spriteY, attributes, &paletteRAM[16]);
+            spritePatternTable[tile | 0x01].draw_sprite(frameBuffer, spriteX, spriteY + 8, attributes, &paletteRAM[16]);
         } else {
-            spritePatternTable[tileIndex].draw_sprite(frameBuffer, spriteX, spriteY, attributes, &paletteRAM[16]);
+            spritePatternTable[tile].draw_sprite(frameBuffer, spriteX, spriteY, attributes, &paletteRAM[16]);
+        }
+    }
+    
+    // Draw sprites in front of background (priority bit clear)
+    for (int j = 64; j > 0; j--) {
+        // Start at 0, then 63, 62, 61, ..., 1 (same logic as working PPU)
+        int i = j % 64;
+        
+        uint8_t spriteY = oam[i * 4];
+        uint8_t tileIndex = oam[i * 4 + 1];
+        uint8_t attributes = oam[i * 4 + 2];
+        uint8_t spriteX = oam[i * 4 + 3];
+        
+        if (spriteY >= 240) continue;
+        
+        // Check sprite priority - skip behind-background sprites AND special sprite 0 case
+        if ((attributes & 0x20) && !(i == 0 && tileIndex == 0xff)) continue;
+        
+        spriteY++; // Sprite data is delayed by one scanline
+        
+        // FIXED: Add pattern table selection for sprites
+        uint16_t tile = tileIndex + (ppuCtrl & 0x08 ? 256 : 0);
+        
+        // Special case for sprite 0, tile 0xff (coin indicator in SMB)
+        bool isSpecialSprite0 = (i == 0 && tileIndex == 0xff);
+        
+        if (sprite8x16) {
+            spritePatternTable[tile & 0xFE].draw_sprite(frameBuffer, spriteX, spriteY, attributes, &paletteRAM[16]);
+            spritePatternTable[tile | 0x01].draw_sprite(frameBuffer, spriteX, spriteY + 8, attributes, &paletteRAM[16]);
+        } else {
+            spritePatternTable[tile].draw_sprite(frameBuffer, spriteX, spriteY, attributes, &paletteRAM[16]);
         }
     }
 }
