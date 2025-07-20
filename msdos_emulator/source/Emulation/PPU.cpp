@@ -213,6 +213,8 @@ uint8_t PPU::readDataRegister()
     if (currentAddress < 0x3F00) {
         // Normal VRAM - return buffered value
         value = vramBuffer;
+   printf("Palette write: $%04X = $%02X\n", currentAddress, value);
+
         vramBuffer = readByte(currentAddress);
     } else {
         // Palette RAM - return immediately but also update buffer
@@ -1186,12 +1188,12 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
             if (currentScanline < 240) {
                 // Mid-frame write - apply to current frame
                 for (int i = currentScanline; i < 240; i++) {
-                    printf("Setting scanline %i to %i\n", i, value);
+                    //printf("Setting scanline %i to %i\n", i, value);
                     scanlineScrollX[i] = value;
                 }
             } else {
                 // VBlank write - apply to next frame
-                printf("Clearing scan lines\n");
+                //printf("Clearing scan lines\n");
                 for (int i = 0; i < 240; i++) {
                     scanlineScrollX[i] = 0;
                 }

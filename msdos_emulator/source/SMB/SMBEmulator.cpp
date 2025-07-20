@@ -2115,10 +2115,9 @@ void SMBEmulator::stepMMC3IRQ() {
 
 void SMBEmulator::writeByte(uint16_t address, uint8_t value)
 {
-    if (address == 0x2005) {
-        printf("$2005 write attempt: value=$%02X, scanline=%d, PC=$%04X\n", 
-               value, ppuCycleState.scanline, regPC);
-    }
+    /*if (address == 0x2005) {
+        //printf("$2005 write attempt: value=$%02X, scanline=%d, PC=$%04X\n", value, ppuCycleState.scanline, regPC);
+    }*/
 
     if (address < 0x2000) {
         ram[address & 0x7FF] = value;
