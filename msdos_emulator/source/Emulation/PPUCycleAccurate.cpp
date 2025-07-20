@@ -407,6 +407,18 @@ void PPUCycleAccurate::writeByte(uint16_t address, uint8_t value)
     }
 }
 
+void PPUCycleAccurate::writeDMA(uint8_t page)
+{
+    uint16_t address = (uint16_t)page << 8;
+    for (int i = 0; i < 256; i++)
+    {
+        oam[oamAddress] = engine.readData(address);
+        address++;
+        oamAddress++;
+    }
+}
+
+
 // Helper function to get nametable index with mirroring
 uint16_t PPUCycleAccurate::getNametableIndex(uint16_t address)
 {

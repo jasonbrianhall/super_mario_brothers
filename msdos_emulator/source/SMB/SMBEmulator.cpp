@@ -2686,14 +2686,6 @@ void SMBEmulator::LAS(uint16_t addr) {
   updateZN(result);
 }
 
-// Rendering functions (delegate to PPU)
-void SMBEmulator::render(uint32_t *buffer) { ppuCycleAccurate->render(buffer); }
-
-void SMBEmulator::renderDirectFast(uint16_t *buffer, int screenWidth,
-                                   int screenHeight) {
-  ppuCycleAccurate->renderScaled(buffer, screenWidth, screenHeight);
-}
-
 void SMBEmulator::scaleBuffer16(uint16_t *nesBuffer, uint16_t *screenBuffer,
                                 int screenWidth, int screenHeight) {
   // Clear screen with black
@@ -2734,19 +2726,16 @@ void SMBEmulator::scaleBuffer16(uint16_t *nesBuffer, uint16_t *screenBuffer,
   }
 }
 
-void SMBEmulator::render16(uint16_t *buffer) { ppuCycleAccurate->render16(buffer); }
+void SMBEmulator::render16(uint16_t *buffer) { ppuCycleAccurate->render(buffer); }
 
 void SMBEmulator::renderScaled16(uint16_t *buffer, int screenWidth,
                                  int screenHeight) {
   // First render the game using PPU scaling
-  if (needsCycleAccuracy()) {
     static uint16_t nesBuffer[256 * 240];
     ppuCycleAccurate->getFrameBuffer(nesBuffer);
     scaleBuffer16(nesBuffer, buffer, screenWidth, screenHeight);
-  } else {
-    ppuCycleAccurate->renderScaled(buffer, screenWidth, screenHeight);
-  }
-  if (zapperEnabled && zapper) {
+
+    if (zapperEnabled && zapper) {
     // Get the raw mouse coordinates (these should be in NES coordinates 0-255,
     // 0-239)
     int nesMouseX = zapper->getMouseX();

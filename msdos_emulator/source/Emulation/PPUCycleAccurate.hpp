@@ -137,7 +137,8 @@ public:
     uint16_t currentAddress; /**< Address that will be accessed on the next PPU read/write. */
     bool writeToggle; /**< Toggles whether the low or high bit of the current address will be set on the next write to PPUADDR. */
     uint8_t gameAreaScrollX;  // The "real" scroll value for the game area
-    
+    void writeDMA(uint8_t page);
+
 };
 
 #endif // PPU_CYCLE_ACCURATE_HPP

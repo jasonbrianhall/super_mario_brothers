@@ -2570,7 +2570,8 @@ void AllegroMainWindow::drawGameUltraFast(BITMAP* target)
         uint16_t* screenMem = (uint16_t*)target->line[0];
         
         // Render directly to screen memory with centering
-        smbEngine->renderDirectFast(screenMem, SCREEN_W, SCREEN_H);
+        //smbEngine->renderDirectFast(screenMem, SCREEN_W, SCREEN_H);
+        smbEngine->render16(screenMem);
     } else {
         // Fall back to buffered method
         drawGameDirect(target);
