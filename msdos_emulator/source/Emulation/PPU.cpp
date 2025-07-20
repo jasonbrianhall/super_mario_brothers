@@ -91,6 +91,14 @@ const uint32_t* paletteRGB = defaultPaletteRGB;
 PPU::PPU(SMBEmulator& engine) :
     engine(engine)
 {
+    // Add these new initializations at the beginning:
+    ppuCycles = 0;
+    currentScanline = 0;
+    currentCycle = 0;
+    inVBlank = true;  // Start in VBlank
+    frameOdd = false;
+    
+    // Keep all existing initialization code:
     currentAddress = 0;
     writeToggle = false;
     
