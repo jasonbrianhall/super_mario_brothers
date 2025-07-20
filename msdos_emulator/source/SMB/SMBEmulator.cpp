@@ -659,7 +659,7 @@ void SMBEmulator::updateCycleAccurate() {
     
     // Frame timing state
     bool frameEven = (totalCycles / (TOTAL_SCANLINES * CYCLES_PER_SCANLINE / CPU_DIVIDER)) % 2 == 0;
-    int cpuCycleCounter = 0;
+    int cpuCycleDebt = 0;  // Track how many CPU cycles we owe
     int totalCPUInstructions = 0;
     
     for (int scanline = 0; scanline < TOTAL_SCANLINES; scanline++) {
@@ -690,15 +690,18 @@ void SMBEmulator::updateCycleAccurate() {
                 ppu->setVBlankFlag(true);
                 ppu->captureFrameScroll();
                 
+                // FIXED: Fire NMI immediately if enabled, don't use pending system
                 if (ppu->getControl() & 0x80) {
-                    nmiPending = true;
+                    handleNMI();
+                    // Account for NMI cycles (7 CPU cycles = 21 PPU cycles)
+                    cpuCycleDebt += 7;
                 }
             }
             
             // VBlank flag cleared on cycle 1 of pre-render scanline (261)
             if (scanline == 261 && cycle == 1) {
                 ppu->setVBlankFlag(false);
-                ppu->setSprite0Hit(false);
+                // DON'T clear sprite0hit here - it persists until end of frame
             }
             
             if (scanline >= 0 && scanline < VISIBLE_SCANLINES && ppuCycleState.renderingEnabled) {
@@ -713,23 +716,26 @@ void SMBEmulator::updateCycleAccurate() {
                 checkMMC3IRQ(scanline, cycle);
             }
             
-            // CPU execution every 3 PPU cycles
-            cpuCycleCounter++;
-            if (cpuCycleCounter >= CPU_DIVIDER) {
-                cpuCycleCounter = 0;
+            // FIXED: CPU execution tracking with proper cycle accounting
+            cpuCycleDebt++;  // Each PPU cycle = 1/3 CPU cycle
+            
+            if (cpuCycleDebt >= CPU_DIVIDER) {
+                cpuCycleDebt -= CPU_DIVIDER;  // We owe 1 CPU cycle
                 totalCPUInstructions++;
                 
-                // Check for pending NMI
-                if (nmiPending) {
-                    handleNMI();
-                    nmiPending = false;
+                // Execute CPU instruction and get actual cycles used
+                uint64_t cyclesBefore = totalCycles;
+                executeInstruction();
+                uint64_t cyclesUsed = totalCycles - cyclesBefore;
+                
+                // FIXED: Account for multi-cycle instructions
+                // If instruction took more than 1 cycle, we need to "pay back" the extra cycles
+                if (cyclesUsed > 1) {
+                    cpuCycleDebt += (cyclesUsed - 1) * CPU_DIVIDER;
                 }
                 
-                // Execute CPU instruction
-                executeInstruction();
-                
-                // Update master cycles
-                masterCycles += 1;
+                // Update master cycles to match actual execution
+                masterCycles = totalCycles;
             }
         }
     }
@@ -737,7 +743,7 @@ void SMBEmulator::updateCycleAccurate() {
     // End of frame cleanup
     ppu->setVBlankFlag(false);
     ppu->setSprite0Hit(false);
-    nmiPending = false;
+    // REMOVED: nmiPending = false; (not using pending system anymore)
     
     // Audio frame advance
     if (Configuration::getAudioEnabled()) {
