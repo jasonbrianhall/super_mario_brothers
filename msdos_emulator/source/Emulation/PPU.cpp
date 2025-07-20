@@ -1700,17 +1700,31 @@ void PPU::renderSpriteScanline(int scanline) {
             int screenX = spriteX + pixelX;
             if (screenX >= 256) break;
             
-            // Extract pixel value
-            int bitPos = flipX ? pixelX : (7 - pixelX);
-            uint8_t pixelValue = 0;
-            if (patternLo & (0x80 >> bitPos)) pixelValue |= 1;
-            if (patternHi & (0x80 >> bitPos)) pixelValue |= 2;
+            // Extract pixel value - match your working renderer exactly
+            uint8_t paletteIndex = 0;
+            int column = pixelX;
+            
+            // This matches your working render() method logic exactly
+            if (patternLo & (1 << column)) paletteIndex |= 1;
+            if (patternHi & (1 << column)) paletteIndex |= 2;
             
             // Skip transparent pixels
-            if (pixelValue == 0) continue;
+            if (paletteIndex == 0) continue;
+            
+            // Calculate screen position with flip handling
+            int xOffset = 7 - column;
+            if (flipX) {
+                xOffset = column;
+            }
+            
+            int xPixel = (int)spriteX + xOffset;
+            int yPixel = scanline;
+            
+            // Bounds check
+            if (xPixel < 0 || xPixel >= 256 || yPixel < 0 || yPixel >= 240) continue;
             
             // Get sprite color
-            uint8_t colorIndex = palette[0x10 + spritePalette * 4 + pixelValue];
+            uint8_t colorIndex = palette[0x10 + (attributes & 0x03) * 4 + paletteIndex];
             uint32_t color32 = paletteRGB[colorIndex];
             uint16_t spritePixel = ((color32 & 0xF80000) >> 8) | 
                                   ((color32 & 0x00FC00) >> 5) | 
@@ -1725,12 +1739,12 @@ void PPU::renderSpriteScanline(int scanline) {
                                     ((bgColor32 & 0x00FC00) >> 5) | 
                                     ((bgColor32 & 0x0000F8) >> 3);
                 
-                if (frameBuffer[scanline * 256 + screenX] == bgColor16) {
-                    frameBuffer[scanline * 256 + screenX] = spritePixel;
+                if (frameBuffer[yPixel * 256 + xPixel] == bgColor16) {
+                    frameBuffer[yPixel * 256 + xPixel] = spritePixel;
                 }
             } else {
                 // Always draw sprite in front
-                frameBuffer[scanline * 256 + screenX] = spritePixel;
+                frameBuffer[yPixel * 256 + xPixel] = spritePixel;
             }
         }
     }
