@@ -553,14 +553,8 @@ Based") << ")\n"; logFile.close();
 void SMBEmulator::update() {
   if (!romLoaded)
     return;
-    updateCycleAccurate();
-
-/*  if (needsCycleAccuracy()) {
-    updateCycleAccurate();
-  } else {
-    // Use the existing fast frame-based update for simple mappers
     updateFrameBased();
-  }*/
+
 }
 
 bool SMBEmulator::needsCycleAccuracy() const {
@@ -649,6 +643,7 @@ void SMBEmulator::updateFrameBased() {
 void SMBEmulator::updateCycleAccurate() {
     if (!romLoaded) return;
     
+    static int debugFrame = 0;    
     frameCycles = 0;
     ppuCycleState.scanline = 0;
     ppuCycleState.cycle = 0;
@@ -663,11 +658,9 @@ void SMBEmulator::updateCycleAccurate() {
     const int CPU_DIVIDER = 3;  // CPU runs every 3 PPU cycles
     
     // Frame timing state
-    bool frameEven = (totalCycles / (TOTAL_SCANLINES * CYCLES_PER_SCANLINE)) % 2 == 0;
+    bool frameEven = (totalCycles / (TOTAL_SCANLINES * CYCLES_PER_SCANLINE / CPU_DIVIDER)) % 2 == 0;
     int cpuCycleCounter = 0;
-    
-    // IMPORTANT: Don't update masterCycles/ppuCycles in the loop!
-    // They should only be updated during actual CPU instruction execution
+    int totalCPUInstructions = 0;
     
     for (int scanline = 0; scanline < TOTAL_SCANLINES; scanline++) {
         ppuCycleState.scanline = scanline;
@@ -678,14 +671,12 @@ void SMBEmulator::updateCycleAccurate() {
             ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
         } else if (scanline == VBLANK_START_SCANLINE) {
             ppuCycleState.inVBlank = true;
-            // Don't set VBlank flag here - do it at the right cycle
         } else if (scanline == 261) {
-            // Pre-render scanline
             ppuCycleState.inVBlank = false;
             ppuCycleState.renderingEnabled = (ppu->getMask() & 0x18) != 0;
         }
         
-        // Calculate cycles for this scanline (handle odd frame skip)
+        // Calculate cycles for this scanline
         int cyclesThisScanline = CYCLES_PER_SCANLINE;
         if (scanline == 261 && frameEven && ppuCycleState.renderingEnabled) {
             cyclesThisScanline = 340;  // Skip cycle 340 on odd frames when rendering
@@ -694,16 +685,13 @@ void SMBEmulator::updateCycleAccurate() {
         for (int cycle = 0; cycle < cyclesThisScanline; cycle++) {
             ppuCycleState.cycle = cycle;
             
-            // === PPU CYCLE-SPECIFIC EVENTS ===
-            
             // VBlank flag set on cycle 1 of scanline 241
             if (scanline == VBLANK_START_SCANLINE && cycle == 1) {
                 ppu->setVBlankFlag(true);
                 ppu->captureFrameScroll();
                 
-                // Trigger NMI if enabled
                 if (ppu->getControl() & 0x80) {
-                    nmiPending = true;  // Queue NMI for next CPU cycle
+                    nmiPending = true;
                 }
             }
             
@@ -713,56 +701,42 @@ void SMBEmulator::updateCycleAccurate() {
                 ppu->setSprite0Hit(false);
             }
             
-            // === STEP CYCLE-ACCURATE PPU ===
-            if (ppuCycleAccurate) {
-                ppu->stepCycle(scanline, cycle);
+            if (scanline >= 0 && scanline < VISIBLE_SCANLINES && ppuCycleState.renderingEnabled) {
+                checkSprite0Hit(scanline, cycle);
             }
             
-            // === MAPPER-SPECIFIC PPU EVENTS ===
+            // Step PPU cycle for other events
+            ppu->stepCycle(scanline, cycle);
             
-            // MMC3 IRQ counter - decrements on A12 rising edge during rendering
+            // MMC3 IRQ handling
             if (nesHeader.mapper == 4) {
                 checkMMC3IRQ(scanline, cycle);
             }
             
-            // === CPU EXECUTION ===
-            
-            // Run CPU every 3 PPU cycles (same as original)
+            // CPU execution every 3 PPU cycles
             cpuCycleCounter++;
             if (cpuCycleCounter >= CPU_DIVIDER) {
                 cpuCycleCounter = 0;
+                totalCPUInstructions++;
                 
-                // Check for pending NMI before executing instruction
+                // Check for pending NMI
                 if (nmiPending) {
                     handleNMI();
                     nmiPending = false;
                 }
                 
-                // Execute one CPU instruction
-                // NOTE: executeInstruction() will update masterCycles internally
-                // via the cycles added at the end of that function
+                // Execute CPU instruction
                 executeInstruction();
                 
-                // CRITICAL: Update ppuCycles to match CPU execution
-                // Since CPU runs every 3 PPU cycles, we add 3 PPU cycles per instruction
-                ppuCycles += 3;
+                // Update master cycles
+                masterCycles += 1;
             }
-            
-            // === STEP PPU INTERNAL STATE (for compatibility) ===
-            stepPPUCycle();
-        }
-        
-        // End of scanline processing
-        if (scanline < VISIBLE_SCANLINES && ppuCycleState.renderingEnabled) {
-            stepPPUEndOfScanline(scanline);
         }
     }
     
     // End of frame cleanup
     ppu->setVBlankFlag(false);
     ppu->setSprite0Hit(false);
-    
-    // Clear any pending NMI
     nmiPending = false;
     
     // Audio frame advance
@@ -772,28 +746,41 @@ void SMBEmulator::updateCycleAccurate() {
 }
 
 void SMBEmulator::checkSprite0Hit(int scanline, int cycle) {
-  // More accurate sprite 0 hit timing
-  if (!ppuCycleState.renderingEnabled)
-    return;
-
-  // Sprite 0 hit can only occur on visible scanlines
-  if (scanline >= 240)
-    return;
-
-  // Check if sprite 0 is visible and enabled
-  uint8_t sprite0_y = ppu->getOAM()[0];
-  uint8_t sprite0_x = ppu->getOAM()[3];
-
-  // Sprite coordinates are delayed by 1 scanline
-  sprite0_y++;
-
-  // Check if we're in the sprite 0 area
-  if (scanline >= sprite0_y && scanline < sprite0_y + 8) {
-    if (cycle >= sprite0_x && cycle < sprite0_x + 8) {
-      // This is a simplified check - real hardware does pixel-level collision
-      ppu->setSprite0Hit(true);
+    // Don't check if already hit this frame
+    if (ppu->getStatus() & 0x40) return;
+    
+    // Only check during rendering
+    if (!ppuCycleState.renderingEnabled) return;
+    
+    // Sprite 0 hit can only occur on visible scanlines during rendering cycles
+    if (scanline >= 240 || cycle < 1 || cycle > 256) return;
+    
+    // Get sprite 0 properties from OAM
+    uint8_t sprite0_y = ppu->getOAM()[0];
+    uint8_t sprite0_tile = ppu->getOAM()[1];
+    uint8_t sprite0_attr = ppu->getOAM()[2];
+    uint8_t sprite0_x = ppu->getOAM()[3];
+    
+    // Sprite coordinates are delayed by 1 scanline
+    sprite0_y++;
+    
+    // Check if we're in the sprite 0 area
+    if (scanline >= sprite0_y && scanline < sprite0_y + 8) {
+        if (cycle >= sprite0_x && cycle < sprite0_x + 8) {
+            if (scanline >= 8 && scanline <= 40) {
+                static int sprite0HitCount = 0;
+                sprite0HitCount++;
+                ppu->setSprite0Hit(true);
+                return;
+            }
+            
+            // Also check for common SMB sprite 0 hit area (scanlines 30-35)
+            if (scanline >= 30 && scanline <= 35) {
+                ppu->setSprite0Hit(true);
+                return;
+            }
+        }
     }
-  }
 }
 
 void SMBEmulator::checkMMC3IRQ() {

@@ -809,16 +809,7 @@ void PPU::render16(uint16_t* buffer)
 
     if (ppuMask & (1 << 3))
     {
-        // CRITICAL: Render status bar FIRST using CURRENT scroll/ctrl values
-        // Status bar (rows 0-3) - uses the current PPU state, not captured frame state
-        for (int x = 0; x < 32; x++) {
-            for (int y = 0; y < 4; y++) {
-                // Use current nametable (usually 0 for status bar)
-                uint16_t statusBarAddr = 0x2000 + (y * 32) + x;
-                renderCachedTile(buffer, statusBarAddr, x * 8, y * 8, false, false);
-            }
-        }
-        
+
         // Game area (rows 4-29) - use captured scroll and nametable from frame start
         int scrollOffset = frameScrollX;
         uint8_t baseNametable = frameCtrl & 0x01;  // Use captured nametable selection
@@ -1589,43 +1580,26 @@ void PPU::captureFrameScroll() {
 
 void PPU::stepCycle(int scanline, int cycle)
 {
+    static int totalCalls = 0;
+
     currentScanline = scanline;
     currentCycle = cycle;
     
-    // Minimal PPU cycle processing - just track state
-    // Don't do heavy processing here since we're called every PPU cycle
-    
-    // Handle critical VBlank events only
+    // Handle critical VBlank events
     if (scanline == VBLANK_START_SCANLINE && cycle == 1) {
         inVBlank = true;
-        ppuStatus |= 0x80;  // Set VBlank flag
+        ppuStatus |= 0x80;
         captureFrameScroll();
     }
     
-    // Handle VBlank end
     if (scanline == PRERENDER_SCANLINE && cycle == 1) {
         inVBlank = false;
         ppuStatus &= 0x7F;  // Clear VBlank flag
-        sprite0Hit = false;
-        ppuStatus &= 0xBF;  // Clear sprite 0 hit flag
+        sprite0Hit = false; // Clear sprite 0 hit
+        ppuStatus &= 0xBF;  // Clear sprite 0 hit flag in status register
     }
     
-    // Light sprite 0 hit detection during visible scanlines
-    if (scanline >= 0 && scanline < VISIBLE_SCANLINES && (ppuMask & 0x18)) {
-        if (cycle >= 1 && cycle <= 256) {
-            // Simple sprite 0 hit check
-            if (!sprite0Hit && scanline >= 30 && scanline <= 35) {
-                uint8_t sprite0_y = oam[0] + 1; // +1 for sprite delay
-                uint8_t sprite0_x = oam[3];
-                
-                if (scanline >= sprite0_y && scanline < sprite0_y + 8 &&
-                    cycle >= sprite0_x && cycle < sprite0_x + 8) {
-                    sprite0Hit = true;
-                    ppuStatus |= 0x40; // Set sprite 0 hit flag
-                }
-            }
-        }
-    }
+    // Don't do additional sprite 0 hit detection here - it's handled in checkSprite0Hit
 }
 
 void PPU::catchUp(uint64_t targetCycles)
