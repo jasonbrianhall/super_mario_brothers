@@ -765,6 +765,7 @@ void SMBEmulator::checkSprite0Hit(int scanline, int cycle) {
        if (cycle >= sprite0_x && cycle < sprite0_x + 8) {
            // WE GOT A HIT!
            ppu->setSprite0Hit(true);
+           // printf("*** SPRITE 0 HIT DETECTED *** at scanline %d, cycle %d (sprite at x=%d, y=%d)\n",  scanline, cycle, sprite0_x, sprite0_y-1);
        }
    }
 }
