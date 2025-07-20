@@ -1587,56 +1587,44 @@ void PPU::captureFrameScroll() {
     frameCtrl = ppuCtrl;
 }    
 
-// Add these method implementations to PPU.cpp:
-
 void PPU::stepCycle(int scanline, int cycle)
 {
     currentScanline = scanline;
     currentCycle = cycle;
     
-    // Handle VBlank start
+    // Minimal PPU cycle processing - just track state
+    // Don't do heavy processing here since we're called every PPU cycle
+    
+    // Handle critical VBlank events only
     if (scanline == VBLANK_START_SCANLINE && cycle == 1) {
-        handleVBlankStart();
+        inVBlank = true;
+        ppuStatus |= 0x80;  // Set VBlank flag
+        captureFrameScroll();
     }
     
-    // Handle VBlank end (pre-render scanline)
+    // Handle VBlank end
     if (scanline == PRERENDER_SCANLINE && cycle == 1) {
-        handleVBlankEnd();
+        inVBlank = false;
+        ppuStatus &= 0x7F;  // Clear VBlank flag
+        sprite0Hit = false;
+        ppuStatus &= 0xBF;  // Clear sprite 0 hit flag
     }
     
-    // CRITICAL: Handle mid-frame scroll register changes during visible scanlines
-    if (scanline >= 0 && scanline < VISIBLE_SCANLINES) {
-        // During visible scanlines, immediately update rendering state
-        // This allows status bar updates to be visible mid-frame
-        if (cycle == 1) {
-            // At the start of each visible scanline, check for scroll changes
-            // Status bar area (scanlines 0-31) uses current scroll values
-            if (scanline <= 31) {
-                // Status bar can be updated mid-frame - use current scroll values
-                renderScrollX = ppuScrollX;
-                renderCtrl = ppuCtrl;
+    // Light sprite 0 hit detection during visible scanlines
+    if (scanline >= 0 && scanline < VISIBLE_SCANLINES && (ppuMask & 0x18)) {
+        if (cycle >= 1 && cycle <= 256) {
+            // Simple sprite 0 hit check
+            if (!sprite0Hit && scanline >= 30 && scanline <= 35) {
+                uint8_t sprite0_y = oam[0] + 1; // +1 for sprite delay
+                uint8_t sprite0_x = oam[3];
+                
+                if (scanline >= sprite0_y && scanline < sprite0_y + 8 &&
+                    cycle >= sprite0_x && cycle < sprite0_x + 8) {
+                    sprite0Hit = true;
+                    ppuStatus |= 0x40; // Set sprite 0 hit flag
+                }
             }
         }
-    }
-    
-    // Handle rendering events during visible scanlines
-    if (scanline < VISIBLE_SCANLINES && (ppuMask & 0x18)) { // If rendering enabled
-        handleBackgroundFetch();
-        
-        // Sprite evaluation happens during cycles 65-256
-        if (cycle >= 65 && cycle <= 256) {
-            handleSpriteEvaluation();
-        }
-        
-        // Check for sprite 0 hit during visible area
-        if (cycle >= 1 && cycle <= 256) {
-            checkSprite0Hit();
-        }
-    }
-    
-    // Handle pre-render scanline rendering setup
-    if (scanline == PRERENDER_SCANLINE && (ppuMask & 0x18)) {
-        handleBackgroundFetch();
     }
 }
 

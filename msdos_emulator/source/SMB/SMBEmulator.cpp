@@ -89,6 +89,9 @@ void SMBEmulator::writeCHRData(uint16_t address, uint8_t value) {
   if (address >= 0x2000)
     return;
 
+  // DON'T call catchUpPPU here - it causes infinite loops!
+  // The cycle-accurate loop already keeps everything in sync
+
   // Handle CHR-RAM writes based on mapper type
   switch (nesHeader.mapper) {
   case 0: // NROM
@@ -1841,24 +1844,24 @@ void SMBEmulator::executeInstruction() {
 }
 
 void SMBEmulator::catchUpPPU() {
-    // Calculate target PPU cycles (PPU runs 3x faster than CPU)
-    uint64_t targetPPUCycles = masterCycles * 3;
+    // CRITICAL FIX: Don't do complex PPU catch-up during cycle-accurate mode
+    // The cycle-accurate loop already keeps PPU in sync
     
-    // Get current PPU cycles
+    // Simple sync check - just ensure we're not too far off
+    uint64_t targetPPUCycles = masterCycles * 3;
     uint64_t currentPPUCycles = ppu->getCurrentCycles();
     
-    // Only sync if we're behind and not too far behind (safety check)
-    if (currentPPUCycles >= targetPPUCycles || 
-        (targetPPUCycles - currentPPUCycles) > 10000) {
-        return;
+    // Only do very minor adjustments
+    if (targetPPUCycles > currentPPUCycles) {
+        uint64_t difference = targetPPUCycles - currentPPUCycles;
+        if (difference < 10) { // Very small adjustments only
+            ppu->addCycles(difference);
+        }
     }
     
-    // Use PPU's cycle-accurate catch-up
-    ppu->catchUp(targetPPUCycles);
-    
-    // Update our internal ppuCycles to match
     ppuCycles = ppu->getCurrentCycles();
 }
+
 
 
 void SMBEmulator::checkPendingInterrupts()
@@ -2138,19 +2141,16 @@ void SMBEmulator::stepMMC3IRQ() {
 void SMBEmulator::writeByte(uint16_t address, uint8_t value)
 {
     if (address < 0x2000) {
-        // RAM (mirrored every 2KB)
         ram[address & 0x7FF] = value;
     }
     else if (address < 0x4000) {
-        // PPU registers - SYNC POINT!
-        catchUpPPU();  // Make sure PPU is current
+        // PPU registers - DON'T call catchUpPPU during cycle-accurate mode
+        // The cycle-accurate loop handles timing
         ppu->writeRegister(0x2000 + (address & 0x7), value);
     }
     else if (address < 0x4020) {
-        // APU and I/O registers - keep your existing code
         switch (address) {
             case 0x4014:
-                catchUpPPU();  // DMA needs sync
                 ppu->writeDMA(value);
                 masterCycles += 513;  // DMA cycles
                 break;
@@ -2164,10 +2164,7 @@ void SMBEmulator::writeByte(uint16_t address, uint8_t value)
         }
     }
     else if (address >= 0x8000) {
-        // Mapper registers - CRITICAL SYNC POINT!
-        catchUpPPU();  // Sync before bank switch
-        
-        // Keep your existing mapper write logic exactly as-is
+        // Mapper registers - also don't call catchUpPPU
         if (nesHeader.mapper == 1) {
             writeMMC1Register(address, value);
         } else if (nesHeader.mapper == 66) {
