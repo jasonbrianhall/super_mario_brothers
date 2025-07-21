@@ -128,6 +128,12 @@ PPU::PPU(SMBEmulator& engine) :
     ignoreNextScrollWrite = false;
     frameScrollX = 0;
     frameCtrl = 0;
+    for (int i = 0; i < 240; i++) {
+        scanlineScrollY[i] = 0;
+        scanlineScrollX[i] = 0;
+    }
+    frameScrollY = 0;
+
     if (!g_comprehensiveCacheInit) {
         memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
         for (int i = 0; i < 512 * 8; i++) {
@@ -1101,28 +1107,18 @@ case 0x2005:
     if (!writeToggle) {
         ppuScrollX = value;
         
-        // The key insight: scroll register changes should take effect based on 
-        // WHEN during the scanline they occur, not just which scanline
-        
+        // Handle horizontal scroll changes mid-frame
         if (currentScanline >= 0 && currentScanline < 240 && (ppuMask & 0x18)) {
-            // Mid-frame write during visible scanlines with rendering enabled
-            
             if (currentCycle < 256) {
-                // Write occurred during visible portion of scanline
-                // Change takes effect on NEXT scanline (First 8 lines are invisible so +9)
                 for (int i = currentScanline + 9; i < 240; i++) {
                     scanlineScrollX[i] = value;
                 }
             } else {
-                // Write occurred during HBlank (cycles 256-340)  
-                // This is the typical case for games doing mid-frame scroll changes
-                // Effect starts immediately on remaining scanlines
                 for (int i = currentScanline; i < 240; i++) {
                     scanlineScrollX[i] = value;
                 }
             }
         } else {
-            // VBlank write or rendering disabled - affects whole next frame
             for (int i = 0; i < 240; i++) {
                 scanlineScrollX[i] = value;
             }
@@ -1131,6 +1127,24 @@ case 0x2005:
         writeToggle = !writeToggle;
     } else {
         ppuScrollY = value;
+        
+        // Handle vertical scroll changes mid-frame
+        if (currentScanline >= 0 && currentScanline < 240 && (ppuMask & 0x18)) {
+            if (currentCycle < 256) {
+                for (int i = currentScanline + 9; i < 240; i++) {
+                    scanlineScrollY[i] = value;
+                }
+            } else {
+                for (int i = currentScanline; i < 240; i++) {
+                    scanlineScrollY[i] = value;
+                }
+            }
+        } else {
+            for (int i = 0; i < 240; i++) {
+                scanlineScrollY[i] = value;
+            }
+        }
+        
         writeToggle = !writeToggle;
     }
     break;
@@ -1437,10 +1451,10 @@ void PPU::convertNESToScreen32(uint16_t* nesBuffer, uint32_t* screenBuffer, int 
 }
 
 void PPU::captureFrameScroll() {
-    // Capture the current scroll value AND control register at the start of VBlank
     frameScrollX = ppuScrollX;
+    frameScrollY = ppuScrollY;  // Add this line
     frameCtrl = ppuCtrl;
-}    
+}
 
 void PPU::stepCycle(int scanline, int cycle) {
     currentScanline = scanline;
@@ -1523,23 +1537,30 @@ void PPU::clearScanline(int scanline) {
 void PPU::renderBackgroundScanline(int scanline) {
     if (scanline < 0 || scanline >= 240) return;
     
-    // Use the actual scroll value that was captured for this scanline
-    // Don't override with hardcoded status bar logic
+    // Use the actual scroll values that were captured for this scanline
     int scrollX = scanlineScrollX[scanline];
+    int scrollY = ppuScrollY;  // Add vertical scroll support
     uint8_t ctrl = scanlineCtrl[scanline];
     
     // For games that don't set per-scanline scroll, fall back to frame values
-    // but don't assume what constitutes the "status bar"
     if (scrollX == 0 && scanline > 0 && scanlineScrollX[scanline-1] != 0) {
-        // This might be a status bar area, use the frame scroll
         scrollX = frameScrollX;
     }
     
     uint8_t baseNametable = ctrl & 0x01;
+    uint8_t baseNametableY = (ctrl & 0x02) >> 1;  // Vertical nametable bit
     
-    // Calculate which tiles are visible on this scanline
-    int tileY = scanline / 8;
-    int fineY = scanline % 8;
+    // Calculate which tiles are visible on this scanline WITH Y SCROLL
+    int worldY = scanline + scrollY;  // Apply vertical scroll
+    int tileY = worldY / 8;
+    int fineY = worldY % 8;
+    
+    // Handle vertical nametable wrapping
+    uint16_t nametableAddrY = baseNametableY ? 0x0800 : 0x0000;  // Vertical nametable offset
+    if (tileY >= 30) {
+        tileY = tileY % 30;  // Wrap at 30 tiles (240 pixels)
+        nametableAddrY = baseNametableY ? 0x0000 : 0x0800;  // Switch to other vertical nametable
+    }
     
     // Render tiles across the scanline with proper nametable wrapping
     int startTileX = scrollX / 8;
@@ -1552,22 +1573,22 @@ void PPU::renderBackgroundScanline(int scanline) {
         if (screenX + 8 <= 0 || screenX >= 256) continue;
         
         // Determine which nametable to use based on horizontal position
-        uint16_t nametableAddr;
+        uint16_t nametableAddrX;
         int localTileX = tileX;
         
-        // Handle nametable mirroring properly
+        // Handle horizontal nametable mirroring
         if (localTileX < 0) {
-            // Negative tile positions (scrolled left past nametable boundary)
             localTileX = (localTileX % 32 + 32) % 32;
-            nametableAddr = baseNametable ? 0x2000 : 0x2400; // Opposite nametable
+            nametableAddrX = baseNametable ? 0x0000 : 0x0400; // Opposite nametable
         } else if (localTileX < 32) {
-            // First nametable
-            nametableAddr = baseNametable ? 0x2400 : 0x2000;
+            nametableAddrX = baseNametable ? 0x0400 : 0x0000;
         } else {
-            // Second nametable
             localTileX = localTileX % 32;
-            nametableAddr = baseNametable ? 0x2000 : 0x2400;
+            nametableAddrX = baseNametable ? 0x0000 : 0x0400;
         }
+        
+        // Combine horizontal and vertical nametable addresses
+        uint16_t nametableAddr = 0x2000 + nametableAddrX + nametableAddrY;
         
         // Bounds check for tile coordinates
         if (tileY >= 30) continue; // NES nametables are 32x30 tiles

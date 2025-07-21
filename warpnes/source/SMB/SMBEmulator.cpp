@@ -3223,9 +3223,6 @@ void SMBEmulator::updateMMC1Banks() {
     // Extract PRG mode from control register (bits 2-3)
     uint8_t prgMode = (mmc1.control >> 2) & 0x03;
     
-    printf("MMC1 Banking: Mode %d, PRG Bank %d, Total Banks %d\n", 
-           prgMode, mmc1.prgBank, totalBanks);
-    
     switch (prgMode) {
         case 0:
         case 1:

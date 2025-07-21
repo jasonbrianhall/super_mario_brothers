@@ -236,7 +236,8 @@ private:
     uint8_t frameCHRBank;
     uint16_t getBackgroundPixelColor(int x, int y);
     uint16_t getSpritePixelColor(int x, int y, int spriteIndex);
-
+    uint8_t scanlineScrollY[240];   // Scroll Y value for each scanline
+    uint8_t frameScrollY;           // Y scroll value for this entire frame
 
 };
 
