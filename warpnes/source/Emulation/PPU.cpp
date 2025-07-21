@@ -1178,26 +1178,43 @@ void PPU::writeRegister(uint16_t address, uint8_t value)
         break;
         
     // PPUSCROLL
-    case 0x2005:
-        if (!writeToggle) {
-            //printf("PPUScroll %i %i\n", currentScanline, value);
-            ppuScrollX = value;
+case 0x2005:
+    if (!writeToggle) {
+        ppuScrollX = value;
         
-            if (currentScanline < 240) {
-                // Mid-frame write - apply to current frame
-                for (int i = currentScanline; i < 240; i++) {
-                    //printf("Setting scanline %i to %i\n", i, value);
+        // The key insight: scroll register changes should take effect based on 
+        // WHEN during the scanline they occur, not just which scanline
+        
+        if (currentScanline >= 0 && currentScanline < 240 && (ppuMask & 0x18)) {
+            // Mid-frame write during visible scanlines with rendering enabled
+            
+            if (currentCycle < 256) {
+                // Write occurred during visible portion of scanline
+                // Change takes effect on NEXT scanline (First 8 lines are invisible so +9)
+                for (int i = currentScanline + 9; i < 240; i++) {
                     scanlineScrollX[i] = value;
                 }
             } else {
-                // VBlank write - apply to next frame
-                //printf("Clearing scan lines\n");
-                for (int i = 0; i < 240; i++) {
-                    scanlineScrollX[i] = 0;
+                // Write occurred during HBlank (cycles 256-340)  
+                // This is the typical case for games doing mid-frame scroll changes
+                // Effect starts immediately on remaining scanlines
+                for (int i = currentScanline; i < 240; i++) {
+                    scanlineScrollX[i] = value;
                 }
+            }
+        } else {
+            // VBlank write or rendering disabled - affects whole next frame
+            for (int i = 0; i < 240; i++) {
+                scanlineScrollX[i] = value;
             }
         }
         
+        writeToggle = !writeToggle;
+    } else {
+        ppuScrollY = value;
+        writeToggle = !writeToggle;
+    }
+    break;
     // PPUADDR
     case 0x2006:
         writeAddressRegister(value);
@@ -1535,14 +1552,15 @@ void PPU::stepCycle(int scanline, int cycle) {
     // Visible scanlines (0-239)
     if (scanline >= 0 && scanline < 240) {
         
-        // CRITICAL: Latch scroll values at the START of each scanline
+        // Latch control register at start of scanline
         if (cycle == 0) {
-            // For SMB: status bar uses scroll=0, game area uses frameScrollX
-            //scanlineScrollX[scanline] = frameScrollX;
-            scanlineCtrl[scanline] = frameCtrl;
+            scanlineCtrl[scanline] = ppuCtrl;
+            // DON'T override scanlineScrollX here - it should be set by register writes
+            // Only set it if it hasn't been set by a mid-frame write
+            // This preserves the scroll values set by the PPUSCROLL register writes
         }
         
-        // Render the scanline at cycle 256
+        // Render the scanline at cycle 256 (end of visible portion)
         if (cycle == 256) {
             renderScanline(scanline);
         }
