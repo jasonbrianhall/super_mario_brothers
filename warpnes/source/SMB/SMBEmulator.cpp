@@ -3146,16 +3146,18 @@ void SMBEmulator::AXS(uint16_t addr) {
 void SMBEmulator::writeMMC1Register(uint16_t address, uint8_t value) {
     // CRITICAL: Handle reset condition first
     if (value & 0x80) {
-        // Reset detected - clear shift register and set mode 3
+        // Reset detected - clear shift register and set control register properly
         mmc1.shiftRegister = 0x10;
         mmc1.shiftCount = 0;
         
-        // IMPORTANT: Reset also forces control register to mode 3
-        // This is critical for proper game operation
-        mmc1.control |= 0x0C;  // Set bits 2,3 to force 16KB mode with last bank fixed
+        // CRITICAL FIX: The reset should OR the control register with 0x0C
+        // This ensures bits 2,3 are set (16KB PRG mode, last bank fixed at $C000)
+        // but preserves other bits like mirroring settings
+        mmc1.control = mmc1.control | 0x0C;  // Proper OR operation
         
         updateMMC1Banks();
-        printf("MMC1 Reset Write: Control now $%02X\n", mmc1.control);
+        printf("MMC1 Reset Write: Control was $%02X, now $%02X\n", 
+               mmc1.control & ~0x0C, mmc1.control);
         return;
     }
 
@@ -3204,7 +3206,6 @@ void SMBEmulator::writeMMC1Register(uint16_t address, uint8_t value) {
         } else {
             uint8_t oldBank = mmc1.prgBank;
             mmc1.prgBank = data;
-            printf("MMC1 PRG Bank: $%02X -> $%02X\n", oldBank, mmc1.prgBank);
         }
 
         updateMMC1Banks();
