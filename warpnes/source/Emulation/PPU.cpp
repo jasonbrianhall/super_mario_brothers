@@ -238,27 +238,23 @@ uint8_t PPU::readRegister(uint16_t address)
 {
    switch(address)
    {
-   case 0x2002: // PPUSTATUS
-   {
-       uint8_t status = ppuStatus;
-       
-       // Add sprite 0 hit flag (bit 6)
-       if (sprite0Hit) {
-           status |= 0x40;
-       }
-       
-       writeToggle = false;
-       
-       // Clear VBlank flag AND sprite 0 hit flag after reading
-       if (ppuStatus & 0x80) {
-           ppuStatus &= 0x7F;
-           inVBlank = false;  // Update cycle state too
-       }
-       sprite0Hit = false;  // Clear sprite 0 hit
-       ppuStatus &= 0xBF;   // Clear sprite 0 hit flag
-       
-       return status;
-   }
+case 0x2002: // PPUSTATUS
+{
+    uint8_t status = ppuStatus;
+    
+    if (sprite0Hit) {
+        status |= 0x40;
+    }
+    
+    writeToggle = false;
+    
+    // DON'T clear VBlank flag here in cycle-accurate mode
+    // Let the cycle-accurate timing handle it
+    sprite0Hit = false;
+    ppuStatus &= 0xBF;   // Only clear sprite 0 hit flag
+    
+    return status;
+}
 
    case 0x2004: // OAMDATA
        return oam[oamAddress];

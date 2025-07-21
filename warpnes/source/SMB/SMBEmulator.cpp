@@ -782,7 +782,7 @@ void SMBEmulator::updateCycleAccurate() {
     
     // Clear zapper light detection at end of frame if trigger not pressed
     if (zapperEnabled && zapper && !zapper->isTriggerPressed()) {
-        //zapper->setLightDetected(false);
+        zapper->setLightDetected(false);
     }
     
     // Audio frame advance
