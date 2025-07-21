@@ -11,7 +11,7 @@ class Noise;
 class AllegroMIDIAudioSystem; // Forward declaration
 
 /**
- * Improved Audio Processing Unit emulator based on FCE Ultra.
+ * Audio processing unit emulator.
  */
 class APU
 {
@@ -20,7 +20,7 @@ public:
     ~APU();
 
     /**
-     * Step the APU by one frame with improved timing.
+     * Step the APU by one frame.
      */
     void stepFrame();
 
@@ -39,12 +39,12 @@ public:
     void writeRegister(uint16_t address, uint8_t value);
 
     /**
-     * Toggle between APU and FM audio modes.
+     * Toggle between APU and MIDI audio modes.
      */
     void toggleAudioMode();
 
     /**
-     * Check if currently using MIDI/FM mode.
+     * Check if currently using MIDI mode.
      */
     bool isUsingMIDI() const;
 
@@ -53,15 +53,13 @@ public:
      */
     void debugAudio();
 
+
+
 private:
     uint8_t audioBuffer[AUDIO_BUFFER_LENGTH];
     int audioBufferLength;      /**< Amount of data currently in buffer */
 
-    int frameValue;             /**< The value of the frame counter */
-    int frameCounter;           /**< Current frame sequencer position */
-    int frameMode;              /**< Frame sequencer mode (4 or 5 step) */
-    bool frameIRQ;              /**< Frame IRQ enabled flag */
-    int frameSequencerMode;     /**< 0 = 4-step, 1 = 5-step */
+    int frameValue; /**< The value of the frame counter. */
 
     Pulse* pulse1;
     Pulse* pulse2;
@@ -71,34 +69,16 @@ private:
     AllegroMIDIAudioSystem* gameAudio;  /**< Enhanced audio system */
 
     /**
-     * Get the current mixed audio output sample using improved mixing.
-     * @return 8-bit unsigned audio sample (0-255)
+     * Get the current mixed audio output sample.
+     * @return 8-bit unsigned audio sample (0-255, 128=silence)
      */
     uint8_t getOutput();
     
-    /**
-     * Step envelope generators for all channels.
-     */
     void stepEnvelope();
-    
-    /**
-     * Step sweep units for pulse channels.
-     */
     void stepSweep();
-    
-    /**
-     * Step length counters for all channels.
-     */
     void stepLength();
-    
-    /**
-     * Write to the control register (0x4015).
-     */
     void writeControl(uint8_t value);
     
-    /**
-     * Improved mixing cache structure.
-     */
     struct MixCache {
         uint8_t pulse1_val;
         uint8_t pulse2_val;
