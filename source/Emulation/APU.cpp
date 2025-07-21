@@ -464,7 +464,7 @@ public:
         {
             return 0;
         }
-        if ((shiftRegister & 1) == 1)
+        if ((shiftRegister & 1) == 0)
         {
             return 0;
         }
@@ -578,7 +578,7 @@ APU::~APU()
         double tnd_sum = tri / 8227.0 + noi / 12241.0;
         double tnd_out = (tnd_sum > 0) ? 163.67 / (1.0 / tnd_sum + 100.0) : 0.0;
         
-        uint8_t result = (uint8_t)((pulse_out + tnd_out) * 255.0 + 128.0);
+        uint8_t result = (uint8_t)((pulse_out + tnd_out) * 255.0);
 
         // Store in cache for next time
         MixCache& cache = outputCache[cacheIndex];
