@@ -1584,68 +1584,95 @@ void PPU::clearScanline(int scanline) {
 }
 
 void PPU::renderBackgroundScanline(int scanline) {
-   if (scanline < 0 || scanline >= 240) return;
-   
-   // Use the scroll value that was set for this specific scanline
-   int scrollX = scanlineScrollX[scanline];
-   //printf("Scrollx %i %i\n", scanline, scrollX);
-   uint8_t ctrl = scanlineCtrl[scanline];
-   uint8_t baseNametable = ctrl & 0x01;
-   
-   // Calculate which tiles are visible on this scanline
-   int tileY = scanline / 8;
-   int fineY = scanline % 8;
-   
-   // Render tiles across the scanline
-   int startTileX = scrollX / 8;
-   int endTileX = (scrollX + 256) / 8 + 1;
-   
-   for (int tileX = startTileX; tileX <= endTileX; tileX++) {
-       int screenX = (tileX * 8) - scrollX;
-       
-       if (screenX + 8 <= 0 || screenX >= 256) continue;
-       
-       uint16_t nametableAddr = baseNametable ? 0x2400 : 0x2000;
-       int localTileX = tileX % 32;
-       if (localTileX < 0) localTileX += 32;
-       
-       if (tileX >= 32) {
-           nametableAddr = baseNametable ? 0x2000 : 0x2400;
-           localTileX = tileX - 32;
-       }
-       
-       uint16_t tileAddr = nametableAddr + (tileY * 32) + localTileX;
-       uint8_t tileIndex = readByte(tileAddr);
-       uint8_t attribute = getAttributeTableValue(tileAddr);
-       
-       uint16_t patternBase = tileIndex * 16;
-       if (ctrl & 0x10) patternBase += 0x1000;
-       
-       uint8_t patternLo = readCHR(patternBase + fineY);
-       uint8_t patternHi = readCHR(patternBase + fineY + 8);
-       
-       for (int pixelX = 0; pixelX < 8; pixelX++) {
-           int screenPixelX = screenX + pixelX;
-           if (screenPixelX < 0 || screenPixelX >= 256) continue;
-           
-           uint8_t pixelValue = 0;
-           if (patternLo & (0x80 >> pixelX)) pixelValue |= 1;
-           if (patternHi & (0x80 >> pixelX)) pixelValue |= 2;
-           
-           uint16_t pixel;
-           if (pixelValue == 0) {
-               uint8_t colorIndex = palette[0];
-               uint32_t color32 = paletteRGB[colorIndex];
-               pixel = ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
-           } else {
-               uint8_t colorIndex = palette[(attribute & 0x03) * 4 + pixelValue];
-               uint32_t color32 = paletteRGB[colorIndex];
-               pixel = ((color32 & 0xF80000) >> 8) | ((color32 & 0x00FC00) >> 5) | ((color32 & 0x0000F8) >> 3);
-           }
-           
-           frameBuffer[scanline * 256 + screenPixelX] = pixel;
-       }
-   }
+    if (scanline < 0 || scanline >= 240) return;
+    
+    // Use the actual scroll value that was captured for this scanline
+    // Don't override with hardcoded status bar logic
+    int scrollX = scanlineScrollX[scanline];
+    uint8_t ctrl = scanlineCtrl[scanline];
+    
+    // For games that don't set per-scanline scroll, fall back to frame values
+    // but don't assume what constitutes the "status bar"
+    if (scrollX == 0 && scanline > 0 && scanlineScrollX[scanline-1] != 0) {
+        // This might be a status bar area, use the frame scroll
+        scrollX = frameScrollX;
+    }
+    
+    uint8_t baseNametable = ctrl & 0x01;
+    
+    // Calculate which tiles are visible on this scanline
+    int tileY = scanline / 8;
+    int fineY = scanline % 8;
+    
+    // Render tiles across the scanline with proper nametable wrapping
+    int startTileX = scrollX / 8;
+    int endTileX = (scrollX + 256) / 8 + 1;
+    
+    for (int tileX = startTileX; tileX <= endTileX; tileX++) {
+        int screenX = (tileX * 8) - scrollX;
+        
+        // Skip tiles that are completely off-screen
+        if (screenX + 8 <= 0 || screenX >= 256) continue;
+        
+        // Determine which nametable to use based on horizontal position
+        uint16_t nametableAddr;
+        int localTileX = tileX;
+        
+        // Handle nametable mirroring properly
+        if (localTileX < 0) {
+            // Negative tile positions (scrolled left past nametable boundary)
+            localTileX = (localTileX % 32 + 32) % 32;
+            nametableAddr = baseNametable ? 0x2000 : 0x2400; // Opposite nametable
+        } else if (localTileX < 32) {
+            // First nametable
+            nametableAddr = baseNametable ? 0x2400 : 0x2000;
+        } else {
+            // Second nametable
+            localTileX = localTileX % 32;
+            nametableAddr = baseNametable ? 0x2000 : 0x2400;
+        }
+        
+        // Bounds check for tile coordinates
+        if (tileY >= 30) continue; // NES nametables are 32x30 tiles
+        
+        uint16_t tileAddr = nametableAddr + (tileY * 32) + localTileX;
+        uint8_t tileIndex = readByte(tileAddr);
+        uint8_t attribute = getAttributeTableValue(tileAddr);
+        
+        // Get pattern table data
+        uint16_t patternBase = tileIndex * 16;
+        if (ctrl & 0x10) patternBase += 0x1000; // Background pattern table select
+        
+        uint8_t patternLo = readCHR(patternBase + fineY);
+        uint8_t patternHi = readCHR(patternBase + fineY + 8);
+        
+        // Render the 8 pixels of this tile
+        for (int pixelX = 0; pixelX < 8; pixelX++) {
+            int screenPixelX = screenX + pixelX;
+            if (screenPixelX < 0 || screenPixelX >= 256) continue;
+            
+            // Extract pixel value (bit 7 is leftmost pixel)
+            uint8_t pixelValue = 0;
+            if (patternLo & (0x80 >> pixelX)) pixelValue |= 1;
+            if (patternHi & (0x80 >> pixelX)) pixelValue |= 2;
+            
+            // Get color from palette
+            uint8_t colorIndex;
+            if (pixelValue == 0) {
+                colorIndex = palette[0]; // Universal background color
+            } else {
+                colorIndex = palette[(attribute & 0x03) * 4 + pixelValue];
+            }
+            
+            // Convert to 16-bit RGB565
+            uint32_t color32 = paletteRGB[colorIndex];
+            uint16_t pixel = ((color32 & 0xF80000) >> 8) | 
+                           ((color32 & 0x00FC00) >> 5) | 
+                           ((color32 & 0x0000F8) >> 3);
+            
+            frameBuffer[scanline * 256 + screenPixelX] = pixel;
+        }
+    }
 }
 
 void PPU::renderSpriteScanline(int scanline) {
