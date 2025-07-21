@@ -15,9 +15,8 @@
 #include "APU.hpp"
 #include "AllegroMidi.hpp"
 
-    APU::MixCache APU::outputCache[256];
-    int APU::cacheIndex = 0;
-
+APU::MixCache APU::outputCache[256];
+int APU::cacheIndex = 0;
 
 static const uint8_t lengthTable[] = {
     10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14,
@@ -40,8 +39,20 @@ static const uint16_t noiseTable[] = {
     4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068
 };
 
+// Use runtime calculation instead of large static tables to avoid malloc issues
+inline double calculatePulseMix(int pulse_sum) {
+    if (pulse_sum == 0) return 0.0;
+    return 95.52 / (8128.0 / pulse_sum + 100.0);
+}
+
+inline double calculateTndMix(int triangle, int noise, int dmc) {
+    double tnd_sum = triangle / 8227.0 + noise / 12241.0 + dmc / 22638.0;
+    if (tnd_sum == 0.0) return 0.0;
+    return 163.67 / (1.0 / tnd_sum + 100.0);
+}
+
 /**
- * Pulse waveform generator.
+ * Improved Pulse waveform generator based on FCE Ultra.
  */
 class Pulse
 {
@@ -194,6 +205,28 @@ public:
         }
     }
 
+    // Improved sweep target calculation to match FCE Ultra
+    bool sweepSilences()
+    {
+        uint16_t target = timerPeriod;
+        uint16_t delta = timerPeriod >> sweepShift;
+        
+        if (sweepNegate)
+        {
+            target -= delta;
+            if (channel == 1)
+            {
+                target--;
+            }
+        }
+        else
+        {
+            target += delta;
+        }
+        
+        return target > 0x7ff;
+    }
+
     uint8_t output()
     {
         if (!enabled)
@@ -209,6 +242,11 @@ public:
             return 0;
         }
         if (timerPeriod < 8 || timerPeriod > 0x7ff)
+        {
+            return 0;
+        }
+        // Check sweep silencing
+        if (sweepEnabled && sweepSilences())
         {
             return 0;
         }
@@ -247,7 +285,7 @@ private:
 };
 
 /**
- * Triangle waveform generator.
+ * Improved Triangle waveform generator.
  */
 class Triangle
 {
@@ -259,7 +297,7 @@ public:
         lengthEnabled = false;
         lengthValue = 0;
         timerPeriod = 0;
-        timerValue = 0;  // This was missing!
+        timerValue = 0;
         dutyValue = 0;
         counterPeriod = 0;
         counterValue = 0;
@@ -309,18 +347,18 @@ public:
         }
     }
 
-void stepCounter()
-{
-    if (counterReload)
+    void stepCounter()
     {
-        counterValue = counterPeriod;
+        if (counterReload)
+        {
+            counterValue = counterPeriod;
+        }
+        else if (counterValue > 0)
+        {
+            counterValue--;
+        }
+        counterReload = false;
     }
-    else if (counterValue > 0)
-    {
-        counterValue--;
-    }
-    counterReload = false;  // Move this outside the if block
-}
 
     uint8_t output()
     {
@@ -333,6 +371,11 @@ void stepCounter()
             return 0;
         }
         if (counterValue == 0)
+        {
+            return 0;
+        }
+        // Triangle channel silences if timer period is too low
+        if (timerPeriod < 2)
         {
             return 0;
         }
@@ -351,6 +394,9 @@ private:
     bool counterReload;
 };
 
+/**
+ * Improved Noise channel.
+ */
 class Noise
 {
     friend class APU;
@@ -400,15 +446,7 @@ public:
         if (timerValue == 0)
         {
             timerValue = timerPeriod;
-            uint8_t shift;
-            if (mode)
-            {
-                shift = 6;
-            }
-            else
-            {
-                shift = 1;
-            }
+            uint8_t shift = mode ? 6 : 1;
             uint16_t b1 = shiftRegister & 1;
             uint16_t b2 = (shiftRegister >> shift) & 1;
             shiftRegister >>= 1;
@@ -499,6 +537,10 @@ APU::APU()
 {
     frameValue = 0;
     audioBufferLength = 0;
+    frameCounter = 0;
+    frameMode = 0;
+    frameIRQ = false;
+    frameSequencerMode = 0;
 
     // Initialize pointers to null first for safety
     pulse1 = nullptr;
@@ -560,59 +602,51 @@ APU::~APU()
     }
 }
 
-    uint8_t APU::getOutput()
-    {
-        if (!pulse1 || !pulse2 || !triangle || !noise) {
-            return 128;
-        }
-
-        uint8_t p1 = pulse1->output();
-        uint8_t p2 = pulse2->output();
-        uint8_t tri = triangle->output();
-        uint8_t noi = noise->output();
-
-        // Check if we've computed this combination before
-        for (int i = 0; i < 256; i++) {
-            MixCache& cache = outputCache[i];
-            if (cache.valid && 
-                cache.pulse1_val == p1 && cache.pulse2_val == p2 && 
-                cache.triangle_val == tri && cache.noise_val == noi) {
-                return cache.result;  // Cache hit - return stored result
-            }
-        }
- 
-        // Cache miss - compute the floating point math
-        double pulse_sum = p1 + p2;
-        double pulse_out = (pulse_sum > 0) ? 95.52 / (8128.0 / pulse_sum + 100.0) : 0.0;
-        
-        double tnd_sum = tri / 8227.0 + noi / 12241.0;
-        double tnd_out = (tnd_sum > 0) ? 163.67 / (1.0 / tnd_sum + 100.0) : 0.0;
-        
-        uint8_t result = (uint8_t)((pulse_out + tnd_out) * 255.0 + 128.0);
-
-        // Store in cache for next time
-        MixCache& cache = outputCache[cacheIndex];
-        cache.pulse1_val = p1;
-        cache.pulse2_val = p2;
-        cache.triangle_val = tri;
-        cache.noise_val = noi;
-        cache.result = result;
-        cache.valid = true;
-        cacheIndex = (cacheIndex + 1) & 255;  // Wrap around
-
-        return result;
+uint8_t APU::getOutput()
+{
+    if (!pulse1 || !pulse2 || !triangle || !noise) {
+        return 128;
     }
 
+    uint8_t p1 = pulse1->output();
+    uint8_t p2 = pulse2->output();
+    uint8_t tri = triangle->output();
+    uint8_t noi = noise->output();
+
+    // Check cache first
+    for (int i = 0; i < 256; i++) {
+        MixCache& cache = outputCache[i];
+        if (cache.valid && 
+            cache.pulse1_val == p1 && cache.pulse2_val == p2 && 
+            cache.triangle_val == tri && cache.noise_val == noi) {
+            return cache.result;
+        }
+    }
+
+    // Use improved mixing with runtime calculation instead of lookup tables
+    double pulse_out = calculatePulseMix(p1 + p2);
+    double tnd_out = calculateTndMix(tri, noi, 0); // DMC = 0 for now
+    
+    uint8_t result = (uint8_t)((pulse_out + tnd_out) * 255.0);
+
+    // Store in cache
+    MixCache& cache = outputCache[cacheIndex];
+    cache.pulse1_val = p1;
+    cache.pulse2_val = p2;
+    cache.triangle_val = tri;
+    cache.noise_val = noi;
+    cache.result = result;
+    cache.valid = true;
+    cacheIndex = (cacheIndex + 1) & 255;
+
+    return result;
+}
 
 void APU::output(uint8_t* buffer, int len)
 {
-    // CHANGE FROM: if (gameAudio && gameAudio->isMIDIMode()) {
-    // CHANGE TO:   if (gameAudio && gameAudio->isFMMode()) {
     if (gameAudio && gameAudio->isFMMode()) {
-        // Use FM synthesis
         gameAudio->generateAudio(buffer, len);
     } else {
-        // Use original APU output
         len = (len > audioBufferLength) ? audioBufferLength : len;
         if (len > audioBufferLength)
         {
@@ -628,77 +662,55 @@ void APU::output(uint8_t* buffer, int len)
     }
 }
 
-
 void APU::stepFrame()
 {
-    // Safety check - if objects aren't created, don't crash
     if (!pulse1 || !pulse2 || !triangle || !noise) {
         return;
     }
 
-    // Step the frame counter 4 times per frame, for 240Hz (same as SDL)
-    for (int i = 0; i < 4; i++)
+    // Simplified frame stepping to avoid complex cycle counting that might cause issues
+    frameValue = (frameValue + 1) % 4;
+    
+    switch (frameValue)
     {
-        frameValue = (frameValue + 1) % 5;
-        switch (frameValue)
-        {
-        case 1:
-        case 3:
-            stepEnvelope();
-            break;
-        case 0:
-        case 2:
-            stepEnvelope();
-            stepSweep();
-            stepLength();
-            break;
-        }
+    case 0:
+    case 2:
+        stepEnvelope();
+        break;
+    case 1:
+    case 3:
+        stepEnvelope();
+        stepSweep();
+        stepLength();
+        break;
+    }
 
-        // Calculate the number of samples needed per 1/4 frame (same as SDL)
-        int frequency = Configuration::getAudioFrequency();
-        int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
-        if (i == 3)
+    // Generate audio samples for this frame
+    int frequency = Configuration::getAudioFrequency();
+    int frameRate = Configuration::getFrameRate();
+    int samplesToWrite = frequency / frameRate;
+    
+    // Bounds check
+    if (samplesToWrite <= 0 || audioBufferLength + samplesToWrite >= AUDIO_BUFFER_LENGTH) {
+        return;
+    }
+    
+    // Step timers and generate samples
+    for (int i = 0; i < samplesToWrite && audioBufferLength < AUDIO_BUFFER_LENGTH - 1; i++)
+    {
+        // Step timers multiple times per sample to get the right frequency
+        for (int j = 0; j < 40; j++) // Roughly 1789773 Hz / 44100 Hz
         {
-            // Handle the remainder on the final tick of the frame counter
-            samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
-        }
-        
-        // Bounds check
-        if (samplesToWrite <= 0 || audioBufferLength + samplesToWrite >= AUDIO_BUFFER_LENGTH) {
-            continue;
-        }
-        
-#ifndef __DJGPP__
-        // Audio locking for thread safety (like SDL's SDL_LockAudio)
-        //static pthread_mutex_t audio_mutex = PTHREAD_MUTEX_INITIALIZER;
-        //pthread_mutex_lock(&audio_mutex);
-#endif
-
-        // Step the timer ~3729 times per quarter frame (same as SDL)
-        int j = 0;
-        for (int stepIndex = 0; stepIndex < 3729 && j < samplesToWrite; stepIndex++)
-        {
-            if ((stepIndex / 3729.0) > (j / (double)samplesToWrite))
-            {
-                uint8_t sample = getOutput();
-                audioBuffer[audioBufferLength + j] = sample;
-                j++;
-            }
-
             pulse1->stepTimer();
             pulse2->stepTimer();
-            noise->stepTimer();
             triangle->stepTimer();
-            triangle->stepTimer(); // Triangle steps twice like in SDL
+            noise->stepTimer();
         }
-        audioBufferLength += j; // Use j instead of samplesToWrite
         
-#ifndef __DJGPP__
-        //pthread_mutex_unlock(&audio_mutex);
-#endif        
+        uint8_t sample = getOutput();
+        audioBuffer[audioBufferLength++] = sample;
     }
 }
-
 
 void APU::stepEnvelope()
 {
@@ -745,12 +757,12 @@ void APU::writeControl(uint8_t value)
 
 void APU::writeRegister(uint16_t address, uint8_t value)
 {
-    // FIRST: Let the enhanced audio system intercept the register write
+    // First let the enhanced audio system intercept
     if (gameAudio) {
         gameAudio->interceptAPURegister(address, value);
     }
     
-    // THEN: Process normally for APU emulation (in case we want to fall back)
+    // Then process normally
     switch (address)
     {
     case 0x4000:
@@ -789,7 +801,7 @@ void APU::writeRegister(uint16_t address, uint8_t value)
     case 0x400c:
         if (noise) noise->writeControl(value);
         break;
-    case 0x400e:  // FIXED: Remove case 0x400d, only 0x400e
+    case 0x400e:
         if (noise) noise->writePeriod(value);
         break;
     case 0x400f:
@@ -799,9 +811,16 @@ void APU::writeRegister(uint16_t address, uint8_t value)
         writeControl(value);
         break;
     case 0x4017:
-        stepEnvelope();
-        stepSweep();
-        stepLength();
+        // Frame counter register
+        frameSequencerMode = (value >> 7) & 1;
+        frameIRQ = ((value >> 6) & 1) == 0;
+        frameCounter = 0;
+        if (frameSequencerMode == 1) {
+            // 5-step mode: immediately step envelope and sweep
+            stepEnvelope();
+            stepSweep();
+            stepLength();
+        }
         break;
     default:
         break;
@@ -810,8 +829,6 @@ void APU::writeRegister(uint16_t address, uint8_t value)
 
 void APU::toggleAudioMode() {
     if (gameAudio) {
-        // CHANGE FROM: gameAudio->isMIDIMode()
-        // CHANGE TO:   gameAudio->isFMMode()
         printf("Current audio mode: %s\n", gameAudio->isFMMode() ? "FM Synthesis" : "APU");
         gameAudio->toggleAudioMode();
         printf("New audio mode: %s\n", gameAudio->isFMMode() ? "FM Synthesis" : "APU");
@@ -819,7 +836,6 @@ void APU::toggleAudioMode() {
         printf("Enhanced audio system not available\n");
     }
 }
-
 
 bool APU::isUsingMIDI() const {
     return gameAudio && gameAudio->isFMMode();
