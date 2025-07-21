@@ -94,7 +94,8 @@ public:
   void updateCycleAccurate(); // For mappers that can change banks mid-frame
   void stepPPUCycle();        // Step PPU one cycle
   void checkMMC3IRQ();        // Check for MMC3 IRQ timing
-
+  void forceSRAMSave();
+  
   struct PPUCycleState {
     int scanline;
     int cycle;
@@ -109,8 +110,13 @@ public:
     int cpuCycleCounter;
     bool lastA12State; // For MMC3 A12 tracking
   } ppuCycleState;
-  void scaleBuffer16(uint16_t *nesBuffer, uint16_t *screenBuffer,
-                     int screenWidth, int screenHeight);
+
+    void scaleBuffer16(uint16_t *nesBuffer, uint16_t *screenBuffer, int screenWidth, int screenHeight);
+
+    void initializeSRAM();
+    void loadSRAM();
+    void saveSRAM();
+    void cleanupSRAM();
 
 private:
   // 6502 CPU state
@@ -439,6 +445,12 @@ struct MMC1State {
     
   void catchUpPPU();
   void checkPendingInterrupts();
+  uint8_t *sram;        // 8KB SRAM for battery saves
+  uint32_t sramSize;    // SRAM size (usually 8KB)
+  bool sramEnabled;     // SRAM read/write enabled
+  bool sramDirty;       // SRAM has been written to
+  std::string romBaseName;  // Base ROM filename for save files
+
 
 };
 

@@ -44,7 +44,9 @@ SOURCE_FILES = \
     source/Emulation/AllegroMidi.cpp \
     source/Emulation/PPU.cpp \
     source/Zapper.cpp \
-    source/SMB/SMBEmulator.cpp
+    source/SMB/SMBEmulator.cpp \
+    source/SMB/Battery.cpp
+    
 
 # Object files
 OBJS_LINUX = $(SOURCE_FILES:.cpp=.o)
