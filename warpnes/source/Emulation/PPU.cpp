@@ -328,82 +328,6 @@ void PPU::render(uint32_t* buffer)
         buffer[index] = paletteRGB[palette[0]];
     }
 
-    // Draw sprites behind the backround
-    if (ppuMask & (1 << 4)) // Are sprites enabled?
-    {
-        // Sprites with the lowest index in OAM take priority.
-        // Therefore, render the array of sprites in reverse order.
-        //
-        for (int i = 63; i >= 0; i--)
-        {
-            // Read OAM for the sprite
-            uint8_t y          = oam[i * 4];
-            uint8_t index      = oam[i * 4 + 1];
-            uint8_t attributes = oam[i * 4 + 2];
-            uint8_t x          = oam[i * 4 + 3];
-
-            // Check if the sprite has the correct priority
-            if (!(attributes & (1 << 5)))
-            {
-                continue;
-            }
-
-            // Check if the sprite is visible
-            if( y >= 0xef || x >= 0xf9 )
-            {
-                continue;
-            }
-
-            // Increment y by one since sprite data is delayed by one scanline
-            //
-            y++;
-
-            // Determine the tile to use
-            uint16_t tile = index + (ppuCtrl & (1 << 3) ? 256 : 0);
-            bool flipX = attributes & (1 << 6);
-            bool flipY = attributes & (1 << 7);
-
-            // Copy pixels to the framebuffer
-            for( int row = 0; row < 8; row++ )
-            {
-                uint8_t plane1 = readCHR(tile * 16 + row);
-                uint8_t plane2 = readCHR(tile * 16 + row + 8);
-
-                for( int column = 0; column < 8; column++ )
-                {
-                    uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + ((plane2 & (1 << column)) ? 2 : 0));
-                    uint8_t colorIndex = palette[0x10 + (attributes & 0x03) * 4 + paletteIndex];
-                    if( paletteIndex == 0 )
-                    {
-                        // Skip transparent pixels
-                        continue;
-                    }
-                    uint32_t pixel = 0xff000000 | paletteRGB[colorIndex];
-
-                    int xOffset = 7 - column;
-                    if( flipX )
-                    {
-                        xOffset = column;
-                    }
-                    int yOffset = row;
-                    if( flipY )
-                    {
-                        yOffset = 7 - row;
-                    }
-
-                    int xPixel = (int)x + xOffset;
-                    int yPixel = (int)y + yOffset;
-                    if (xPixel < 0 || xPixel >= 256 || yPixel < 0 || yPixel >= 240)
-                    {
-                        continue;
-                    }
-
-                    buffer[yPixel * 256 + xPixel] = pixel;
-                }
-            }
-        }
-    }
-
     // Draw the background (nametable)
     if (ppuMask & (1 << 3)) // Is the background enabled?
     {
@@ -443,62 +367,45 @@ void PPU::render(uint32_t* buffer)
         }
     }
 
-    // Draw sprites in front of the background
-    if (ppuMask & (1 << 4))
+    // Draw all sprites with proper priority handling
+    if (ppuMask & (1 << 4)) // Are sprites enabled?
     {
-        // Sprites with the lowest index in OAM take priority.
-        // Therefore, render the array of sprites in reverse order.
-        //
-        // We render sprite 0 first as a special case (coin indicator).
-        //
-        for (int j = 64; j > 0; j--)
+        // Render sprites in reverse order (63 to 0) for proper priority
+        // Lower index sprites have higher priority and are drawn last
+        for (int i = 63; i >= 0; i--)
         {
-            // Start at 0, then 63, 62, 61, ..., 1
-            //
-            int i = j % 64;
-
             // Read OAM for the sprite
             uint8_t y          = oam[i * 4];
             uint8_t index      = oam[i * 4 + 1];
             uint8_t attributes = oam[i * 4 + 2];
             uint8_t x          = oam[i * 4 + 3];
 
-            // Check if the sprite has the correct priority
-            //
-            // Special case for sprite 0, tile 0xff in Super Mario Bros.
-            // (part of the pixels for the coin indicator)
-            //
-            if (attributes & (1 << 5) && !(i == 0 && index == 0xff))
-            {
-                continue;
-            }
-
             // Check if the sprite is visible
-            if( y >= 0xef || x >= 0xf9 )
+            if (y >= 0xef || x >= 0xf9)
             {
                 continue;
             }
 
             // Increment y by one since sprite data is delayed by one scanline
-            //
             y++;
 
             // Determine the tile to use
             uint16_t tile = index + (ppuCtrl & (1 << 3) ? 256 : 0);
             bool flipX = attributes & (1 << 6);
             bool flipY = attributes & (1 << 7);
+            bool behindBackground = attributes & (1 << 5);
 
             // Copy pixels to the framebuffer
-            for( int row = 0; row < 8; row++ )
+            for (int row = 0; row < 8; row++)
             {
                 uint8_t plane1 = readCHR(tile * 16 + row);
                 uint8_t plane2 = readCHR(tile * 16 + row + 8);
 
-                for( int column = 0; column < 8; column++ )
+                for (int column = 0; column < 8; column++)
                 {
                     uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + ((plane2 & (1 << column)) ? 2 : 0));
                     uint8_t colorIndex = palette[0x10 + (attributes & 0x03) * 4 + paletteIndex];
-                    if( paletteIndex == 0 )
+                    if (paletteIndex == 0)
                     {
                         // Skip transparent pixels
                         continue;
@@ -506,12 +413,12 @@ void PPU::render(uint32_t* buffer)
                     uint32_t pixel = 0xff000000 | paletteRGB[colorIndex];
 
                     int xOffset = 7 - column;
-                    if( flipX )
+                    if (flipX)
                     {
                         xOffset = column;
                     }
                     int yOffset = row;
-                    if( flipY )
+                    if (flipY)
                     {
                         yOffset = 7 - row;
                     }
@@ -523,15 +430,31 @@ void PPU::render(uint32_t* buffer)
                         continue;
                     }
 
-                    // Special case for sprite 0, tile 0xff in Super Mario Bros.
-                    // (part of the pixels for the coin indicator)
-                    //
-                    if (i == 0 && index == 0xff && row == 5 && column > 3 && column < 6)
+                    // Priority handling
+                    if (behindBackground)
                     {
-                        continue;
+                        // Sprite is behind background - only draw if background pixel is transparent
+                        uint32_t backgroundPixel = buffer[yPixel * 256 + xPixel];
+                        uint32_t backgroundColor = paletteRGB[palette[0]];
+                        
+                        if (backgroundPixel == backgroundColor)
+                        {
+                            buffer[yPixel * 256 + xPixel] = pixel;
+                        }
                     }
-
-                    buffer[yPixel * 256 + xPixel] = pixel;
+                    else
+                    {
+                        // Sprite is in front of background - always draw
+                        buffer[yPixel * 256 + xPixel] = pixel;
+                        
+                        // Special case for sprite 0, tile 0xff in Super Mario Bros.
+                        // (part of the pixels for the coin indicator)
+                        if (i == 0 && index == 0xff && row == 5 && column > 3 && column < 6)
+                        {
+                            // Don't draw these specific pixels for the coin indicator
+                            buffer[yPixel * 256 + xPixel] = paletteRGB[palette[0]];
+                        }
+                    }
                 }
             }
         }
