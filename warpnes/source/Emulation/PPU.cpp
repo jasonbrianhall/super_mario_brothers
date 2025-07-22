@@ -1529,8 +1529,11 @@ void PPU::clearScanline(int scanline) {
                         ((bgColor32 & 0x0000F8) >> 3);
     
     uint16_t* scanlineStart = &frameBuffer[scanline * 256];
+    uint8_t* maskStart = &backgroundMask[scanline * 256];
+    
     for (int x = 0; x < 256; x++) {
         scanlineStart[x] = bgColor16;
+        maskStart[x] = 1;  // Mark as transparent by default
     }
 }
 
@@ -1613,6 +1616,14 @@ void PPU::renderBackgroundScanline(int scanline) {
             uint8_t pixelValue = 0;
             if (patternLo & (0x80 >> pixelX)) pixelValue |= 1;
             if (patternHi & (0x80 >> pixelX)) pixelValue |= 2;
+            
+            // CRITICAL: Track if this is palette index 0 (transparent)
+            int bufferIndex = scanline * 256 + screenPixelX;
+            if (pixelValue == 0) {
+                backgroundMask[bufferIndex] = 1;  // Transparent
+            } else {
+                backgroundMask[bufferIndex] = 0;  // Opaque background
+            }
             
             // Get color from palette
             uint8_t colorIndex;
@@ -1702,20 +1713,16 @@ void PPU::renderSpriteScanline(int scanline) {
                                   ((color32 & 0x00FC00) >> 5) | 
                                   ((color32 & 0x0000F8) >> 3);
             
-            // Check background priority
+            // Check background priority using the new mask system
             if (behindBackground) {
-                // Only draw if background is transparent
-                uint8_t bgColorIndex = palette[0];
-                uint32_t bgColor32 = paletteRGB[bgColorIndex];
-                uint16_t bgColor16 = ((bgColor32 & 0xF80000) >> 8) | 
-                                    ((bgColor32 & 0x00FC00) >> 5) | 
-                                    ((bgColor32 & 0x0000F8) >> 3);
-                
-                if (frameBuffer[yPixel * 256 + xPixel] == bgColor16) {
-                    frameBuffer[yPixel * 256 + xPixel] = spritePixel;
+                // Behind-background sprites only show through palette index 0 areas
+                int bufferIndex = yPixel * 256 + xPixel;
+                if (backgroundMask[bufferIndex] == 1) {  // Transparent background
+                    frameBuffer[bufferIndex] = spritePixel;
                 }
+                // If backgroundMask[bufferIndex] == 0, background is opaque, don't draw sprite
             } else {
-                // Always draw sprite in front
+                // Front sprites always draw
                 frameBuffer[yPixel * 256 + xPixel] = spritePixel;
             }
         }

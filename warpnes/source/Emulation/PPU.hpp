@@ -125,7 +125,7 @@ private:
 
     uint8_t scanlineScrollX[240];   // Scroll X value for each scanline
     uint8_t scanlineCtrl[240];      // Control register value for each scanline
-
+    uint8_t backgroundMask[256 * 240];
     // Scanline-based rendering state
     uint16_t frameBuffer[256 * 240];
     int currentRenderScanline;
