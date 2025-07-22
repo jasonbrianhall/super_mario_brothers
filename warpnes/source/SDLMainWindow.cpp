@@ -4,7 +4,7 @@
 #include <SDL2/SDL.h>
 
 #include "SMB/SMBEmulator.hpp"
-
+#include "Emulation/ControllerSDL.hpp"
 #include "Configuration.hpp"
 #include "Constants.hpp"
 // Include the generated ROM header
@@ -314,23 +314,35 @@ static void shutdown()
     SDL_Quit();
 }
 
+// Updated mainLoop function for SDLMainWindow.cpp
+// This follows the same pattern as your working SDLMain.cpp
+
 static void mainLoop(const char* romFilename)
 {
     // Load ROM from file
-    SMBEmulator engine;  // Fixed: removed parentheses
+    SMBEmulator engine;
     smbEngine = &engine;
 
     printf("Loading ROM: %s\n", romFilename);
     if (!engine.loadROM(romFilename)) {
         printf("Failed to load ROM file: %s\n", romFilename);
-        // Note: setStatusMessage function is not defined, you may need to remove or implement this
-        // setStatusMessage("ROM loading failed");
         return;
     }
 
     printf("ROM loaded successfully\n");
-
     engine.reset();
+
+    // Get the controller from the engine (like in your working SDLMain.cpp)
+    Controller& controller1 = engine.getController1();
+    bool joystickInitialized = controller1.initJoystick();
+    if (joystickInitialized)
+    {
+        std::cout << "Joystick initialized successfully!" << std::endl;
+    }
+    else
+    {
+        std::cout << "No joystick found or initialization failed. Using keyboard controls only." << std::endl;
+    }
 
     bool running = true;
     int progStartTime = SDL_GetTicks();
@@ -340,7 +352,6 @@ static void mainLoop(const char* romFilename)
     static bool optimizedScalingKeyPressed = false;
     static bool f11KeyPressed = false;
     static bool fKeyPressed = false;
-    // Save/Load state key tracking
     static bool f5KeyPressed = false;
     static bool f6KeyPressed = false;
     static bool f7KeyPressed = false;
@@ -364,57 +375,53 @@ static void mainLoop(const char* romFilename)
                     break;
                 }
                 break;
-            // Process controller events internally
+            // Process joystick events (same as your working version)
             case SDL_JOYAXISMOTION:
             case SDL_JOYBUTTONDOWN:
             case SDL_JOYBUTTONUP:
             case SDL_CONTROLLERBUTTONDOWN:
             case SDL_CONTROLLERBUTTONUP:
             case SDL_CONTROLLERAXISMOTION:
-                controller.processControllerEvent(event);
+                if (joystickInitialized)
+                {
+                    controller1.processJoystickEvent(event);
+                }
                 break;
             default:
                 break;
             }
         }
 
-        // Reset controller state (will be set by keyboard/controller)
-        controller.buttonA = false;
-        controller.buttonB = false;
-        controller.buttonSelect = false;
-        controller.buttonStart = false;
-        controller.buttonUp = false;
-        controller.buttonDown = false;
-        controller.buttonLeft = false;
-        controller.buttonRight = false;
-
-        // Handle keyboard input and update controller state
+        // Handle keyboard input (EXACTLY like your working SDLMain.cpp)
         const Uint8* keys = SDL_GetKeyboardState(NULL);
-        controller.updateFromKeyboard(keys);
-        
-        // Update the game engine with controller state
-        // Note: You'll need to modify SMBEngine to accept button states directly
-        // or create a method to set controller state
-        /*engine.setControllerState(controller.buttonA, controller.buttonB, 
-                                  controller.buttonSelect, controller.buttonStart,
-                                  controller.buttonUp, controller.buttonDown,
-                                  controller.buttonLeft, controller.buttonRight); */
+        controller1.setButtonState(BUTTON_A, keys[SDL_SCANCODE_X]);
+        controller1.setButtonState(BUTTON_B, keys[SDL_SCANCODE_Z]);
+        controller1.setButtonState(BUTTON_SELECT, keys[SDL_SCANCODE_BACKSPACE]);
+        controller1.setButtonState(BUTTON_START, keys[SDL_SCANCODE_RETURN]);
+        controller1.setButtonState(BUTTON_UP, keys[SDL_SCANCODE_UP]);
+        controller1.setButtonState(BUTTON_DOWN, keys[SDL_SCANCODE_DOWN]);
+        controller1.setButtonState(BUTTON_LEFT, keys[SDL_SCANCODE_LEFT]);
+        controller1.setButtonState(BUTTON_RIGHT, keys[SDL_SCANCODE_RIGHT]);
         
         // Debug key to print controller state (press D key)
         if (keys[SDL_SCANCODE_D])
         {
-            controller.printButtonStates();
+            controller1.printButtonStates();
+        }
+
+        // Update joystick state (same as your working version)
+        if (joystickInitialized)
+        {
+            controller1.updateJoystickState();
         }
 
         // Game control keys
         if (keys[SDL_SCANCODE_R])
         {
-            // Reset
             engine.reset();
         }
         if (keys[SDL_SCANCODE_ESCAPE])
         {
-            // quit
             running = false;
             break;
         }
@@ -425,14 +432,12 @@ static void mainLoop(const char* romFilename)
         // F5 - Save/Load State 1
         if (keys[SDL_SCANCODE_F5] && !f5KeyPressed) {
             if (shiftPressed) {
-                // Shift+F5 - Load State 1
                 if (engine.loadState("save1")) {
                     printf("State 1 loaded\n");
                 } else {
                     printf("Failed to load state 1\n");
                 }
             } else {
-                // F5 - Save State 1
                 engine.saveState("save1");
                 printf("State 1 saved\n");
             }
@@ -444,14 +449,12 @@ static void mainLoop(const char* romFilename)
         // F6 - Save/Load State 2
         if (keys[SDL_SCANCODE_F6] && !f6KeyPressed) {
             if (shiftPressed) {
-                // Shift+F6 - Load State 2
                 if (engine.loadState("save2")) {
                     printf("State 2 loaded\n");
                 } else {
                     printf("Failed to load state 2\n");
                 }
             } else {
-                // F6 - Save State 2
                 engine.saveState("save2");
                 printf("State 2 saved\n");
             }
@@ -463,14 +466,12 @@ static void mainLoop(const char* romFilename)
         // F7 - Save/Load State 3
         if (keys[SDL_SCANCODE_F7] && !f7KeyPressed) {
             if (shiftPressed) {
-                // Shift+F7 - Load State 3
                 if (engine.loadState("save3")) {
                     printf("State 3 loaded\n");
                 } else {
                     printf("Failed to load state 3\n");
                 }
             } else {
-                // F7 - Save State 3
                 engine.saveState("save3");
                 printf("State 3 saved\n");
             }
@@ -482,14 +483,12 @@ static void mainLoop(const char* romFilename)
         // F8 - Save/Load State 4
         if (keys[SDL_SCANCODE_F8] && !f8KeyPressed) {
             if (shiftPressed) {
-                // Shift+F8 - Load State 4
                 if (engine.loadState("save4")) {
                     printf("State 4 loaded\n");
                 } else {
                     printf("Failed to load state 4\n");
                 }
             } else {
-                // F8 - Save State 4
                 engine.saveState("save4");
                 printf("State 4 saved\n");
             }
@@ -498,16 +497,13 @@ static void mainLoop(const char* romFilename)
             f8KeyPressed = false;
         }
         
-        // Toggle fullscreen with F11 (with proper key state tracking)
+        // Toggle fullscreen with F11
         if (keys[SDL_SCANCODE_F11] && !f11KeyPressed) {
-            // Get current fullscreen state
             Uint32 windowFlags = SDL_GetWindowFlags(window);
             if (windowFlags & SDL_WINDOW_FULLSCREEN_DESKTOP) {
-                // Currently fullscreen, switch to windowed
                 SDL_SetWindowFullscreen(window, 0);
                 printf("Switched to windowed mode\n");
             } else {
-                // Currently windowed, switch to fullscreen
                 SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
                 printf("Switched to fullscreen mode\n");
             }
@@ -541,31 +537,13 @@ static void mainLoop(const char* romFilename)
         engine.update();
         engine.render(renderBuffer);
 
-        // Apply post-processing filters if enabled
-        uint32_t* sourceBuffer = renderBuffer;
-        uint32_t* targetBuffer = filteredBuffer;
-
         // Clear the renderer
         SDL_RenderClear(renderer);
 
-        // Try optimized rendering first
-        bool optimizedRenderingUsed = false;
-/*        if (scalingCache && scalingCache->isOptimizedScaling()) {
-            // Get current window size for optimized rendering
-            int window_width, window_height;
-            SDL_GetWindowSize(window, &window_width, &window_height);
-            
-            scalingCache->renderOptimized(sourceBuffer, window_width, window_height);
-            optimizedRenderingUsed = true;
-        } */
-
-        // Fallback to original rendering if optimized rendering is disabled
-        if (!optimizedRenderingUsed) {
-            // Original rendering code
-            SDL_UpdateTexture(texture, NULL, sourceBuffer, sizeof(uint32_t) * RENDER_WIDTH);
-            SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH, RENDER_HEIGHT);
-            SDL_RenderCopy(renderer, texture, NULL, NULL);
-        }
+        // Original rendering code
+        SDL_UpdateTexture(texture, NULL, renderBuffer, sizeof(uint32_t) * RENDER_WIDTH);
+        SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH, RENDER_HEIGHT);
+        SDL_RenderCopy(renderer, texture, NULL, NULL);
 
         // Render scanlines if enabled
         if (Configuration::getScanlinesEnabled())
@@ -577,10 +555,7 @@ static void mainLoop(const char* romFilename)
         // Present the rendered frame
         SDL_RenderPresent(renderer);
 
-        /**
-         * Ensure that the framerate stays as close to the desired FPS as possible. If the frame was rendered faster, then delay. 
-         * If the frame was slower, reset time so that the game doesn't try to "catch up", going super-speed.
-         */
+        // Frame timing
         int now = SDL_GetTicks();
         int delay = progStartTime + int(double(frame) * double(MS_PER_SEC) / double(Configuration::getFrameRate())) - now;
         if(delay > 0) 

@@ -2,8 +2,11 @@
 #include "../Configuration.hpp"
 #include <iostream>
 
-Controller::Controller(uint8_t player) : strobe(1)
+Controller::Controller() : strobe(1)
 {
+    // Initialize button states for both players
+    for (int player = 0; player < 2; player++)
+    {
         for (int button = 0; button < 8; button++)
         {
             buttonStates[player][button] = false;
@@ -13,6 +16,7 @@ Controller::Controller(uint8_t player) : strobe(1)
         gameControllers[player] = nullptr;
         joystickIDs[player] = -1;
         joystickInitialized[player] = false;
+    }
     
     // Initialize with default values (will be overridden by loadConfiguration)
     joystickPollingEnabled = true;
@@ -21,12 +25,12 @@ Controller::Controller(uint8_t player) : strobe(1)
     // Set default keyboard mappings (will be overridden by loadConfiguration)
     player1Keys = {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT,
                    SDL_SCANCODE_X, SDL_SCANCODE_Z, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_RETURN};
-    /*player2Keys = {SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_J, SDL_SCANCODE_L,
-                   SDL_SCANCODE_N, SDL_SCANCODE_M, SDL_SCANCODE_RCTRL, SDL_SCANCODE_SPACE}; */
+    player2Keys = {SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_J, SDL_SCANCODE_L,
+                   SDL_SCANCODE_N, SDL_SCANCODE_M, SDL_SCANCODE_RCTRL, SDL_SCANCODE_SPACE};
     
     // Set default joystick mappings (will be overridden by loadConfiguration)
     player1JoystickButtons = {1, 0, 8, 9};  // A, B, Select, Start
-    //player2JoystickButtons = {1, 0, 8, 9};
+    player2JoystickButtons = {1, 0, 8, 9};
     
     // Load SDL_GameControllerDB database if it exists
     FILE* dbFile = fopen("gamecontrollerdb.txt", "r");
@@ -53,28 +57,6 @@ Controller::~Controller()
             SDL_JoystickClose(joysticks[player]);
         }
     }
-}
-
-// NES controller read implementation
-uint8_t Controller::readByte(int player)
-{
-    if (player == 1) {
-        // Return the current bit from the shift register
-        uint8_t result = (shiftRegister & 0x01) ? 0x01 : 0x00;
-        
-        // Shift the register for the next read
-        shiftRegister >>= 1;
-        
-        return result | 0x40; // Set bit 6 as per NES controller behavior
-    }
-    else if (player == 2) {
-        // Similar implementation for player 2
-        uint8_t result = (shiftRegister & 0x01) ? 0x01 : 0x00;
-        shiftRegister >>= 1;
-        return result | 0x40;
-    }
-    
-    return 0x40; // Default return for invalid reads
 }
 
 void Controller::loadConfiguration()

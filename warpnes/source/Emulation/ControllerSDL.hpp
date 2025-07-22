@@ -44,7 +44,7 @@ enum Player
 class Controller
 {
 public:
-    Controller(uint8_t player);
+    Controller();
     ~Controller();
 
     void shutdownJoystick();
@@ -127,8 +127,6 @@ public:
      * Load controller configuration from the config system
      */
     void loadConfiguration();
-   uint8_t readByte(int player);
-
 
 private:
     // Controller state for each player
@@ -141,7 +139,7 @@ private:
     std::array<SDL_GameController*, 2> gameControllers;
     std::array<int, 2> joystickIDs;
     std::array<bool, 2> joystickInitialized;
-    uint8_t shiftRegister;      // Shift register for reading button states
+
     // Joystick settings - now loaded from configuration
     int joystickDeadzone;
     bool joystickPollingEnabled;

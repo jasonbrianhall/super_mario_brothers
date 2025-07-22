@@ -4,7 +4,9 @@
 
 #ifdef ALLEGRO_BUILD
 #include "../Emulation/Controller.hpp"
-#endif 
+#else
+#include "../Emulation/ControllerSDL.hpp"
+#endif
 
 #include "../Emulation/PPU.hpp"
 #include "../Zapper.hpp"
@@ -65,10 +67,8 @@ SMBEmulator::SMBEmulator()
   ppu = new PPU(*this);
 
 
-#ifdef ALLEGRO_BUILD
   controller1 = new Controller();
   controller2 = new Controller();
-#endif
 
 
   zapper = new Zapper();
@@ -79,10 +79,8 @@ SMBEmulator::~SMBEmulator() {
   delete apu;
   delete ppu;
 
-#ifdef ALLEGRO_BUILD
   delete controller1;
   delete controller2;
-#endif
 
   delete zapper;
   unloadROM();
@@ -2896,12 +2894,10 @@ bool SMBEmulator::isUsingMIDIAudio() const { return apu->isUsingMIDI(); }
 
 void SMBEmulator::debugAudioChannels() { apu->debugAudio(); }
 
-#ifdef ALLEGRO_BUILD
 // Controller access
 Controller &SMBEmulator::getController1() { return *controller1; }
 
 Controller &SMBEmulator::getController2() { return *controller2; }
-#endif
 
 // CPU state access
 SMBEmulator::CPUState SMBEmulator::getCPUState() const {
