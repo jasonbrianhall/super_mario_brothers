@@ -2,11 +2,8 @@
 #include "../Configuration.hpp"
 #include <iostream>
 
-Controller::Controller() : strobe(1)
+Controller::Controller(uint8_t player) : strobe(1)
 {
-    // Initialize button states for both players
-    for (int player = 0; player < 2; player++)
-    {
         for (int button = 0; button < 8; button++)
         {
             buttonStates[player][button] = false;
@@ -16,7 +13,6 @@ Controller::Controller() : strobe(1)
         gameControllers[player] = nullptr;
         joystickIDs[player] = -1;
         joystickInitialized[player] = false;
-    }
     
     // Initialize with default values (will be overridden by loadConfiguration)
     joystickPollingEnabled = true;
@@ -25,12 +21,12 @@ Controller::Controller() : strobe(1)
     // Set default keyboard mappings (will be overridden by loadConfiguration)
     player1Keys = {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT,
                    SDL_SCANCODE_X, SDL_SCANCODE_Z, SDL_SCANCODE_RSHIFT, SDL_SCANCODE_RETURN};
-    player2Keys = {SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_J, SDL_SCANCODE_L,
-                   SDL_SCANCODE_N, SDL_SCANCODE_M, SDL_SCANCODE_RCTRL, SDL_SCANCODE_SPACE};
+    /*player2Keys = {SDL_SCANCODE_I, SDL_SCANCODE_K, SDL_SCANCODE_J, SDL_SCANCODE_L,
+                   SDL_SCANCODE_N, SDL_SCANCODE_M, SDL_SCANCODE_RCTRL, SDL_SCANCODE_SPACE}; */
     
     // Set default joystick mappings (will be overridden by loadConfiguration)
     player1JoystickButtons = {1, 0, 8, 9};  // A, B, Select, Start
-    player2JoystickButtons = {1, 0, 8, 9};
+    //player2JoystickButtons = {1, 0, 8, 9};
     
     // Load SDL_GameControllerDB database if it exists
     FILE* dbFile = fopen("gamecontrollerdb.txt", "r");

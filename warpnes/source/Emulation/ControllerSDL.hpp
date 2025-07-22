@@ -44,7 +44,7 @@ enum Player
 class Controller
 {
 public:
-    Controller();
+    Controller(uint8_t player);
     ~Controller();
 
     void shutdownJoystick();
