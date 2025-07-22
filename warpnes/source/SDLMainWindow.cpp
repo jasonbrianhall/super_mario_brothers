@@ -317,18 +317,18 @@ static void shutdown()
 static void mainLoop(const char* romFilename)
 {
     // Load ROM from file
-    SMBEmulator engine();
+    SMBEmulator engine;  // Fixed: removed parentheses
     smbEngine = &engine;
 
     printf("Loading ROM: %s\n", romFilename);
     if (!engine.loadROM(romFilename)) {
         printf("Failed to load ROM file: %s\n", romFilename);
-        setStatusMessage("ROM loading failed");
+        // Note: setStatusMessage function is not defined, you may need to remove or implement this
+        // setStatusMessage("ROM loading failed");
         return;
     }
 
     printf("ROM loaded successfully\n");
-
 
     engine.reset();
 
