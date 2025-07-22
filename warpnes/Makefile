@@ -51,6 +51,7 @@ COMMON_SOURCE_FILES = \
     source/Emulation/PPU.cpp \
     source/Zapper.cpp \
     source/SMB/SMBEmulator.cpp \
+    source/Emulation/AllegroMidi.cpp \
     source/SMB/Battery.cpp
 
 # Platform-specific source files
@@ -62,7 +63,6 @@ SDL_SOURCE_FILES = $(COMMON_SOURCE_FILES) \
 
 ALLEGRO_SOURCE_FILES = $(COMMON_SOURCE_FILES) \
     source/dos_main.cpp \
-    source/Emulation/AllegroMidi.cpp \
     source/Emulation/Controller.cpp
 
 
