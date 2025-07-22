@@ -416,14 +416,26 @@ static void mainLoop(const char* romFilename)
 
         // Handle keyboard input (EXACTLY like your working SDLMain.cpp)
         const Uint8* keys = SDL_GetKeyboardState(NULL);
-        controller1.setButtonState(BUTTON_A, keys[SDL_SCANCODE_X]);
-        controller1.setButtonState(BUTTON_B, keys[SDL_SCANCODE_Z]);
-        controller1.setButtonState(BUTTON_SELECT, keys[SDL_SCANCODE_BACKSPACE]);
-        controller1.setButtonState(BUTTON_START, keys[SDL_SCANCODE_RETURN]);
-        controller1.setButtonState(BUTTON_UP, keys[SDL_SCANCODE_UP]);
-        controller1.setButtonState(BUTTON_DOWN, keys[SDL_SCANCODE_DOWN]);
-        controller1.setButtonState(BUTTON_LEFT, keys[SDL_SCANCODE_LEFT]);
-        controller1.setButtonState(BUTTON_RIGHT, keys[SDL_SCANCODE_RIGHT]);
+
+        // Get current joystick states (preserve what processJoystickEvent set)
+        bool joyA = controller1.getButtonState(BUTTON_A);
+        bool joyB = controller1.getButtonState(BUTTON_B);
+        bool joySelect = controller1.getButtonState(BUTTON_SELECT);
+        bool joyStart = controller1.getButtonState(BUTTON_START);
+        bool joyUp = controller1.getButtonState(BUTTON_UP);
+        bool joyDown = controller1.getButtonState(BUTTON_DOWN);
+        bool joyLeft = controller1.getButtonState(BUTTON_LEFT);
+        bool joyRight = controller1.getButtonState(BUTTON_RIGHT);
+
+        // Combine keyboard and joystick input (OR logic - either input works)
+        controller1.setButtonState(BUTTON_A, keys[SDL_SCANCODE_X] || joyA);
+        controller1.setButtonState(BUTTON_B, keys[SDL_SCANCODE_Z] || joyB);
+        controller1.setButtonState(BUTTON_SELECT, keys[SDL_SCANCODE_LEFTBRACKET] || joySelect);
+        controller1.setButtonState(BUTTON_START, keys[SDL_SCANCODE_RIGHTBRACKET] || joyStart);
+        controller1.setButtonState(BUTTON_UP, keys[SDL_SCANCODE_UP] || joyUp);
+        controller1.setButtonState(BUTTON_DOWN, keys[SDL_SCANCODE_DOWN] || joyDown);
+        controller1.setButtonState(BUTTON_LEFT, keys[SDL_SCANCODE_LEFT] || joyLeft);
+        controller1.setButtonState(BUTTON_RIGHT, keys[SDL_SCANCODE_RIGHT] || joyRight);
         
         // Debug key to print controller state (press D key)
         if (keys[SDL_SCANCODE_D])
