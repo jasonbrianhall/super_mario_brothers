@@ -12,7 +12,9 @@ class APU;
 class PPU;
 class PPUCycleAccurate;
 
+#ifdef ALLEGRO_BUILD
 class Controller;
+#endif 
 
 /**
  * Dynamic 6502 CPU emulator for NES/SMB
@@ -63,9 +65,11 @@ public:
   bool isUsingMIDIAudio() const;
   void debugAudioChannels();
 
+#ifdef ALLEGRO_BUILD
   // Controllers
   Controller &getController1();
   Controller &getController2();
+#endif
 
   // Save states
   void saveState(const std::string &filename);
@@ -171,8 +175,10 @@ private:
   PPU *ppu;
   PPUCycleAccurate *ppuCycleAccurate;
 
+#ifdef ALLEGRO_BUILD
   Controller *controller1;
   Controller *controller2;
+#endif
 
   // Memory mapping
   uint8_t readByte(uint16_t address);
