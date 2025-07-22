@@ -3638,13 +3638,28 @@ void SMBEmulator::writeMMC2Register(uint16_t address, uint8_t value) {
 
 void SMBEmulator::updateMMC2Banks() {
     // Update current CHR banks based on latch states
+    uint8_t oldBank0 = mmc2.currentCHRBank0;
+    uint8_t oldBank1 = mmc2.currentCHRBank1;
+    
     mmc2.currentCHRBank0 = mmc2.latch0 ? mmc2.chrBank0FE : mmc2.chrBank0FD;
     mmc2.currentCHRBank1 = mmc2.latch1 ? mmc2.chrBank1FE : mmc2.chrBank1FD;
+    
+    // Bounds checking
+    uint8_t totalCHRBanks = chrSize / 0x1000; // 4KB banks
+    mmc2.currentCHRBank0 %= totalCHRBanks;
+    mmc2.currentCHRBank1 %= totalCHRBanks;
+    
+    static int bankSwitchCount = 0;
+    if ((oldBank0 != mmc2.currentCHRBank0 || oldBank1 != mmc2.currentCHRBank1) && bankSwitchCount < 10) {
+        printf("MMC2 Bank Switch: Bank0 %d->%d, Bank1 %d->%d\n",
+               oldBank0, mmc2.currentCHRBank0, oldBank1, mmc2.currentCHRBank1);
+        bankSwitchCount++;
+
+    }
 }
 
 void SMBEmulator::checkMMC2CHRLatch(uint16_t address, uint8_t tileID) {
-    // Add debug output to see when latches switch
-    static int debugCount = 0;
+    static int latchSwitchCount = 0;
     
     if (address < 0x1000) {
         // Pattern table 0 ($0000-$0FFF)
@@ -3652,18 +3667,20 @@ void SMBEmulator::checkMMC2CHRLatch(uint16_t address, uint8_t tileID) {
             if (mmc2.latch0 != false) {
                 mmc2.latch0 = false;
                 updateMMC2Banks();
-                if (debugCount < 10) {
-                    printf("MMC2: Latch 0 -> FD (tile $FD read at $%04X)\n", address);
-                    debugCount++;
+                if (latchSwitchCount < 20) {
+                    printf("*** MMC2: Latch 0 -> FD (bank %d) at $%04X ***\n", 
+                           mmc2.currentCHRBank0, address);
+                    latchSwitchCount++;
                 }
             }
         } else if (tileID == 0xFE) {
             if (mmc2.latch0 != true) {
                 mmc2.latch0 = true;
                 updateMMC2Banks();
-                if (debugCount < 10) {
-                    printf("MMC2: Latch 0 -> FE (tile $FE read at $%04X)\n", address);
-                    debugCount++;
+                if (latchSwitchCount < 20) {
+                    printf("*** MMC2: Latch 0 -> FE (bank %d) at $%04X ***\n", 
+                           mmc2.currentCHRBank0, address);
+                    latchSwitchCount++;
                 }
             }
         }
@@ -3673,18 +3690,20 @@ void SMBEmulator::checkMMC2CHRLatch(uint16_t address, uint8_t tileID) {
             if (mmc2.latch1 != false) {
                 mmc2.latch1 = false;
                 updateMMC2Banks();
-                if (debugCount < 10) {
-                    printf("MMC2: Latch 1 -> FD (tile $FD read at $%04X)\n", address);
-                    debugCount++;
+                if (latchSwitchCount < 20) {
+                    printf("*** MMC2: Latch 1 -> FD (bank %d) at $%04X ***\n", 
+                           mmc2.currentCHRBank1, address);
+                    latchSwitchCount++;
                 }
             }
         } else if (tileID == 0xFE) {
             if (mmc2.latch1 != true) {
                 mmc2.latch1 = true;
                 updateMMC2Banks();
-                if (debugCount < 10) {
-                    printf("MMC2: Latch 1 -> FE (tile $FE read at $%04X)\n", address);
-                    debugCount++;
+                if (latchSwitchCount < 20) {
+                    printf("*** MMC2: Latch 1 -> FE (bank %d) at $%04X ***\n", 
+                           mmc2.currentCHRBank1, address);
+                    latchSwitchCount++;
                 }
             }
         }

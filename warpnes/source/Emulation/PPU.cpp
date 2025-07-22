@@ -215,6 +215,14 @@ uint8_t PPU::readCHR(int index)
             // Calculate which tile is being read
             uint16_t tileIndex = (index % 0x1000) / 16;  // Which tile (0-255) within 4KB bank
             
+            // Add debug output for tiles $FD and $FE
+            static int debugCount = 0;
+            if ((tileIndex == 0xFD || tileIndex == 0xFE) && debugCount < 20) {
+                printf("PPU: Reading tile $%02X from address $%04X, bank %d\n", 
+                       tileIndex, index, (index < 0x1000) ? 0 : 1);
+                debugCount++;
+            }
+            
             // Only check for latch tiles $FD and $FE
             if (tileIndex == 0xFD || tileIndex == 0xFE) {
                 engine.checkCHRLatch(index, tileIndex);
@@ -1044,20 +1052,6 @@ void PPU::writeByte(uint16_t address, uint8_t value)
                 palette[address - 0x3f10] = value;
             }
         }
-    }
-}
-
-void PPU::invalidateTileCache()
-{
-    if (g_comprehensiveCacheInit) {
-        memset(g_comprehensiveCache, 0, sizeof(g_comprehensiveCache));
-        for (int i = 0; i < 512 * 8; i++) {
-            g_comprehensiveCache[i].is_valid = false;
-        }
-        
-        // Clear flip cache too
-        g_flipCache.clear();
-        g_flipCacheIndex.clear();
     }
 }
 

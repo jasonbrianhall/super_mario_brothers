@@ -90,7 +90,6 @@ public:
     uint8_t getMask() const { return ppuMask; }
     void updateRenderRegisters();
     void captureFrameScroll();
-    void invalidateTileCache();
     
     // PPU cycle tracking and catch-up (DJGPP compatible)
     void stepCycle(int scanline, int cycle);
