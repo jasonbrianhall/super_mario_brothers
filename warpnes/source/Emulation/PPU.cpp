@@ -1062,18 +1062,18 @@ void PPU::writeDataRegister(uint8_t value)
 void PPU::writeDMA(uint8_t page)
 {
     uint16_t address = (uint16_t)page << 8;
+    uint8_t startOAMAddr = oamAddress;  // Save starting address
+    
     for (int i = 0; i < 256; i++)
     {
-        oam[oamAddress] = engine.readData(address);
+        oam[(startOAMAddr + i) & 0xFF] = engine.readData(address);
         address++;
-        oamAddress++;
+        // DON'T increment oamAddress here!
     }
     
-    // DMA takes 513 or 514 CPU cycles (depending on alignment)
-    // PPU gets 3x as many cycles
+    // DMA cycles
     addCycles(513 * 3);
 }
-
 
 
 void PPU::writeRegister(uint16_t address, uint8_t value)
@@ -1644,8 +1644,21 @@ void PPU::renderBackgroundScanline(int scanline) {
     }
 }
 
+
+
 void PPU::renderSpriteScanline(int scanline) {
     // Render sprites for this scanline in reverse priority order
+
+/*static int debugCount = 0;
+if (debugCount < 100 && scanline == 100) {  // Check middle of screen
+    printf("Scanline %d sprites: ", scanline);
+    for (int i = 0; i < 8; i++) {  // Check first 8 sprites
+        printf("S%d:Y=%d,T=%02X,A=%02X,X=%d ", i, oam[i*4], oam[i*4+1], oam[i*4+2], oam[i*4+3]);
+    }
+    printf("\n");
+    debugCount++;
+}*/
+
     for (int spriteIndex = 63; spriteIndex >= 0; spriteIndex--) {
         uint8_t spriteY = oam[spriteIndex * 4];
         uint8_t tileIndex = oam[spriteIndex * 4 + 1];
@@ -1702,6 +1715,8 @@ void PPU::renderSpriteScanline(int scanline) {
             
             int xPixel = (int)spriteX + xOffset;
             int yPixel = scanline;
+
+
             
             // Bounds check
             if (xPixel < 0 || xPixel >= 256 || yPixel < 0 || yPixel >= 240) continue;
@@ -1712,6 +1727,17 @@ void PPU::renderSpriteScanline(int scanline) {
             uint16_t spritePixel = ((color32 & 0xF80000) >> 8) | 
                                   ((color32 & 0x00FC00) >> 5) | 
                                   ((color32 & 0x0000F8) >> 3);
+
+/*if (spriteIndex < 4 && scanline >= 88 && scanline <= 104) {
+    printf("Drawing sprite %d: scanline=%d, pixel=(%d,%d), color=0x%04X\n", 
+           spriteIndex, scanline, xPixel, yPixel, spritePixel);
+}*/
+
+/*if (spriteIndex < 4 && scanline == 96) {
+    printf("Sprite %d palette 3 colors: %02X %02X %02X %02X\n", 
+           spriteIndex, palette[0x10+12], palette[0x10+13], palette[0x10+14], palette[0x10+15]);
+printf("Color 0x30 = 0x%08X, RGB565 = 0x%04X\n", paletteRGB[0x30], spritePixel);
+}*/
             
             // Check background priority using the new mask system
             if (behindBackground) {
