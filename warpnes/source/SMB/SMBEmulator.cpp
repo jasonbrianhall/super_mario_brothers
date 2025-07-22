@@ -3245,35 +3245,35 @@ void SMBEmulator::updateMMC1Banks() {
     // Handle 32KB PRG ROMs (no banking needed)
     if (prgSize == 32768) {
         mmc1.currentPRGBank = 0;
-        return;
-    }
-    
-    // PRG banking logic
-    uint8_t prgMode = (mmc1.control >> 2) & 0x03;
-    
-    switch (prgMode) {
-        case 0:
-        case 1:
-            // 32KB mode - switch entire 32KB (two 16KB banks)
-            mmc1.currentPRGBank = (mmc1.prgBank >> 1) % (totalPRGBanks / 2);
-            break;
-            
-        case 2:
-            // 16KB mode: Fix FIRST bank at $8000, switch LAST bank at $C000
-            mmc1.currentPRGBank = 0;  // First bank fixed at $8000
-            break;
-            
-        case 3:
-        default:
-            // 16KB mode: Switch FIRST bank at $8000, fix LAST bank at $C000
-            mmc1.currentPRGBank = mmc1.prgBank % totalPRGBanks;
-            break;
+        // Still need to handle CHR banking even for 32KB ROMs
+    } else {
+        // PRG banking logic
+        uint8_t prgMode = (mmc1.control >> 2) & 0x03;
+        
+        switch (prgMode) {
+            case 0:
+            case 1:
+                // 32KB mode - switch entire 32KB (two 16KB banks)
+                mmc1.currentPRGBank = (mmc1.prgBank >> 1) % (totalPRGBanks / 2);
+                break;
+                
+            case 2:
+                // 16KB mode: Fix FIRST bank at $8000, switch LAST bank at $C000
+                mmc1.currentPRGBank = 0;  // First bank fixed at $8000
+                break;
+                
+            case 3:
+            default:
+                // 16KB mode: Switch FIRST bank at $8000, fix LAST bank at $C000
+                mmc1.currentPRGBank = mmc1.prgBank % totalPRGBanks;
+                break;
+        }
     }
 
-    // CHR banking - handle both CHR-ROM and CHR-RAM
+    // CHR banking - CRITICAL FIX FOR TETRIS
     if (nesHeader.chrROMPages > 0) {
         // CHR-ROM banking
-        uint8_t totalCHRBanks = chrSize / 0x1000; // Always count in 4KB units
+        uint8_t totalCHRBanks = chrSize / 0x1000; // 4KB banks for MMC1
         
         if (mmc1.control & 0x10) {
             // 4KB CHR mode - independent 4KB banks
@@ -3281,9 +3281,20 @@ void SMBEmulator::updateMMC1Banks() {
             mmc1.currentCHRBank1 = mmc1.chrBank1 % totalCHRBanks;
         } else {
             // 8KB CHR mode - chrBank0 selects 8KB (two consecutive 4KB banks)
-            uint8_t baseBank = (mmc1.chrBank0 & 0xFE) % totalCHRBanks;
-            mmc1.currentCHRBank0 = baseBank;
+            uint8_t baseBank = (mmc1.chrBank0 & 0xFE); // Force even
+            mmc1.currentCHRBank0 = baseBank % totalCHRBanks;
             mmc1.currentCHRBank1 = (baseBank + 1) % totalCHRBanks;
+        }
+        
+        // Debug output for CHR banking
+        static int chrDebugCount = 0;
+        if (chrDebugCount < 10) {
+            printf("MMC1 CHR Update: Mode=%s, Bank0=%d->%d, Bank1=%d->%d (Total: %d)\n",
+                   (mmc1.control & 0x10) ? "4KB" : "8KB",
+                   mmc1.chrBank0, mmc1.currentCHRBank0,
+                   mmc1.chrBank1, mmc1.currentCHRBank1,
+                   totalCHRBanks);
+            chrDebugCount++;
         }
     } else {
         // CHR-RAM - no banking, direct access
@@ -3291,6 +3302,7 @@ void SMBEmulator::updateMMC1Banks() {
         mmc1.currentCHRBank1 = 1;
     }
 }
+
 void SMBEmulator::writeGxROMRegister(uint16_t address, uint8_t value) {
   uint8_t oldCHRBank = gxrom.chrBank;
 
@@ -3326,32 +3338,45 @@ uint8_t SMBEmulator::readCHRData(uint16_t address) {
     return 0;
   }
 
-    case 1: // MMC1
-    {
-        if (nesHeader.chrROMPages == 0) {
-            // CHR-RAM - direct access, no banking
-            if (address < chrSize) {
-                return chrROM[address];
-            }
+  case 1: // MMC1 - FIXED IMPLEMENTATION
+  {
+    if (nesHeader.chrROMPages == 0) {
+      // CHR-RAM - direct access, no banking
+      if (address < chrSize) {
+        return chrROM[address];
+      }
+    } else {
+      // CHR-ROM with banking - THIS IS THE CRITICAL FIX
+      uint32_t chrAddr;
+      uint8_t totalCHRBanks = chrSize / 0x1000; // 4KB banks for MMC1
+      
+      if (mmc1.control & 0x10) {
+        // 4KB CHR mode - independent 4KB banks
+        if (address < 0x1000) {
+          // $0000-$0FFF: Use currentCHRBank0
+          uint8_t bank = mmc1.currentCHRBank0 % totalCHRBanks;
+          chrAddr = (bank * 0x1000) + address;
         } else {
-            // CHR-ROM with banking
-            uint32_t chrAddr;
-            
-            if (address < 0x1000) {
-                // $0000-$0FFF: Use currentCHRBank0
-                chrAddr = (mmc1.currentCHRBank0 * 0x1000) + address;
-            } else {
-                // $1000-$1FFF: Use currentCHRBank1
-                chrAddr = (mmc1.currentCHRBank1 * 0x1000) + (address - 0x1000);
-            }
-            
-            if (chrAddr < chrSize) {
-                return chrROM[chrAddr];
-            }
+          // $1000-$1FFF: Use currentCHRBank1
+          uint8_t bank = mmc1.currentCHRBank1 % totalCHRBanks;
+          chrAddr = (bank * 0x1000) + (address - 0x1000);
         }
-        return 0;
+      } else {
+        // 8KB CHR mode - chrBank0 selects both 4KB banks
+        uint8_t baseBank = (mmc1.currentCHRBank0 & 0xFE) % totalCHRBanks; // Force even
+        if (address < 0x1000) {
+          chrAddr = (baseBank * 0x1000) + address;
+        } else {
+          chrAddr = ((baseBank + 1) % totalCHRBanks * 0x1000) + (address - 0x1000);
+        }
+      }
+      
+      if (chrAddr < chrSize) {
+        return chrROM[chrAddr];
+      }
     }
-
+    return 0;
+  }
   case 2: // UxROM
   {
     // UxROM always uses CHR-RAM - direct access, no banking
