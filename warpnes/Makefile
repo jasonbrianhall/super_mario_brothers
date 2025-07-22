@@ -1,294 +1,352 @@
-# Makefile for warpnes with Windows, Linux, and DOS Support
-# Based on Tetrimone Makefile structure
+# Makefile for warpnes with SDL and Allegro Support for Linux and Windows
+# Supports dual builds: SDL (modern) and Allegro (retro) versions
 # Last modification: $(shell date +%m/%d/%Y)
 
 # Compiler settings
 CXX_LINUX = g++
 CXX_WIN = x86_64-w64-mingw32-g++
-CXX_DOS = gxx
 CXXFLAGS_COMMON = -s -fpermissive
 
 # Debug flags
 DEBUG_FLAGS = -g -DDEBUG
 
-# Allegro flags for all platforms
+# SDL flags for Linux and Windows
+SDL_CFLAGS_LINUX = $(shell pkg-config --cflags sdl2 2>/dev/null || echo "-I/usr/include/SDL2")
+SDL_LIBS_LINUX = $(shell pkg-config --libs sdl2 2>/dev/null || echo "-lSDL2")
+
+SDL_CFLAGS_WIN = -I/usr/x86_64-w64-mingw32/include/SDL2
+SDL_LIBS_WIN = -lmingw32 -lSDL2main -lSDL2 -static-libgcc -static-libstdc++
+
+# Allegro flags for Linux and Windows
 ALLEGRO_CFLAGS_LINUX = -I/usr/include
 ALLEGRO_LIBS_LINUX = -lalleg
 
 ALLEGRO_CFLAGS_WIN = -I/usr/x86_64-w64-mingw32/include
 ALLEGRO_LIBS_WIN = -lalleg -lwinmm -static-libgcc -static-libstdc++
 
-ALLEGRO_CFLAGS_DOS = -I/djgpp/include
-ALLEGRO_LIBS_DOS = -lalleg -lm
+# SDL Platform-specific settings
+CXXFLAGS_LINUX_SDL = $(CXXFLAGS_COMMON) $(SDL_CFLAGS_LINUX) -DLINUX -DSDL_BUILD -std=c++11
+CXXFLAGS_WIN_SDL = $(CXXFLAGS_COMMON) $(SDL_CFLAGS_WIN) -DWIN32 -DSDL_BUILD -std=c++11
 
-# Platform-specific settings
-CXXFLAGS_LINUX = $(CXXFLAGS_COMMON) $(ALLEGRO_CFLAGS_LINUX) -DLINUX
-CXXFLAGS_WIN = $(CXXFLAGS_COMMON) $(ALLEGRO_CFLAGS_WIN) -DWIN32
-CXXFLAGS_DOS = -O2 -Wall -fomit-frame-pointer -ffast-math $(ALLEGRO_CFLAGS_DOS) -DDOS
+# Allegro Platform-specific settings  
+CXXFLAGS_LINUX_ALLEGRO = $(CXXFLAGS_COMMON) $(ALLEGRO_CFLAGS_LINUX) -DLINUX -DALLEGRO_BUILD
+CXXFLAGS_WIN_ALLEGRO = $(CXXFLAGS_COMMON) $(ALLEGRO_CFLAGS_WIN) -DWIN32 -DALLEGRO_BUILD
+
 # Debug-specific flags
-CXXFLAGS_LINUX_DEBUG = $(CXXFLAGS_LINUX) $(DEBUG_FLAGS)
-CXXFLAGS_WIN_DEBUG = $(CXXFLAGS_WIN) $(DEBUG_FLAGS)
-CXXFLAGS_DOS_DEBUG = $(CXXFLAGS_DOS) $(DEBUG_FLAGS)
+CXXFLAGS_LINUX_SDL_DEBUG = $(CXXFLAGS_LINUX_SDL) $(DEBUG_FLAGS)
+CXXFLAGS_WIN_SDL_DEBUG = $(CXXFLAGS_WIN_SDL) $(DEBUG_FLAGS)
+CXXFLAGS_LINUX_ALLEGRO_DEBUG = $(CXXFLAGS_LINUX_ALLEGRO) $(DEBUG_FLAGS)
+CXXFLAGS_WIN_ALLEGRO_DEBUG = $(CXXFLAGS_WIN_ALLEGRO) $(DEBUG_FLAGS)
 
 # Linker flags
-LDFLAGS_LINUX = $(ALLEGRO_LIBS_LINUX)
-LDFLAGS_WIN = $(ALLEGRO_LIBS_WIN)
-LDFLAGS_DOS = $(ALLEGRO_LIBS_DOS)
+LDFLAGS_LINUX_SDL = $(SDL_LIBS_LINUX)
+LDFLAGS_WIN_SDL = $(SDL_LIBS_WIN)
+LDFLAGS_LINUX_ALLEGRO = $(ALLEGRO_LIBS_LINUX)
+LDFLAGS_WIN_ALLEGRO = $(ALLEGRO_LIBS_WIN)
 
-# All platforms use the same source files (with SDL wrapper)
-SOURCE_FILES = \
+# Common source files (used by all platforms)
+COMMON_SOURCE_FILES = \
     source/Configuration.cpp \
-    source/dos_main.cpp \
     source/Emulation/APU.cpp \
     source/Emulation/Controller.cpp \
-    source/Emulation/AllegroMidi.cpp \
     source/Emulation/PPU.cpp \
     source/Zapper.cpp \
     source/SMB/SMBEmulator.cpp \
     source/SMB/Battery.cpp
-    
 
-# Object files
-OBJS_LINUX = $(SOURCE_FILES:.cpp=.o)
-OBJS_WIN = $(SOURCE_FILES:.cpp=.win.o)
-OBJS_DOS = $(SOURCE_FILES:.cpp=.dos.o)
-OBJS_LINUX_DEBUG = $(SOURCE_FILES:.cpp=.debug.o)
-OBJS_WIN_DEBUG = $(SOURCE_FILES:.cpp=.win.debug.o)
-OBJS_DOS_DEBUG = $(SOURCE_FILES:.cpp=.dos.debug.o)
+# Platform-specific source files
+SDL_SOURCE_FILES = $(COMMON_SOURCE_FILES) \
+    source/SDLMainWindow.cpp \
+    source/SDLCacheScaling.cpp
 
-# Target executables
-TARGET_LINUX = warpnes
-TARGET_WIN = warpnes.exe
-TARGET_DOS = warpnes.exe
-TARGET_LINUX_DEBUG = warpnes_debug
-TARGET_WIN_DEBUG = warpnes_debug.exe
-TARGET_DOS_DEBUG = warpnesd.exe
+ALLEGRO_SOURCE_FILES = $(COMMON_SOURCE_FILES) \
+    source/dos_main.cpp \
+    source/Emulation/AllegroMidi.cpp
+
+# Object files for SDL versions
+OBJS_LINUX_SDL = $(patsubst %.cpp,%.sdl.o,$(SDL_SOURCE_FILES))
+OBJS_WIN_SDL = $(patsubst %.cpp,%.win.sdl.o,$(SDL_SOURCE_FILES))
+OBJS_LINUX_SDL_DEBUG = $(patsubst %.cpp,%.sdl.debug.o,$(SDL_SOURCE_FILES))
+OBJS_WIN_SDL_DEBUG = $(patsubst %.cpp,%.win.sdl.debug.o,$(SDL_SOURCE_FILES))
+
+# Object files for Allegro versions
+OBJS_LINUX_ALLEGRO = $(patsubst %.cpp,%.allegro.o,$(ALLEGRO_SOURCE_FILES))
+OBJS_WIN_ALLEGRO = $(patsubst %.cpp,%.win.allegro.o,$(ALLEGRO_SOURCE_FILES))
+OBJS_LINUX_ALLEGRO_DEBUG = $(patsubst %.cpp,%.allegro.debug.o,$(ALLEGRO_SOURCE_FILES))
+OBJS_WIN_ALLEGRO_DEBUG = $(patsubst %.cpp,%.win.allegro.debug.o,$(ALLEGRO_SOURCE_FILES))
+
+# Target executables - SDL versions
+TARGET_LINUX_SDL = warpnes-sdl
+TARGET_WIN_SDL = warpnes-sdl.exe
+TARGET_LINUX_SDL_DEBUG = warpnes-sdl_debug
+TARGET_WIN_SDL_DEBUG = warpnes-sdl_debug.exe
+
+# Target executables - Allegro versions
+TARGET_LINUX_ALLEGRO = warpnes-allegro
+TARGET_WIN_ALLEGRO = warpnes-allegro.exe
+TARGET_LINUX_ALLEGRO_DEBUG = warpnes-allegro_debug
+TARGET_WIN_ALLEGRO_DEBUG = warpnes-allegro_debug.exe
 
 # Build directories
 BUILD_DIR = build
-BUILD_DIR_LINUX = $(BUILD_DIR)/linux
-BUILD_DIR_WIN = $(BUILD_DIR)/windows
-BUILD_DIR_DOS = $(BUILD_DIR)/dos
-BUILD_DIR_LINUX_DEBUG = $(BUILD_DIR)/linux_debug
-BUILD_DIR_WIN_DEBUG = $(BUILD_DIR)/windows_debug
-BUILD_DIR_DOS_DEBUG = $(BUILD_DIR)/dos_debug
-
-# Windows DLL settings (for Allegro DLLs if needed)
-DLL_SOURCE_DIR = /usr/x86_64-w64-mingw32/sys-root/mingw/bin
+BUILD_DIR_LINUX_SDL = $(BUILD_DIR)/linux-sdl
+BUILD_DIR_WIN_SDL = $(BUILD_DIR)/windows-sdl
+BUILD_DIR_LINUX_ALLEGRO = $(BUILD_DIR)/linux-allegro
+BUILD_DIR_WIN_ALLEGRO = $(BUILD_DIR)/windows-allegro
+BUILD_DIR_LINUX_SDL_DEBUG = $(BUILD_DIR)/linux-sdl-debug
+BUILD_DIR_WIN_SDL_DEBUG = $(BUILD_DIR)/windows-sdl-debug
+BUILD_DIR_LINUX_ALLEGRO_DEBUG = $(BUILD_DIR)/linux-allegro-debug
+BUILD_DIR_WIN_ALLEGRO_DEBUG = $(BUILD_DIR)/windows-allegro-debug
 
 # Create necessary directories
-$(shell mkdir -p $(BUILD_DIR_LINUX)/source/Emulation $(BUILD_DIR_LINUX)/source/SMB $(BUILD_DIR_LINUX)/source/Util \
-	$(BUILD_DIR_WIN)/source/Emulation $(BUILD_DIR_WIN)/source/SMB $(BUILD_DIR_WIN)/source/Util \
-	$(BUILD_DIR_DOS)/source/Emulation $(BUILD_DIR_DOS)/source/SMB $(BUILD_DIR_DOS)/source/Util \
-	$(BUILD_DIR_LINUX_DEBUG)/source/Emulation $(BUILD_DIR_LINUX_DEBUG)/source/SMB $(BUILD_DIR_LINUX_DEBUG)/source/Util \
-	$(BUILD_DIR_WIN_DEBUG)/source/Emulation $(BUILD_DIR_WIN_DEBUG)/source/SMB $(BUILD_DIR_WIN_DEBUG)/source/Util \
-	$(BUILD_DIR_DOS_DEBUG)/source/Emulation $(BUILD_DIR_DOS_DEBUG)/source/SMB $(BUILD_DIR_DOS_DEBUG)/source/Util)
+$(shell mkdir -p $(BUILD_DIR_LINUX_SDL)/source/Emulation $(BUILD_DIR_LINUX_SDL)/source/SMB \
+	$(BUILD_DIR_WIN_SDL)/source/Emulation $(BUILD_DIR_WIN_SDL)/source/SMB \
+	$(BUILD_DIR_LINUX_ALLEGRO)/source/Emulation $(BUILD_DIR_LINUX_ALLEGRO)/source/SMB \
+	$(BUILD_DIR_WIN_ALLEGRO)/source/Emulation $(BUILD_DIR_WIN_ALLEGRO)/source/SMB \
+	$(BUILD_DIR_LINUX_SDL_DEBUG)/source/Emulation $(BUILD_DIR_LINUX_SDL_DEBUG)/source/SMB \
+	$(BUILD_DIR_WIN_SDL_DEBUG)/source/Emulation $(BUILD_DIR_WIN_SDL_DEBUG)/source/SMB \
+	$(BUILD_DIR_LINUX_ALLEGRO_DEBUG)/source/Emulation $(BUILD_DIR_LINUX_ALLEGRO_DEBUG)/source/SMB \
+	$(BUILD_DIR_WIN_ALLEGRO_DEBUG)/source/Emulation $(BUILD_DIR_WIN_ALLEGRO_DEBUG)/source/SMB)
 
-# Default target - build for Linux
+# Default target - build SDL versions for Linux
 .PHONY: all
-all: linux
+all: linux-sdl
 
-# OS-specific builds
-.PHONY: windows
-windows: warpnes-windows
-
+# Main build targets
 .PHONY: linux
-linux: warpnes-linux
+linux: linux-sdl linux-allegro
 
-.PHONY: dos
-dos: warpnes-dos
+.PHONY: windows  
+windows: windows-sdl windows-allegro
+
+# SDL-specific targets
+.PHONY: linux-sdl
+linux-sdl: $(BUILD_DIR_LINUX_SDL)/$(TARGET_LINUX_SDL)
+
+.PHONY: windows-sdl
+windows-sdl: $(BUILD_DIR_WIN_SDL)/$(TARGET_WIN_SDL)
+
+# Allegro-specific targets
+.PHONY: linux-allegro
+linux-allegro: $(BUILD_DIR_LINUX_ALLEGRO)/$(TARGET_LINUX_ALLEGRO)
+
+.PHONY: windows-allegro
+windows-allegro: $(BUILD_DIR_WIN_ALLEGRO)/$(TARGET_WIN_ALLEGRO)
 
 # Debug targets
 .PHONY: debug
-debug: warpnes-linux-debug warpnes-windows-debug warpnes-dos-debug
+debug: linux-sdl-debug windows-sdl-debug linux-allegro-debug windows-allegro-debug
+
+.PHONY: linux-sdl-debug
+linux-sdl-debug: $(BUILD_DIR_LINUX_SDL_DEBUG)/$(TARGET_LINUX_SDL_DEBUG)
+
+.PHONY: windows-sdl-debug
+windows-sdl-debug: $(BUILD_DIR_WIN_SDL_DEBUG)/$(TARGET_WIN_SDL_DEBUG)
+
+.PHONY: linux-allegro-debug
+linux-allegro-debug: $(BUILD_DIR_LINUX_ALLEGRO_DEBUG)/$(TARGET_LINUX_ALLEGRO_DEBUG)
+
+.PHONY: windows-allegro-debug
+windows-allegro-debug: $(BUILD_DIR_WIN_ALLEGRO_DEBUG)/$(TARGET_WIN_ALLEGRO_DEBUG)
 
 #
-# Linux build targets
+# Linux SDL build targets
 #
-.PHONY: warpnes-linux
-warpnes-linux: $(BUILD_DIR_LINUX)/$(TARGET_LINUX)
+$(BUILD_DIR_LINUX_SDL)/$(TARGET_LINUX_SDL): $(addprefix $(BUILD_DIR_LINUX_SDL)/,$(OBJS_LINUX_SDL))
+	@echo "Linking Linux SDL executable..."
+	$(CXX_LINUX) $^ -o $@ $(LDFLAGS_LINUX_SDL)
+	@echo "Linux SDL build complete: $@"
 
-$(BUILD_DIR_LINUX)/$(TARGET_LINUX): $(addprefix $(BUILD_DIR_LINUX)/,$(OBJS_LINUX))
-	@echo "Linking Linux executable..."
-	$(CXX_LINUX) $^ -o $@ $(LDFLAGS_LINUX)
-	@echo "Linux build complete: $@"
-
-# Generic compilation rules for Linux
-$(BUILD_DIR_LINUX)/%.o: %.cpp
-	@echo "Compiling $< for Linux..."
-	$(CXX_LINUX) $(CXXFLAGS_LINUX) -c $< -o $@
+$(BUILD_DIR_LINUX_SDL)/%.sdl.o: %.cpp
+	@echo "Compiling $< for Linux SDL..."
+	$(CXX_LINUX) $(CXXFLAGS_LINUX_SDL) -c $< -o $@
 
 #
-# Linux debug targets
+# Linux SDL debug build targets  
 #
-.PHONY: warpnes-linux-debug
-warpnes-linux-debug: $(BUILD_DIR_LINUX_DEBUG)/$(TARGET_LINUX_DEBUG)
+$(BUILD_DIR_LINUX_SDL_DEBUG)/$(TARGET_LINUX_SDL_DEBUG): $(addprefix $(BUILD_DIR_LINUX_SDL_DEBUG)/,$(OBJS_LINUX_SDL_DEBUG))
+	@echo "Linking Linux SDL debug executable..."
+	$(CXX_LINUX) $^ -o $@ $(LDFLAGS_LINUX_SDL)
+	@echo "Linux SDL debug build complete: $@"
 
-$(BUILD_DIR_LINUX_DEBUG)/$(TARGET_LINUX_DEBUG): $(addprefix $(BUILD_DIR_LINUX_DEBUG)/,$(OBJS_LINUX_DEBUG))
-	@echo "Linking Linux debug executable..."
-	$(CXX_LINUX) $^ -o $@ $(LDFLAGS_LINUX)
-	@echo "Linux debug build complete: $@"
-
-# Generic compilation rules for Linux debug
-$(BUILD_DIR_LINUX_DEBUG)/%.debug.o: %.cpp
-	@echo "Compiling $< for Linux debug..."
-	$(CXX_LINUX) $(CXXFLAGS_LINUX_DEBUG) -c $< -o $@
+$(BUILD_DIR_LINUX_SDL_DEBUG)/%.sdl.debug.o: %.cpp
+	@echo "Compiling $< for Linux SDL debug..."
+	$(CXX_LINUX) $(CXXFLAGS_LINUX_SDL_DEBUG) -c $< -o $@
 
 #
-# Windows build targets
+# Windows SDL build targets
 #
-.PHONY: warpnes-windows
-warpnes-windows: $(BUILD_DIR_WIN)/$(TARGET_WIN) warpnes-collect-dlls
+$(BUILD_DIR_WIN_SDL)/$(TARGET_WIN_SDL): $(addprefix $(BUILD_DIR_WIN_SDL)/,$(OBJS_WIN_SDL))
+	@echo "Linking Windows SDL executable..."
+	$(CXX_WIN) $^ -o $@ $(LDFLAGS_WIN_SDL)
+	@echo "Windows SDL build complete: $@"
 
-$(BUILD_DIR_WIN)/$(TARGET_WIN): $(addprefix $(BUILD_DIR_WIN)/,$(OBJS_WIN))
-	@echo "Linking Windows executable..."
-	$(CXX_WIN) $^ -o $@ $(LDFLAGS_WIN)
-	@echo "Windows build complete: $@"
-
-# Generic compilation rules for Windows
-$(BUILD_DIR_WIN)/%.win.o: %.cpp
-	@echo "Compiling $< for Windows..."
-	$(CXX_WIN) $(CXXFLAGS_WIN) -c $< -o $@
+$(BUILD_DIR_WIN_SDL)/%.win.sdl.o: %.cpp
+	@echo "Compiling $< for Windows SDL..."
+	$(CXX_WIN) $(CXXFLAGS_WIN_SDL) -c $< -o $@
 
 #
-# Windows debug targets
+# Windows SDL debug build targets
 #
-.PHONY: warpnes-windows-debug
-warpnes-windows-debug: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG) warpnes-collect-debug-dlls
+$(BUILD_DIR_WIN_SDL_DEBUG)/$(TARGET_WIN_SDL_DEBUG): $(addprefix $(BUILD_DIR_WIN_SDL_DEBUG)/,$(OBJS_WIN_SDL_DEBUG))
+	@echo "Linking Windows SDL debug executable..."
+	$(CXX_WIN) $(CXXFLAGS_WIN_SDL_DEBUG) $^ -o $@ $(LDFLAGS_WIN_SDL)
+	@echo "Windows SDL debug build complete: $@"
 
-$(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG): $(addprefix $(BUILD_DIR_WIN_DEBUG)/,$(OBJS_WIN_DEBUG))
-	@echo "Linking Windows debug executable..."
-	$(CXX_WIN) $(CXXFLAGS_WIN_DEBUG) $^ -o $@ $(LDFLAGS_WIN)
-	@echo "Windows debug build complete: $@"
-
-# Generic compilation rules for Windows debug
-$(BUILD_DIR_WIN_DEBUG)/%.win.debug.o: %.cpp
-	@echo "Compiling $< for Windows debug..."
-	$(CXX_WIN) $(CXXFLAGS_WIN_DEBUG) -c $< -o $@
+$(BUILD_DIR_WIN_SDL_DEBUG)/%.win.sdl.debug.o: %.cpp
+	@echo "Compiling $< for Windows SDL debug..."
+	$(CXX_WIN) $(CXXFLAGS_WIN_SDL_DEBUG) -c $< -o $@
 
 #
-# DOS build targets
+# Linux Allegro build targets
 #
-.PHONY: warpnes-dos
-warpnes-dos: $(BUILD_DIR_DOS)/$(TARGET_DOS)
+$(BUILD_DIR_LINUX_ALLEGRO)/$(TARGET_LINUX_ALLEGRO): $(addprefix $(BUILD_DIR_LINUX_ALLEGRO)/,$(OBJS_LINUX_ALLEGRO))
+	@echo "Linking Linux Allegro executable..."
+	$(CXX_LINUX) $^ -o $@ $(LDFLAGS_LINUX_ALLEGRO)
+	@echo "Linux Allegro build complete: $@"
 
-$(BUILD_DIR_DOS)/$(TARGET_DOS): $(addprefix $(BUILD_DIR_DOS)/,$(OBJS_DOS))
-	@echo "Linking DOS executable..."
-	$(CXX_DOS) $^ -o $@ $(LDFLAGS_DOS)
-	@echo "DOS build complete: $@"
-
-# Generic compilation rules for DOS
-$(BUILD_DIR_DOS)/%.dos.o: %.cpp
-	@echo "Compiling $< for DOS..."
-	$(CXX_DOS) $(CXXFLAGS_DOS) -c $< -o $@
+$(BUILD_DIR_LINUX_ALLEGRO)/%.allegro.o: %.cpp
+	@echo "Compiling $< for Linux Allegro..."
+	$(CXX_LINUX) $(CXXFLAGS_LINUX_ALLEGRO) -c $< -o $@
 
 #
-# DOS debug targets
+# Linux Allegro debug build targets
 #
-.PHONY: warpnes-dos-debug
-warpnes-dos-debug: $(BUILD_DIR_DOS_DEBUG)/$(TARGET_DOS_DEBUG)
+$(BUILD_DIR_LINUX_ALLEGRO_DEBUG)/$(TARGET_LINUX_ALLEGRO_DEBUG): $(addprefix $(BUILD_DIR_LINUX_ALLEGRO_DEBUG)/,$(OBJS_LINUX_ALLEGRO_DEBUG))
+	@echo "Linking Linux Allegro debug executable..."
+	$(CXX_LINUX) $^ -o $@ $(LDFLAGS_LINUX_ALLEGRO)
+	@echo "Linux Allegro debug build complete: $@"
 
-$(BUILD_DIR_DOS_DEBUG)/$(TARGET_DOS_DEBUG): $(addprefix $(BUILD_DIR_DOS_DEBUG)/,$(OBJS_DOS_DEBUG))
-	@echo "Linking DOS debug executable..."
-	$(CXX_DOS) $(CXXFLAGS_DOS_DEBUG) $^ -o $@ $(LDFLAGS_DOS)
-	@echo "DOS debug build complete: $@"
-
-# Generic compilation rules for DOS debug
-$(BUILD_DIR_DOS_DEBUG)/%.dos.debug.o: %.cpp
-	@echo "Compiling $< for DOS debug..."
-	$(CXX_DOS) $(CXXFLAGS_DOS_DEBUG) -c $< -o $@
+$(BUILD_DIR_LINUX_ALLEGRO_DEBUG)/%.allegro.debug.o: %.cpp
+	@echo "Compiling $< for Linux Allegro debug..."
+	$(CXX_LINUX) $(CXXFLAGS_LINUX_ALLEGRO_DEBUG) -c $< -o $@
 
 #
-# DLL collection for Windows builds
+# Windows Allegro build targets
 #
-.PHONY: warpnes-collect-dlls
-warpnes-collect-dlls: $(BUILD_DIR_WIN)/$(TARGET_WIN)
-	@echo "Collecting DLLs for Windows build..."
-	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN)/$(TARGET_WIN) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN)
+$(BUILD_DIR_WIN_ALLEGRO)/$(TARGET_WIN_ALLEGRO): $(addprefix $(BUILD_DIR_WIN_ALLEGRO)/,$(OBJS_WIN_ALLEGRO))
+	@echo "Linking Windows Allegro executable..."
+	$(CXX_WIN) $^ -o $@ $(LDFLAGS_WIN_ALLEGRO)
+	@echo "Windows Allegro build complete: $@"
 
-.PHONY: warpnes-collect-debug-dlls
-warpnes-collect-debug-dlls: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG)
-	@echo "Collecting Debug DLLs for Windows build..."
-	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN_DEBUG)
+$(BUILD_DIR_WIN_ALLEGRO)/%.win.allegro.o: %.cpp
+	@echo "Compiling $< for Windows Allegro..."
+	$(CXX_WIN) $(CXXFLAGS_WIN_ALLEGRO) -c $< -o $@
 
-# Create DLL collection script if it doesn't exist
-.PHONY: create-dll-script
-create-dll-script:
-	@mkdir -p build/windows
-	@if [ ! -f "build/windows/collect_dlls.sh" ]; then \
-		echo "Creating DLL collection script..."; \
-		cat > build/windows/collect_dlls.sh << 'EOF'; \
-#!/bin/bash; \
-# DLL collection script for Windows builds; \
-EXECUTABLE=$$1; \
-DLL_SOURCE=$$2; \
-TARGET_DIR=$$3; \
-; \
-echo "Collecting DLLs for $$EXECUTABLE"; \
-; \
-# Copy common DLLs; \
-if [ -d "$$DLL_SOURCE" ]; then; \
-    cp "$$DLL_SOURCE"/SDL2.dll "$$TARGET_DIR"/ 2>/dev/null || echo "SDL2.dll not found"; \
-    cp "$$DLL_SOURCE"/libgcc_s_seh-1.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgcc_s_seh-1.dll not found"; \
-    cp "$$DLL_SOURCE"/libstdc++-6.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libstdc++-6.dll not found"; \
-    cp "$$DLL_SOURCE"/libwinpthread-1.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libwinpthread-1.dll not found"; \
-else; \
-    echo "DLL source directory not found: $$DLL_SOURCE"; \
-fi; \
-EOF; \
-		chmod +x build/windows/collect_dlls.sh; \
-	fi
+#
+# Windows Allegro debug build targets
+#
+$(BUILD_DIR_WIN_ALLEGRO_DEBUG)/$(TARGET_WIN_ALLEGRO_DEBUG): $(addprefix $(BUILD_DIR_WIN_ALLEGRO_DEBUG)/,$(OBJS_WIN_ALLEGRO_DEBUG))
+	@echo "Linking Windows Allegro debug executable..."
+	$(CXX_WIN) $(CXXFLAGS_WIN_ALLEGRO_DEBUG) $^ -o $@ $(LDFLAGS_WIN_ALLEGRO)
+	@echo "Windows Allegro debug build complete: $@"
+
+$(BUILD_DIR_WIN_ALLEGRO_DEBUG)/%.win.allegro.debug.o: %.cpp
+	@echo "Compiling $< for Windows Allegro debug..."
+	$(CXX_WIN) $(CXXFLAGS_WIN_ALLEGRO_DEBUG) -c $< -o $@
 
 # Check dependencies target
 .PHONY: check-deps
 check-deps:
 	@echo "Checking dependencies..."
+	@echo "Linux SDL2:"; pkg-config --exists sdl2 && echo "  ✓ SDL2 found" || echo "  ✗ SDL2 not found - install libsdl2-dev"
 	@echo "Linux Allegro:"; test -f /usr/lib/liballeg.so && echo "  ✓ Allegro 4 found" || echo "  ✗ Allegro 4 not found - install liballegro4-dev"
+	@echo "Windows SDL2:"; test -f /usr/x86_64-w64-mingw32/include/SDL2/SDL.h && echo "  ✓ MinGW SDL2 found" || echo "  ✗ MinGW SDL2 not found - install mingw64-SDL2-devel"
 	@echo "Windows Allegro:"; test -f /usr/x86_64-w64-mingw32/lib/liballeg.a && echo "  ✓ MinGW Allegro 4 found" || echo "  ✗ MinGW Allegro 4 not found - install mingw64-allegro4"
-	@echo "DOS Allegro:"; test -f /djgpp/lib/liballeg.a && echo "  ✓ Allegro 4 found" || echo "  ✗ Allegro 4 not found - install Allegro 4 for DJGPP"
-	@echo "DOS DJGPP:"; which gxx >/dev/null 2>&1 && echo "  ✓ DJGPP found" || echo "  ✗ DJGPP not found - install DJGPP compiler"
+
+# Install dependencies (Ubuntu/Debian)
+.PHONY: install-deps
+install-deps:
+	@echo "Installing dependencies for Ubuntu/Debian..."
+	sudo apt-get update
+	sudo apt-get install -y libsdl2-dev liballegro4-dev pkg-config
+	sudo apt-get install -y mingw-w64 || echo "MinGW may need manual installation"
+	@echo "Note: MinGW SDL2 and Allegro libraries may need manual installation"
 
 # Clean target
 .PHONY: clean
 clean:
 	@echo "Cleaning build files..."
 	find $(BUILD_DIR) -type f -name "*.o" -delete 2>/dev/null || true
-	find $(BUILD_DIR) -type f -name "*.dll" -delete 2>/dev/null || true
 	find $(BUILD_DIR) -type f -name "*.exe" -delete 2>/dev/null || true
-	rm -f $(BUILD_DIR_LINUX)/$(TARGET_LINUX) 2>/dev/null || true
-	rm -f $(BUILD_DIR_LINUX_DEBUG)/$(TARGET_LINUX_DEBUG) 2>/dev/null || true
-	rm -f $(BUILD_DIR_WIN)/$(TARGET_WIN) 2>/dev/null || true
-	rm -f $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_DEBUG) 2>/dev/null || true
-	rm -f $(BUILD_DIR_DOS)/$(TARGET_DOS) 2>/dev/null || true
-	rm -f $(BUILD_DIR_DOS_DEBUG)/$(TARGET_DOS_DEBUG) 2>/dev/null || true
+	rm -f $(BUILD_DIR_LINUX_SDL)/$(TARGET_LINUX_SDL) 2>/dev/null || true
+	rm -f $(BUILD_DIR_LINUX_SDL_DEBUG)/$(TARGET_LINUX_SDL_DEBUG) 2>/dev/null || true
+	rm -f $(BUILD_DIR_WIN_SDL)/$(TARGET_WIN_SDL) 2>/dev/null || true
+	rm -f $(BUILD_DIR_WIN_SDL_DEBUG)/$(TARGET_WIN_SDL_DEBUG) 2>/dev/null || true
+	rm -f $(BUILD_DIR_LINUX_ALLEGRO)/$(TARGET_LINUX_ALLEGRO) 2>/dev/null || true
+	rm -f $(BUILD_DIR_LINUX_ALLEGRO_DEBUG)/$(TARGET_LINUX_ALLEGRO_DEBUG) 2>/dev/null || true
+	rm -f $(BUILD_DIR_WIN_ALLEGRO)/$(TARGET_WIN_ALLEGRO) 2>/dev/null || true
+	rm -f $(BUILD_DIR_WIN_ALLEGRO_DEBUG)/$(TARGET_WIN_ALLEGRO_DEBUG) 2>/dev/null || true
+
+# Test builds (quick compilation test)
+.PHONY: test-builds
+test-builds:
+	@echo "Testing compilation for all platforms..."
+	@echo "Testing Linux SDL build..."
+	@$(MAKE) linux-sdl >/dev/null 2>&1 && echo "  ✓ Linux SDL builds successfully" || echo "  ✗ Linux SDL build failed"
+	@echo "Testing Linux Allegro build..."
+	@$(MAKE) linux-allegro >/dev/null 2>&1 && echo "  ✓ Linux Allegro builds successfully" || echo "  ✗ Linux Allegro build failed"
+	@echo "Testing Windows SDL build..."
+	@$(MAKE) windows-sdl >/dev/null 2>&1 && echo "  ✓ Windows SDL builds successfully" || echo "  ✗ Windows SDL build failed"
+	@echo "Testing Windows Allegro build..."
+	@$(MAKE) windows-allegro >/dev/null 2>&1 && echo "  ✓ Windows Allegro builds successfully" || echo "  ✗ Windows Allegro build failed"
+
+# Debug what files the makefile thinks it should build
+.PHONY: debug-files
+debug-files:
+	@echo "SDL Source Files:"
+	@for file in $(SDL_SOURCE_FILES); do echo "  $file"; done
+	@echo ""
+	@echo "SDL Object Files (Linux):"
+	@for file in $(OBJS_LINUX_SDL); do echo "  $file"; done
+	@echo ""
+	@echo "Allegro Source Files:"
+	@for file in $(ALLEGRO_SOURCE_FILES); do echo "  $file"; done
+	@echo ""
+	@echo "Allegro Object Files (Linux):"
+	@for file in $(OBJS_LINUX_ALLEGRO); do echo "  $file"; done
 
 # Help target
 .PHONY: help
 help:
 	@echo "Available targets:"
-	@echo "  make               - Build warpnes for Linux (default)"
-	@echo "  make linux         - Build warpnes for Linux"
-	@echo "  make windows       - Build warpnes for Windows (requires MinGW)"
-	@echo "  make dos           - Build warpnes for DOS (requires DJGPP)"
+	@echo "  make               - Build warpnes for Linux with SDL (default)"
+	@echo "  make linux         - Build both SDL and Allegro versions for Linux"
+	@echo "  make windows       - Build both SDL and Allegro versions for Windows"
 	@echo ""
-	@echo "  make debug         - Build warpnes with debug symbols for all platforms"
-	@echo "  make warpnes-linux-debug    - Build warpnes for Linux with debug symbols"
-	@echo "  make warpnes-windows-debug  - Build warpnes for Windows with debug symbols"
-	@echo "  make warpnes-dos-debug      - Build warpnes for DOS with debug symbols"
+	@echo "  make linux-sdl     - Build warpnes for Linux with SDL"
+	@echo "  make linux-allegro - Build warpnes for Linux with Allegro"
+	@echo "  make windows-sdl   - Build warpnes for Windows with SDL (requires MinGW)"
+	@echo "  make windows-allegro - Build warpnes for Windows with Allegro (requires MinGW)"
 	@echo ""
+	@echo "  make debug         - Build debug versions for all platforms"
+	@echo "  make linux-sdl-debug     - Build Linux SDL with debug symbols"
+	@echo "  make linux-allegro-debug - Build Linux Allegro with debug symbols"
+	@echo "  make windows-sdl-debug   - Build Windows SDL with debug symbols"
+	@echo "  make windows-allegro-debug - Build Windows Allegro with debug symbols"
+	@echo ""
+	@echo "Utility targets:"
 	@echo "  make check-deps    - Check if required dependencies are installed"
-	@echo "  make create-dll-script   - Create DLL collection script"
-	@echo "  make warpnes-collect-dlls   - Collect DLLs for Windows build"
-	@echo ""
+	@echo "  make install-deps  - Install dependencies on Ubuntu/Debian"
+	@echo "  make test-builds   - Test compilation for all platforms"
 	@echo "  make clean         - Remove all build files"
 	@echo "  make help          - Show this help message"
 	@echo ""
 	@echo "Build outputs:"
-	@echo "  Linux:   $(BUILD_DIR_LINUX)/$(TARGET_LINUX)"
-	@echo "  Windows: $(BUILD_DIR_WIN)/$(TARGET_WIN)"
-	@echo "  DOS:     $(BUILD_DIR_DOS)/$(TARGET_DOS)"
+	@echo "  Linux SDL:     $(BUILD_DIR_LINUX_SDL)/$(TARGET_LINUX_SDL)"
+	@echo "  Linux Allegro: $(BUILD_DIR_LINUX_ALLEGRO)/$(TARGET_LINUX_ALLEGRO)"
+	@echo "  Windows SDL:   $(BUILD_DIR_WIN_SDL)/$(TARGET_WIN_SDL)"
+	@echo "  Windows Allegro: $(BUILD_DIR_WIN_ALLEGRO)/$(TARGET_WIN_ALLEGRO)"
 	@echo ""
 	@echo "Dependencies required:"
-	@echo "  Linux:   Allegro 4 (liballegro4-dev)"
-	@echo "  Windows: MinGW Allegro 4 (mingw64-allegro4)"
-	@echo "  DOS:     DJGPP compiler, Allegro 4 library"
+	@echo "  Linux SDL:       libsdl2-dev"
+	@echo "  Linux Allegro:   liballegro4-dev"
+	@echo "  Windows SDL:     MinGW SDL2 development libraries"
+	@echo "  Windows Allegro: MinGW Allegro 4 development libraries"
+	@echo ""
+	@echo "Platform differences:"
+	@echo "  - SDL versions: Modern cross-platform support, hardware acceleration"
+	@echo "  - Allegro versions: Retro compatibility, authentic DOS-style experience"
+	@echo "  - All versions share the same game engine code"
+	@echo ""
+	@echo "Note: DOS builds are handled by a separate shell script"
