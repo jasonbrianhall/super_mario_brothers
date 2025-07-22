@@ -7,7 +7,7 @@
 
 #include <SDL2/SDL.h>
 
-#include "Emulation/Controller.hpp"
+#include "Emulation/ControllerSDL.hpp"
 #include "SMB/SMBEmulator.hpp"
 #include "Configuration.hpp"
 #include "Constants.hpp"
@@ -782,7 +782,7 @@ static void run(const char* romFilename)
         }
         
         // Always render for smooth menu/dialog display
-        engine.render32(renderBuffer);
+        engine.render(renderBuffer);
         
         updateAndDraw();
         updateStatusMessage();

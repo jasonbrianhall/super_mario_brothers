@@ -48,7 +48,6 @@ LDFLAGS_WIN_ALLEGRO = $(ALLEGRO_LIBS_WIN)
 COMMON_SOURCE_FILES = \
     source/Configuration.cpp \
     source/Emulation/APU.cpp \
-    source/Emulation/Controller.cpp \
     source/Emulation/PPU.cpp \
     source/Zapper.cpp \
     source/SMB/SMBEmulator.cpp \
@@ -57,11 +56,15 @@ COMMON_SOURCE_FILES = \
 # Platform-specific source files
 SDL_SOURCE_FILES = $(COMMON_SOURCE_FILES) \
     source/SDLMainWindow.cpp \
-    source/SDLCacheScaling.cpp
+    source/SDLCacheScaling.cpp \
+    source/Emulation/ControllerSDL.cpp
+
 
 ALLEGRO_SOURCE_FILES = $(COMMON_SOURCE_FILES) \
     source/dos_main.cpp \
-    source/Emulation/AllegroMidi.cpp
+    source/Emulation/AllegroMidi.cpp \
+    source/Emulation/Controller.cpp
+
 
 # Object files for SDL versions
 OBJS_LINUX_SDL = $(patsubst %.cpp,%.sdl.o,$(SDL_SOURCE_FILES))
