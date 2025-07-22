@@ -330,7 +330,7 @@ bool SMBEmulator::loadROM(const std::string &filename) {
             << (nesHeader.mirroring ? "Vertical" : "Horizontal") << std::endl;
 
   // Initialize SRAM for battery games
-  initializeSRAM();  // ADD THIS
+  initializeSRAM();
 
   // Reset emulator state
   reset();
@@ -854,14 +854,11 @@ void SMBEmulator::reset() {
     regSP = 0xFF;
     regP = 0x24;
     totalCycles = frameCycles = 0;
-
-    // CRITICAL FIX: Initialize mapper state BEFORE reading reset vector
     if (nesHeader.mapper == 1) {
         // Reset MMC1 state properly
         mmc1 = MMC1State();  // Reset to default constructor state
         
         // CRITICAL: Force proper reset state according to MMC1 spec
-        // Reset sets control to (control | 0x0C) which ensures mode 3
         mmc1.control = 0x0C;  // Mode 3: 16KB PRG mode, last bank fixed at $C000
         mmc1.shiftRegister = 0x10;
         mmc1.shiftCount = 0;
@@ -869,10 +866,8 @@ void SMBEmulator::reset() {
         mmc1.chrBank0 = 0;
         mmc1.chrBank1 = 0;
         
-        // Update banking to ensure last bank is at $C000
+        // CRITICAL: Call updateMMC1Banks to initialize CHR banking
         updateMMC1Banks();
-        
-        printf("MMC1 Reset: Control=$%02X, PRG banks=%d\n", mmc1.control, prgSize / 0x4000);
     } else if (nesHeader.mapper == 66) {
         gxrom = GxROMState();
     } else if (nesHeader.mapper == 2) {
@@ -1963,8 +1958,59 @@ uint8_t SMBEmulator::readByte(uint16_t address) {
         }
         return 0;  // Open bus if SRAM not available
     } else if (address >= 0x8000) {
-        // PRG ROM with mapper support
-        if (nesHeader.mapper == 0) {
+        // PRG ROM with FIXED MMC1 mapping
+        if (nesHeader.mapper == 1) {
+            uint32_t romAddr;
+            uint8_t totalBanks = prgSize / 0x4000;
+            uint8_t prgMode = (mmc1.control >> 2) & 0x03;
+
+            if (address < 0xC000) {
+                // $8000-$BFFF
+                switch (prgMode) {
+                    case 0:
+                    case 1:
+                        // 32KB mode
+                        romAddr = (mmc1.currentPRGBank * 0x8000) + (address - 0x8000);
+                        break;
+                    case 2:
+                        // Fixed first bank at $8000
+                        romAddr = address - 0x8000;
+                        break;
+                    case 3:
+                    default:
+                        // Switchable bank at $8000
+                        romAddr = (mmc1.currentPRGBank * 0x4000) + (address - 0x8000);
+                        break;
+                }
+            } else {
+                // $C000-$FFFF
+                switch (prgMode) {
+                    case 0:
+                    case 1:
+                        // 32KB mode
+                        romAddr = (mmc1.currentPRGBank * 0x8000) + (address - 0x8000);
+                        break;
+                    case 2:
+                        // Switchable last bank
+                        romAddr = (mmc1.prgBank * 0x4000) + (address - 0xC000);
+                        break;
+                    case 3:
+                    default:
+                        // FIXED last bank at $C000 - CRITICAL FOR RESET!
+                        uint8_t lastBank = totalBanks - 1;
+                        romAddr = (lastBank * 0x4000) + (address - 0xC000);
+                        break;
+                }
+            }
+
+            // Bounds checking
+            if (romAddr >= prgSize) {
+                printf("MMC1: ROM address $%08X out of bounds (size $%08X)\n", romAddr, prgSize);
+                return 0;
+            }
+
+            return prgROM[romAddr];
+        } else if (nesHeader.mapper == 0) {
             // NROM - simple mapping
             uint32_t romAddr = address - 0x8000;
             if (prgSize == 16384) {
@@ -1995,76 +2041,11 @@ uint8_t SMBEmulator::readByte(uint16_t address) {
             // MMC3 mapping - 8KB banks
             uint8_t bankIndex = (address - 0x8000) / 0x2000; // 0-3
             uint16_t bankOffset = (address - 0x8000) % 0x2000;
-            uint32_t romAddr =
-                (mmc3.currentPRGBanks[bankIndex] * 0x2000) + bankOffset;
+            uint32_t romAddr = (mmc3.currentPRGBanks[bankIndex] * 0x2000) + bankOffset;
 
             if (romAddr < prgSize) {
                 return prgROM[romAddr];
             }
-        } else if (nesHeader.mapper == 1) {
-            // MMC1 mapping - CORRECTED VERSION
-            uint32_t romAddr;
-            
-            // Handle 32KB PRG ROMs (no banking)
-            if (prgSize == 32768) {
-                romAddr = address - 0x8000;
-                if (romAddr < prgSize) {
-                    return prgROM[romAddr];
-                }
-                return 0;
-            }
-            
-            // Multi-bank MMC1 logic
-            uint8_t totalBanks = prgSize / 0x4000;
-            uint8_t prgMode = (mmc1.control >> 2) & 0x03;
-
-            if (address < 0xC000) {
-                // $8000-$BFFF: First 16KB bank
-                switch (prgMode) {
-                    case 0:
-                    case 1:
-                        // 32KB mode
-                        romAddr = (mmc1.currentPRGBank * 0x8000) + (address - 0x8000);
-                        break;
-                    case 2:
-                        // Mode 2: Fixed first bank at $8000
-                        romAddr = (address - 0x8000);
-                        break;
-                    case 3:
-                    default:
-                        // Mode 3: Switchable first bank at $8000
-                        romAddr = (mmc1.currentPRGBank * 0x4000) + (address - 0x8000);
-                        break;
-                }
-            } else {
-                // $C000-$FFFF: Second 16KB bank
-                switch (prgMode) {
-                    case 0:
-                    case 1:
-                        // 32KB mode
-                        romAddr = (mmc1.currentPRGBank * 0x8000) + (address - 0x8000);
-                        break;
-                    case 2:
-                        // Mode 2: Switchable last bank at $C000
-                        romAddr = (mmc1.prgBank * 0x4000) + (address - 0xC000);
-                        break;
-                    case 3:
-                    default:
-                        // Mode 3: FIXED last bank at $C000 - CRITICAL!
-                        uint8_t lastBank = totalBanks - 1;
-                        romAddr = (lastBank * 0x4000) + (address - 0xC000);
-                        break;
-                }
-            }
-
-            // Bounds checking
-            if (romAddr >= prgSize) {
-                printf("MMC1: ROM address $%08X out of bounds (size $%08X)\n", romAddr, prgSize);
-                return 0;
-            }
-
-            return prgROM[romAddr];
-            
         } else if (nesHeader.mapper == 66) {
             // GxROM mapping - 32KB PRG banks
             uint32_t romAddr = (gxrom.prgBank * 0x8000) + (address - 0x8000);
@@ -2084,6 +2065,7 @@ uint8_t SMBEmulator::readByte(uint16_t address) {
 
     return 0; // Open bus
 }
+
 
 void SMBEmulator::writeMMC3Register(uint16_t address, uint8_t value) {
   switch (address & 0xE001) {
@@ -3144,16 +3126,15 @@ void SMBEmulator::AXS(uint16_t addr) {
 }
 
 void SMBEmulator::writeMMC1Register(uint16_t address, uint8_t value) {
-    // CRITICAL: Handle reset condition first
+    // CRITICAL: Handle reset condition first - this is where your bug was
     if (value & 0x80) {
         // Reset detected - clear shift register and set control register properly
         mmc1.shiftRegister = 0x10;
         mmc1.shiftCount = 0;
         
-        // CRITICAL FIX: The reset should OR the control register with 0x0C
-        // This ensures bits 2,3 are set (16KB PRG mode, last bank fixed at $C000)
-        // but preserves other bits like mirroring settings
-        mmc1.control = mmc1.control | 0x0C;  // Proper OR operation
+        // CRITICAL FIX: Reset sets control to (control | 0x0C) - ensures mode 3
+        // Mode 3 = 16KB PRG mode with last bank fixed at $C000
+        mmc1.control = mmc1.control | 0x0C;
         
         updateMMC1Banks();
         printf("MMC1 Reset Write: Control was $%02X, now $%02X\n", 
@@ -3161,7 +3142,7 @@ void SMBEmulator::writeMMC1Register(uint16_t address, uint8_t value) {
         return;
     }
 
-    // Handle 32KB special case
+    // Handle 32KB special case (for smaller ROMs)
     if (prgSize == 32768) {
         // Still process the write for CHR banking and control, but ignore PRG banking
         mmc1.shiftRegister >>= 1;
@@ -3196,16 +3177,25 @@ void SMBEmulator::writeMMC1Register(uint16_t address, uint8_t value) {
         mmc1.shiftCount = 0;
 
         if (address < 0xA000) {
+            // Control register write
             uint8_t oldControl = mmc1.control;
             mmc1.control = data;
-            printf("MMC1 Control: $%02X -> $%02X\n", oldControl, mmc1.control);
+            //printf("MMC1 Control: $%02X -> $%02X\n", oldControl, mmc1.control);
         } else if (address < 0xC000) {
-            mmc1.chrBank0 = data;
-        } else if (address < 0xE000) {
-            mmc1.chrBank1 = data;
-        } else {
+           // CHR Bank 0
+           uint8_t oldBank = mmc1.chrBank0;
+           mmc1.chrBank0 = data;
+           printf("MMC1 CHR Bank 0: $%02X -> $%02X\n", oldBank, mmc1.chrBank0);
+       } else if (address < 0xE000) {
+          // CHR Bank 1
+          uint8_t oldBank = mmc1.chrBank1;
+          mmc1.chrBank1 = data;
+          printf("MMC1 CHR Bank 1: $%02X -> $%02X\n", oldBank, mmc1.chrBank1);
+       } else {
+            // PRG Bank
             uint8_t oldBank = mmc1.prgBank;
             mmc1.prgBank = data;
+            printf("MMC1 PRG Bank: $%02X -> $%02X\n", oldBank, mmc1.prgBank);
         }
 
         updateMMC1Banks();
@@ -3213,50 +3203,57 @@ void SMBEmulator::writeMMC1Register(uint16_t address, uint8_t value) {
 }
 
 void SMBEmulator::updateMMC1Banks() {
-    uint8_t totalBanks = prgSize / 0x4000; // Number of 16KB banks
+    uint8_t totalPRGBanks = prgSize / 0x4000; // Number of 16KB PRG banks
     
-    // Handle 32KB PRG ROMs (no banking)
+    // Handle 32KB PRG ROMs (no banking needed)
     if (prgSize == 32768) {
         mmc1.currentPRGBank = 0;
         return;
     }
     
-    // Extract PRG mode from control register (bits 2-3)
+    // PRG banking logic
     uint8_t prgMode = (mmc1.control >> 2) & 0x03;
     
     switch (prgMode) {
         case 0:
         case 1:
-            // 32KB PRG mode - switch entire 32KB (two 16KB banks)
-            mmc1.currentPRGBank = (mmc1.prgBank >> 1) % (totalBanks / 2);
+            // 32KB mode - switch entire 32KB (two 16KB banks)
+            mmc1.currentPRGBank = (mmc1.prgBank >> 1) % (totalPRGBanks / 2);
             break;
             
         case 2:
             // 16KB mode: Fix FIRST bank at $8000, switch LAST bank at $C000
-            // This mode is rarely used and problematic for reset
             mmc1.currentPRGBank = 0;  // First bank fixed at $8000
             break;
             
         case 3:
         default:
             // 16KB mode: Switch FIRST bank at $8000, fix LAST bank at $C000
-            // This is the standard mode that games expect at reset
-            mmc1.currentPRGBank = mmc1.prgBank % totalBanks;
+            mmc1.currentPRGBank = mmc1.prgBank % totalPRGBanks;
             break;
     }
 
-    // Update CHR banking
-    if (mmc1.control & 0x10) {
-        // 4KB CHR mode
-        mmc1.currentCHRBank0 = mmc1.chrBank0;
-        mmc1.currentCHRBank1 = mmc1.chrBank1;
+    // CHR banking - handle both CHR-ROM and CHR-RAM
+    if (nesHeader.chrROMPages > 0) {
+        // CHR-ROM banking
+        uint8_t totalCHRBanks = chrSize / 0x1000; // Always count in 4KB units
+        
+        if (mmc1.control & 0x10) {
+            // 4KB CHR mode - independent 4KB banks
+            mmc1.currentCHRBank0 = mmc1.chrBank0 % totalCHRBanks;
+            mmc1.currentCHRBank1 = mmc1.chrBank1 % totalCHRBanks;
+        } else {
+            // 8KB CHR mode - chrBank0 selects 8KB (two consecutive 4KB banks)
+            uint8_t baseBank = (mmc1.chrBank0 & 0xFE) % totalCHRBanks;
+            mmc1.currentCHRBank0 = baseBank;
+            mmc1.currentCHRBank1 = (baseBank + 1) % totalCHRBanks;
+        }
     } else {
-        // 8KB CHR mode
-        mmc1.currentCHRBank0 = mmc1.chrBank0 & 0xFE;
-        mmc1.currentCHRBank1 = mmc1.currentCHRBank0 + 1;
+        // CHR-RAM - no banking, direct access
+        mmc1.currentCHRBank0 = 0;
+        mmc1.currentCHRBank1 = 1;
     }
 }
-
 void SMBEmulator::writeGxROMRegister(uint16_t address, uint8_t value) {
   uint8_t oldCHRBank = gxrom.chrBank;
 
@@ -3292,41 +3289,31 @@ uint8_t SMBEmulator::readCHRData(uint16_t address) {
     return 0;
   }
 
-  case 1: // MMC1
-  {
-    if (nesHeader.chrROMPages == 0) {
-      // MMC1 with CHR-RAM (like Metroid) - direct access, no banking needed
-      if (address < chrSize) {
-        return chrROM[address]; // chrROM is actually CHR-RAM
-      }
-    } else {
-      // MMC1 with CHR-ROM - banking support
-      if (mmc1.control & 0x10) {
-        // 4KB CHR mode
-        if (address < 0x1000) {
-          // $0000-$0FFF: First 4KB bank
-          uint32_t chrAddr = (mmc1.currentCHRBank0 * 0x1000) + address;
-          if (chrAddr < chrSize) {
-            return chrROM[chrAddr];
-          }
+    case 1: // MMC1
+    {
+        if (nesHeader.chrROMPages == 0) {
+            // CHR-RAM - direct access, no banking
+            if (address < chrSize) {
+                return chrROM[address];
+            }
         } else {
-          // $1000-$1FFF: Second 4KB bank
-          uint32_t chrAddr =
-              (mmc1.currentCHRBank1 * 0x1000) + (address - 0x1000);
-          if (chrAddr < chrSize) {
-            return chrROM[chrAddr];
-          }
+            // CHR-ROM with banking
+            uint32_t chrAddr;
+            
+            if (address < 0x1000) {
+                // $0000-$0FFF: Use currentCHRBank0
+                chrAddr = (mmc1.currentCHRBank0 * 0x1000) + address;
+            } else {
+                // $1000-$1FFF: Use currentCHRBank1
+                chrAddr = (mmc1.currentCHRBank1 * 0x1000) + (address - 0x1000);
+            }
+            
+            if (chrAddr < chrSize) {
+                return chrROM[chrAddr];
+            }
         }
-      } else {
-        // 8KB CHR mode
-        uint32_t chrAddr = (mmc1.currentCHRBank0 * 0x2000) + address;
-        if (chrAddr < chrSize) {
-          return chrROM[chrAddr];
-        }
-      }
+        return 0;
     }
-    return 0;
-  }
 
   case 2: // UxROM
   {
