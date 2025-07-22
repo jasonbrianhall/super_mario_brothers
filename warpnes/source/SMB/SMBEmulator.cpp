@@ -885,6 +885,9 @@ void SMBEmulator::reset() {
         mmc3.bankData[7] = 1;
         mmc3.bankSelect = 0;
         updateMMC3Banks();
+    } else if (nesHeader.mapper == 9) {
+        mmc2 = MMC2State();
+        updateMMC2Banks();
     }
 
     // NOW read reset vector from correct location
@@ -2036,7 +2039,31 @@ uint8_t SMBEmulator::readByte(uint16_t address) {
             if (romAddr < prgSize) {
                 return prgROM[romAddr];
             }
-        } else if (nesHeader.mapper == 66) {
+       } else if (nesHeader.mapper == 9) {
+         // MMC2 mapping
+         uint32_t romAddr;
+    
+         if (address < 0xA000) {
+             // $8000-$9FFF: Switchable 8KB PRG bank
+             romAddr = (mmc2.prgBank * 0x2000) + (address - 0x8000);
+         } else if (address < 0xC000) {
+             // $A000-$BFFF: Fixed to last 8KB of ROM - 3
+             uint8_t totalBanks = prgSize / 0x2000;  // 8KB banks
+             romAddr = ((totalBanks - 3) * 0x2000) + (address - 0xA000);
+         } else if (address < 0xE000) {
+             // $C000-$DFFF: Fixed to last 8KB of ROM - 2  
+             uint8_t totalBanks = prgSize / 0x2000;
+             romAddr = ((totalBanks - 2) * 0x2000) + (address - 0xC000);
+         } else {
+             // $E000-$FFFF: Fixed to last 8KB of ROM - 1
+             uint8_t totalBanks = prgSize / 0x2000;
+             romAddr = ((totalBanks - 1) * 0x2000) + (address - 0xE000);
+         }
+    
+         if (romAddr < prgSize) {
+             return prgROM[romAddr];
+         }
+     } else if (nesHeader.mapper == 66) {
             // GxROM mapping - 32KB PRG banks
             uint32_t romAddr = (gxrom.prgBank * 0x8000) + (address - 0x8000);
 
@@ -2244,7 +2271,9 @@ void SMBEmulator::writeByte(uint16_t address, uint8_t value)
             writeMMC3Register(address, value);
         } else if (nesHeader.mapper == 2) {
             writeUxROMRegister(address, value);  
-        }
+        } else if (nesHeader.mapper == 9) {
+            writeMMC2Register(address, value);
+       }
    }  
 }
 
@@ -3377,7 +3406,36 @@ uint8_t SMBEmulator::readCHRData(uint16_t address) {
     return 0;
   }
 
-  case 9:  // MMC2
+case 9: // MMC2
+{
+    if (nesHeader.chrROMPages == 0) {
+        // MMC2 with CHR-RAM - shouldn't happen normally
+        if (address < chrSize) {
+            return chrROM[address];
+        }
+    } else {
+        // MMC2 with CHR-ROM - 4KB banking with latch switching
+        uint32_t chrAddr;
+        
+        if (address < 0x1000) {
+            // $0000-$0FFF: Uses currentCHRBank0 (4KB bank)
+            chrAddr = (mmc2.currentCHRBank0 * 0x1000) + address;
+        } else {
+            // $1000-$1FFF: Uses currentCHRBank1 (4KB bank)  
+            chrAddr = (mmc2.currentCHRBank1 * 0x1000) + (address - 0x1000);
+        }
+        
+        if (chrAddr < chrSize) {
+            uint8_t result = chrROM[chrAddr];
+            
+            // CRITICAL: Check for latch switching when reading pattern data
+            checkMMC2CHRLatch(address, result);
+            
+            return result;
+        }
+    }
+    return 0;
+}
   case 10: // MMC4
   {
     if (nesHeader.chrROMPages == 0) {
@@ -3529,4 +3587,80 @@ void SMBEmulator::updateZapperInput(int mouseX, int mouseY, bool mousePressed) {
   } else {
     zapper->setLightDetected(false);
   }
+}
+
+void SMBEmulator::writeMMC2Register(uint16_t address, uint8_t value) {
+    switch (address & 0xF000) {
+        case 0xA000:
+            // PRG ROM bank select ($A000-$AFFF)
+            mmc2.prgBank = value & 0x0F;  // 4 bits for PRG bank
+            break;
+            
+        case 0xB000:
+            // CHR ROM $FD/0000 bank select ($B000-$BFFF)
+            mmc2.chrBank0FD = value & 0x1F;  // 5 bits for CHR bank
+            updateMMC2Banks();
+            break;
+            
+        case 0xC000:
+            // CHR ROM $FE/0000 bank select ($C000-$CFFF)
+            mmc2.chrBank0FE = value & 0x1F;  // 5 bits for CHR bank
+            updateMMC2Banks();
+            break;
+            
+        case 0xD000:
+            // CHR ROM $FD/1000 bank select ($D000-$DFFF)
+            mmc2.chrBank1FD = value & 0x1F;  // 5 bits for CHR bank
+            updateMMC2Banks();
+            break;
+            
+        case 0xE000:
+            // CHR ROM $FE/1000 bank select ($E000-$EFFF)
+            mmc2.chrBank1FE = value & 0x1F;  // 5 bits for CHR bank
+            updateMMC2Banks();
+            break;
+            
+        case 0xF000:
+            // Mirroring ($F000-$FFFF)
+            mmc2.mirroring = value & 0x01;  // 0=vertical, 1=horizontal
+            // Update PPU mirroring if you have that implemented
+            break;
+    }
+}
+
+void SMBEmulator::updateMMC2Banks() {
+    // Update current CHR banks based on latch states
+    mmc2.currentCHRBank0 = mmc2.latch0 ? mmc2.chrBank0FE : mmc2.chrBank0FD;
+    mmc2.currentCHRBank1 = mmc2.latch1 ? mmc2.chrBank1FE : mmc2.chrBank1FD;
+}
+
+void SMBEmulator::checkMMC2CHRLatch(uint16_t address, uint8_t tileID) {
+    // This should be called whenever the PPU reads pattern table data
+    // The latch switching happens based on which tile ID is read
+    
+    if (address >= 0x0FD8 && address <= 0x0FDF) {
+        // Reading from $0FD8-$0FDF switches to FD latch
+        if (mmc2.latch0 != false) {
+            mmc2.latch0 = false;
+            updateMMC2Banks();
+        }
+    } else if (address >= 0x0FE8 && address <= 0x0FEF) {
+        // Reading from $0FE8-$0FEF switches to FE latch  
+        if (mmc2.latch0 != true) {
+            mmc2.latch0 = true;
+            updateMMC2Banks();
+        }
+    } else if (address >= 0x1FD8 && address <= 0x1FDF) {
+        // Reading from $1FD8-$1FDF switches to FD latch
+        if (mmc2.latch1 != false) {
+            mmc2.latch1 = false;
+            updateMMC2Banks();
+        }
+    } else if (address >= 0x1FE8 && address <= 0x1FEF) {
+        // Reading from $1FE8-$1FEF switches to FE latch
+        if (mmc2.latch1 != true) {
+            mmc2.latch1 = true;
+            updateMMC2Banks();
+        }
+    }
 }

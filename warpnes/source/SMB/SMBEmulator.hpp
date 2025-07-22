@@ -452,6 +452,38 @@ struct MMC1State {
   std::string romBaseName;  // Base ROM filename for save files
 
 
+  struct MMC2State {
+    uint8_t prgBank;           // PRG bank register (8KB switchable)
+    uint8_t chrBank0FD;        // CHR bank when $FD is read from $0000-$0FFF
+    uint8_t chrBank0FE;        // CHR bank when $FE is read from $0000-$0FFF  
+    uint8_t chrBank1FD;        // CHR bank when $FD is read from $1000-$1FFF
+    uint8_t chrBank1FE;        // CHR bank when $FE is read from $1000-$1FFF
+    bool latch0;               // Current latch state for $0000-$0FFF (0=FD, 1=FE)
+    bool latch1;               // Current latch state for $1000-$1FFF (0=FD, 1=FE)
+    uint8_t mirroring;         // Mirroring control
+    
+    // Current effective CHR banks
+    uint8_t currentCHRBank0;   // Current 4KB bank at $0000-$0FFF
+    uint8_t currentCHRBank1;   // Current 4KB bank at $1000-$1FFF
+    
+    MMC2State() {
+        prgBank = 0;
+        chrBank0FD = 0;
+        chrBank0FE = 0;
+        chrBank1FD = 0;
+        chrBank1FE = 0;
+        latch0 = false;  // Start with FD state
+        latch1 = false;  // Start with FD state
+        mirroring = 0;
+        currentCHRBank0 = 0;
+        currentCHRBank1 = 0;
+    }
+} mmc2;
+
+void writeMMC2Register(uint16_t address, uint8_t value);
+void updateMMC2Banks();
+void checkMMC2CHRLatch(uint16_t address, uint8_t tileID);
+
 };
 
 #endif // SMB_EMULATOR_HPP
