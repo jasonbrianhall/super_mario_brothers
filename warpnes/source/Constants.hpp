@@ -8,7 +8,7 @@
 /**
  * Application title.
  */
-#define APP_TITLE "Super Mario Bros."
+#define APP_TITLE "WarpNES"
 
 /**
  * Configuration file name.

@@ -354,6 +354,8 @@ static void mainLoop(const char* romFilename)
 
     // Get the controller from the engine (like in your working SDLMain.cpp)
     Controller& controller1 = engine.getController1();
+    Controller& controller2 = engine.getController2();
+
     bool joystickInitialized = controller1.initJoystick();
     if (joystickInitialized)
     {
@@ -377,7 +379,7 @@ static void mainLoop(const char* romFilename)
     static bool f7KeyPressed = false;
     static bool f8KeyPressed = false;
     
-    printf("Using 16-bit rendering bridge (like DOS version)\n");
+    printf("Using 16-bit rendering bridge\n");
     
     while (running)
     {
@@ -414,7 +416,7 @@ static void mainLoop(const char* romFilename)
             }
         }
 
-        // Handle keyboard input (EXACTLY like your working SDLMain.cpp)
+        // Handle keyboard input
         const Uint8* keys = SDL_GetKeyboardState(NULL);
 
         // Get current joystick states (preserve what processJoystickEvent set)
@@ -436,6 +438,26 @@ static void mainLoop(const char* romFilename)
         controller1.setButtonState(BUTTON_DOWN, keys[SDL_SCANCODE_DOWN] || joyDown);
         controller1.setButtonState(BUTTON_LEFT, keys[SDL_SCANCODE_LEFT] || joyLeft);
         controller1.setButtonState(BUTTON_RIGHT, keys[SDL_SCANCODE_RIGHT] || joyRight);
+
+        bool joy2A = controller2.getButtonState(BUTTON_A);
+        bool joy2B = controller2.getButtonState(BUTTON_B);
+        bool joy2Select = controller2.getButtonState(BUTTON_SELECT);
+        bool joy2Start = controller2.getButtonState(BUTTON_START);
+        bool joy2Up = controller2.getButtonState(BUTTON_UP);
+        bool joy2Down = controller2.getButtonState(BUTTON_DOWN);
+        bool joy2Left = controller2.getButtonState(BUTTON_LEFT);
+        bool joy2Right = controller2.getButtonState(BUTTON_RIGHT);
+
+        // Controller 2 keyboard mapping (using different keys)
+        controller2.setButtonState(BUTTON_A, keys[SDL_SCANCODE_K] || joy2A);          // K for A
+        controller2.setButtonState(BUTTON_B, keys[SDL_SCANCODE_J] || joy2B);          // J for B
+        controller2.setButtonState(BUTTON_SELECT, keys[SDL_SCANCODE_U] || joy2Select); // U for Select
+        controller2.setButtonState(BUTTON_START, keys[SDL_SCANCODE_I] || joy2Start);   // I for Start
+        controller2.setButtonState(BUTTON_UP, keys[SDL_SCANCODE_W] || joy2Up);        // W for Up
+        controller2.setButtonState(BUTTON_DOWN, keys[SDL_SCANCODE_S] || joy2Down);    // S for Down
+        controller2.setButtonState(BUTTON_LEFT, keys[SDL_SCANCODE_A] || joy2Left);    // A for Left
+        controller2.setButtonState(BUTTON_RIGHT, keys[SDL_SCANCODE_D] || joy2Right);  // D for Right
+
         
         // Debug key to print controller state (press D key)
         if (keys[SDL_SCANCODE_D])

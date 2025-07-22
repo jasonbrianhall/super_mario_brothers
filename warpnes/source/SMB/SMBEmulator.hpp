@@ -383,7 +383,7 @@ struct MMC1State {
     uint8_t irqCounter;    // Internal counter
     bool irqEnable;        // $E000-$FFFE (even)
     bool irqReload;        // Flag to reload counter
-
+    bool irqPending; 
     // Current bank mappings
     uint8_t currentPRGBanks[4]; // 8KB banks at $8000, $A000, $C000, $E000
     uint8_t currentCHRBanks[8]; // 1KB banks at $0000-$1FFF
@@ -398,7 +398,7 @@ struct MMC1State {
       irqCounter = 0;
       irqEnable = false;
       irqReload = false;
-
+      irqPending = false;
       // Initialize bank mappings
       for (int i = 0; i < 4; i++)
         currentPRGBanks[i] = 0;
