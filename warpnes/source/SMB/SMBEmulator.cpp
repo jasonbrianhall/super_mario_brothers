@@ -2810,6 +2810,10 @@ void SMBEmulator::render16(uint16_t *buffer) {
     ppu->render16(buffer); 
 }
 
+void SMBEmulator::render(uint32_t *buffer) { 
+    ppu->render(buffer); 
+}
+
 void SMBEmulator::renderScaled16(uint16_t *buffer, int screenWidth,
                                  int screenHeight) {
   // First render the game using PPU scaling

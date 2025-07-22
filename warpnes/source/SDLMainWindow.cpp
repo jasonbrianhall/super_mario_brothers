@@ -16,9 +16,9 @@ static SDL_Renderer* renderer;
 static SDL_Texture* texture;
 static SDL_Texture* scanlineTexture;
 static SMBEmulator* smbEngine = nullptr;
-static uint16_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
-static uint16_t filteredBuffer[RENDER_WIDTH * RENDER_HEIGHT];
-static uint16_t prevFrameBuffer[RENDER_WIDTH * RENDER_HEIGHT];
+static uint32_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
+static uint32_t filteredBuffer[RENDER_WIDTH * RENDER_HEIGHT];
+static uint32_t prevFrameBuffer[RENDER_WIDTH * RENDER_HEIGHT];
 static bool msaaEnabled = false;
 
 // Internal controller state
@@ -539,30 +539,30 @@ static void mainLoop(const char* romFilename)
 
         // Game engine update and rendering
         engine.update();
-        engine.render16(renderBuffer);
+        engine.render(renderBuffer);
 
         // Apply post-processing filters if enabled
-        uint16_t* sourceBuffer = renderBuffer;
-        uint16_t* targetBuffer = filteredBuffer;
+        uint32_t* sourceBuffer = renderBuffer;
+        uint32_t* targetBuffer = filteredBuffer;
 
         // Clear the renderer
         SDL_RenderClear(renderer);
 
         // Try optimized rendering first
         bool optimizedRenderingUsed = false;
-        if (scalingCache && scalingCache->isOptimizedScaling()) {
+/*        if (scalingCache && scalingCache->isOptimizedScaling()) {
             // Get current window size for optimized rendering
             int window_width, window_height;
             SDL_GetWindowSize(window, &window_width, &window_height);
             
             scalingCache->renderOptimized(sourceBuffer, window_width, window_height);
             optimizedRenderingUsed = true;
-        }
+        } */
 
         // Fallback to original rendering if optimized rendering is disabled
         if (!optimizedRenderingUsed) {
             // Original rendering code
-            SDL_UpdateTexture(texture, NULL, sourceBuffer, sizeof(uint16_t) * RENDER_WIDTH);
+            SDL_UpdateTexture(texture, NULL, sourceBuffer, sizeof(uint32_t) * RENDER_WIDTH);
             SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH, RENDER_HEIGHT);
             SDL_RenderCopy(renderer, texture, NULL, NULL);
         }
