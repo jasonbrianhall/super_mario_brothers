@@ -3432,8 +3432,12 @@ case 9: // MMC2
         if (chrAddr < chrSize) {
             uint8_t result = chrROM[chrAddr];
             
-            // CRITICAL: Check for latch switching when reading pattern data
-            checkMMC2CHRLatch(address, result);
+            // CRITICAL: Check for latch switching based on tile address within bank
+            // The latch switches when tiles $FD or $FE are read (last 16 bytes of pattern data)
+            uint16_t tileIndex = (address % 0x1000) / 16;  // Which tile (0-255)
+            if (tileIndex == 0xFD || tileIndex == 0xFE) {
+                checkMMC2CHRLatch(address, tileIndex);
+            }
             
             return result;
         }
@@ -3639,32 +3643,50 @@ void SMBEmulator::updateMMC2Banks() {
 }
 
 void SMBEmulator::checkMMC2CHRLatch(uint16_t address, uint8_t tileID) {
-    // This should be called whenever the PPU reads pattern table data
-    // The latch switching happens based on which tile ID is read
+    // Add debug output to see when latches switch
+    static int debugCount = 0;
     
-    if (address >= 0x0FD8 && address <= 0x0FDF) {
-        // Reading from $0FD8-$0FDF switches to FD latch
-        if (mmc2.latch0 != false) {
-            mmc2.latch0 = false;
-            updateMMC2Banks();
+    if (address < 0x1000) {
+        // Pattern table 0 ($0000-$0FFF)
+        if (tileID == 0xFD) {
+            if (mmc2.latch0 != false) {
+                mmc2.latch0 = false;
+                updateMMC2Banks();
+                if (debugCount < 10) {
+                    printf("MMC2: Latch 0 -> FD (tile $FD read at $%04X)\n", address);
+                    debugCount++;
+                }
+            }
+        } else if (tileID == 0xFE) {
+            if (mmc2.latch0 != true) {
+                mmc2.latch0 = true;
+                updateMMC2Banks();
+                if (debugCount < 10) {
+                    printf("MMC2: Latch 0 -> FE (tile $FE read at $%04X)\n", address);
+                    debugCount++;
+                }
+            }
         }
-    } else if (address >= 0x0FE8 && address <= 0x0FEF) {
-        // Reading from $0FE8-$0FEF switches to FE latch  
-        if (mmc2.latch0 != true) {
-            mmc2.latch0 = true;
-            updateMMC2Banks();
-        }
-    } else if (address >= 0x1FD8 && address <= 0x1FDF) {
-        // Reading from $1FD8-$1FDF switches to FD latch
-        if (mmc2.latch1 != false) {
-            mmc2.latch1 = false;
-            updateMMC2Banks();
-        }
-    } else if (address >= 0x1FE8 && address <= 0x1FEF) {
-        // Reading from $1FE8-$1FEF switches to FE latch
-        if (mmc2.latch1 != true) {
-            mmc2.latch1 = true;
-            updateMMC2Banks();
+    } else if (address < 0x2000) {
+        // Pattern table 1 ($1000-$1FFF)
+        if (tileID == 0xFD) {
+            if (mmc2.latch1 != false) {
+                mmc2.latch1 = false;
+                updateMMC2Banks();
+                if (debugCount < 10) {
+                    printf("MMC2: Latch 1 -> FD (tile $FD read at $%04X)\n", address);
+                    debugCount++;
+                }
+            }
+        } else if (tileID == 0xFE) {
+            if (mmc2.latch1 != true) {
+                mmc2.latch1 = true;
+                updateMMC2Banks();
+                if (debugCount < 10) {
+                    printf("MMC2: Latch 1 -> FE (tile $FE read at $%04X)\n", address);
+                    debugCount++;
+                }
+            }
         }
     }
 }
