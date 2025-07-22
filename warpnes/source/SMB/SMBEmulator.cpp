@@ -295,7 +295,6 @@ bool SMBEmulator::loadROM(const std::string &filename) {
   if (lastDot == std::string::npos || lastDot < lastSlash) lastDot = filename.length();
   
   romBaseName = filename.substr(lastSlash, lastDot - lastSlash);
-  printf("SRAM: ROM base name: %s\n", romBaseName.c_str());
 
   // Parse NES header
   if (!parseNESHeader(file)) {
@@ -892,15 +891,6 @@ void SMBEmulator::reset() {
     uint8_t lowByte = readByte(0xFFFC);
     uint8_t highByte = readByte(0xFFFD);
     regPC = lowByte | (highByte << 8);
-
-    printf("Reset Vector: $%04X (from $%02X $%02X)\n", regPC, lowByte, highByte);
-
-    // Debug: Show what's at the reset vector
-    printf("Instructions at reset:\n");
-    for (int i = 0; i < 8; i++) {
-        uint8_t opcode = readByte(regPC + i);
-        printf("  $%04X: $%02X\n", regPC + i, opcode);
-    }
 
     // Clear RAM
     memset(ram, 0, sizeof(ram));
@@ -3137,8 +3127,6 @@ void SMBEmulator::writeMMC1Register(uint16_t address, uint8_t value) {
         mmc1.control = mmc1.control | 0x0C;
         
         updateMMC1Banks();
-        printf("MMC1 Reset Write: Control was $%02X, now $%02X\n", 
-               mmc1.control & ~0x0C, mmc1.control);
         return;
     }
 
@@ -3180,22 +3168,18 @@ void SMBEmulator::writeMMC1Register(uint16_t address, uint8_t value) {
             // Control register write
             uint8_t oldControl = mmc1.control;
             mmc1.control = data;
-            //printf("MMC1 Control: $%02X -> $%02X\n", oldControl, mmc1.control);
         } else if (address < 0xC000) {
            // CHR Bank 0
            uint8_t oldBank = mmc1.chrBank0;
            mmc1.chrBank0 = data;
-           printf("MMC1 CHR Bank 0: $%02X -> $%02X\n", oldBank, mmc1.chrBank0);
        } else if (address < 0xE000) {
           // CHR Bank 1
           uint8_t oldBank = mmc1.chrBank1;
           mmc1.chrBank1 = data;
-          printf("MMC1 CHR Bank 1: $%02X -> $%02X\n", oldBank, mmc1.chrBank1);
        } else {
             // PRG Bank
             uint8_t oldBank = mmc1.prgBank;
             mmc1.prgBank = data;
-            printf("MMC1 PRG Bank: $%02X -> $%02X\n", oldBank, mmc1.prgBank);
         }
 
         updateMMC1Banks();
