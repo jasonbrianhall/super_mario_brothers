@@ -17,6 +17,7 @@ static SDL_Texture* texture;
 static SDL_Texture* scanlineTexture;
 static SMBEmulator* smbEngine = nullptr;
 static uint32_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
+static uint16_t renderBuffer16[RENDER_WIDTH * RENDER_HEIGHT];  // ADD: 16-bit buffer
 static uint32_t filteredBuffer[RENDER_WIDTH * RENDER_HEIGHT];
 static uint32_t prevFrameBuffer[RENDER_WIDTH * RENDER_HEIGHT];
 static bool msaaEnabled = false;
@@ -203,6 +204,27 @@ struct InternalController {
 
 static InternalController controller;
 
+// ADD: Conversion function from 16-bit RGB565 to 32-bit ARGB8888
+static void convertRGB565ToARGB8888(const uint16_t* src, uint32_t* dst, int width, int height)
+{
+    for (int i = 0; i < width * height; i++) {
+        uint16_t pixel16 = src[i];
+        
+        // Extract RGB565 components
+        uint8_t r = (pixel16 >> 11) & 0x1F;  // 5 bits
+        uint8_t g = (pixel16 >> 5) & 0x3F;   // 6 bits  
+        uint8_t b = pixel16 & 0x1F;          // 5 bits
+        
+        // Scale to 8-bit (same as DOS version)
+        r = (r << 3) | (r >> 2);  // 5-bit to 8-bit
+        g = (g << 2) | (g >> 4);  // 6-bit to 8-bit  
+        b = (b << 3) | (b >> 2);  // 5-bit to 8-bit
+        
+        // Pack into ARGB8888 format
+        dst[i] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+    }
+}
+
 /**
  * SDL Audio callback function.
  */
@@ -314,9 +336,7 @@ static void shutdown()
     SDL_Quit();
 }
 
-// Updated mainLoop function for SDLMainWindow.cpp
-// This follows the same pattern as your working SDLMain.cpp
-
+// UPDATED: mainLoop function with 16-bit bridge
 static void mainLoop(const char* romFilename)
 {
     // Load ROM from file
@@ -356,6 +376,8 @@ static void mainLoop(const char* romFilename)
     static bool f6KeyPressed = false;
     static bool f7KeyPressed = false;
     static bool f8KeyPressed = false;
+    
+    printf("Using 16-bit rendering bridge (like DOS version)\n");
     
     while (running)
     {
@@ -535,12 +557,17 @@ static void mainLoop(const char* romFilename)
 
         // Game engine update and rendering
         engine.update();
-        engine.render(renderBuffer);
+        
+        // CHANGED: Use 16-bit rendering like DOS version
+        engine.render16(renderBuffer16);
+        
+        // CHANGED: Convert 16-bit to 32-bit for SDL
+        convertRGB565ToARGB8888(renderBuffer16, renderBuffer, RENDER_WIDTH, RENDER_HEIGHT);
 
         // Clear the renderer
         SDL_RenderClear(renderer);
 
-        // Original rendering code
+        // Original rendering code (now using converted buffer)
         SDL_UpdateTexture(texture, NULL, renderBuffer, sizeof(uint32_t) * RENDER_WIDTH);
         SDL_RenderSetLogicalSize(renderer, RENDER_WIDTH, RENDER_HEIGHT);
         SDL_RenderCopy(renderer, texture, NULL, NULL);

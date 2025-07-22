@@ -603,6 +603,10 @@ void PPU::renderCachedTile(uint16_t* buffer, int index, int xOffset, int yOffset
 
 void PPU::renderCachedSprite(uint16_t* buffer, uint16_t tile, uint8_t sprite_palette, int xOffset, int yOffset, bool flipX, bool flipY)
 {
+ 
+    memcpy(buffer, frameBuffer, sizeof(frameBuffer));
+    return;
+    
     // SAFETY: Check for invalid tile numbers first
     if (tile >= 512) {
         return; // Invalid tile, skip rendering
@@ -1245,16 +1249,28 @@ void PPU::renderScaled(uint16_t* buffer, int screenWidth, int screenHeight)
 
 void PPU::renderScaled32(uint32_t* buffer, int screenWidth, int screenHeight)
 {
-    // For 32-bit rendering, first render to 16-bit then convert
-    static uint16_t tempBuffer[1024 * 768]; // Large enough for most screens
+    // Create temporary 16-bit buffer
+    uint16_t* buffer16 = new uint16_t[screenWidth * screenHeight];
     
-    if (screenWidth * screenHeight <= 1024 * 768) {
-        renderScaled(tempBuffer, screenWidth, screenHeight);
-        convertNESToScreen32(tempBuffer, buffer, screenWidth, screenHeight);
-    } else {
-        // Fallback for very large screens
-        render(buffer); // Use original 32-bit render
+    // Call the existing renderScaled method
+    renderScaled(buffer16, screenWidth, screenHeight);
+    
+    // Convert 16-bit buffer back to 32-bit
+    for (int i = 0; i < screenWidth * screenHeight; i++)
+    {
+        uint16_t pixel16 = buffer16[i];
+        
+        // Convert RGB565 back to RGB888
+        uint32_t r = ((pixel16 >> 11) & 0x1F) << 3;  // 5 bits -> 8 bits
+        uint32_t g = ((pixel16 >> 5) & 0x3F) << 2;   // 6 bits -> 8 bits  
+        uint32_t b = (pixel16 & 0x1F) << 3;          // 5 bits -> 8 bits
+        
+        // Combine into 32-bit ARGB format with full alpha
+        buffer[i] = 0xFF000000 | (r << 16) | (g << 8) | b;
     }
+    
+    // Clean up temporary buffer
+    delete[] buffer16;
 }
 
 void PPU::updateScalingCache(int screenWidth, int screenHeight)
