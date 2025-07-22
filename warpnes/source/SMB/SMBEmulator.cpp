@@ -1946,7 +1946,6 @@ uint8_t SMBEmulator::readByte(uint16_t address) {
     } else if (address < 0x4020) {
         // APU and I/O registers
 
-#ifdef ALLEGRO_BUILD
         switch (address) {
         case 0x4016:
             return controller1->readByte(PLAYER_1);
@@ -1959,7 +1958,6 @@ uint8_t SMBEmulator::readByte(uint16_t address) {
             }
         }
         }
-#endif
 
     } else if (address >= 0x6000 && address < 0x8000) {
         // SRAM area ($6000-$7FFF)
@@ -2260,12 +2258,10 @@ void SMBEmulator::writeByte(uint16_t address, uint8_t value)
                 masterCycles += 513;  // DMA cycles
                 break;
 
-#ifdef ALLEGRO_BUILD
             case 0x4016:
                 controller1->writeByte(value);
                 controller2->writeByte(value);
                 break;
-#endif
 
             default:
                 apu->writeRegister(address, value);
