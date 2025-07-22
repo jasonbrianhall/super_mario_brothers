@@ -34,7 +34,7 @@ static SDL_Renderer* renderer = nullptr;
 static SDL_Texture* gameTexture = nullptr;
 static SDLScalingCache* scalingCache = nullptr;
 static SMBEmulator* smbEngine = nullptr;
-static uint32_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
+static uint16_t renderBuffer[RENDER_WIDTH * RENDER_HEIGHT];
 
 // Game state variables
 static bool gameRunning = false;
@@ -739,8 +739,6 @@ static void updateStatusMessage()
 
 static void run(const char* romFilename)
 {
-    printf("\n\nWelcome to SDL NES Emulator\n\n");
-    
     gamePaused = false;
     showingMenu = false;
     currentDialog = DIALOG_NONE;
@@ -782,7 +780,7 @@ static void run(const char* romFilename)
         }
         
         // Always render for smooth menu/dialog display
-        engine.render(renderBuffer);
+        engine.render16(renderBuffer);
         
         updateAndDraw();
         updateStatusMessage();
@@ -802,7 +800,7 @@ static void run(const char* romFilename)
 
 int main(int argc, char** argv)
 {
-    printf("SDL NES Emulator\n");
+    printf("Welcome to Warp NES Emulator - SDL Edition\n");
     
     // Parse command line arguments
     const char* romFilename = nullptr;

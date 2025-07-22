@@ -7,7 +7,7 @@
 class SDLScalingCache {
 public:
     struct ScaleInfo {
-        uint32_t* scaledBuffer;           // Pre-scaled buffer
+        uint16_t* scaledBuffer;           // Pre-scaled buffer
         int* sourceToDestX;               // X coordinate mapping table
         int* sourceToDestY;               // Y coordinate mapping table
         int scaleFactor;                  // Current scale factor
@@ -28,10 +28,10 @@ private:
     int currentWindowWidth, currentWindowHeight;
     
     // Optimized rendering methods
-    void renderGame1x1(uint32_t* frameBuffer);
-    void renderGame2x(uint32_t* frameBuffer);
-    void renderGame3x(uint32_t* frameBuffer);
-    void renderGameGenericScale(uint32_t* frameBuffer, int scale);
+    void renderGame1x1(uint16_t* frameBuffer);
+    void renderGame2x(uint16_t* frameBuffer);
+    void renderGame3x(uint16_t* frameBuffer);
+    void renderGameGenericScale(uint16_t* frameBuffer, int scale);
     
     // Cache management
     void updateScalingCache(int window_width, int window_height);
@@ -42,7 +42,7 @@ public:
     ~SDLScalingCache();
     
     void initialize();
-    void renderOptimized(uint32_t* frameBuffer, int window_width, int window_height);
+    void renderOptimized(uint16_t* frameBuffer, int window_width, int window_height);
     void setOptimizedScaling(bool enabled) { useOptimizedScaling = enabled; }
     bool isOptimizedScaling() const { return useOptimizedScaling; }
 };

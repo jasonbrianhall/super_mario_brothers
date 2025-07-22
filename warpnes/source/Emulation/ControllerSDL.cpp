@@ -59,6 +59,28 @@ Controller::~Controller()
     }
 }
 
+// NES controller read implementation
+uint8_t Controller::readByte(int player)
+{
+    if (player == 1) {
+        // Return the current bit from the shift register
+        uint8_t result = (shiftRegister & 0x01) ? 0x01 : 0x00;
+        
+        // Shift the register for the next read
+        shiftRegister >>= 1;
+        
+        return result | 0x40; // Set bit 6 as per NES controller behavior
+    }
+    else if (player == 2) {
+        // Similar implementation for player 2
+        uint8_t result = (shiftRegister & 0x01) ? 0x01 : 0x00;
+        shiftRegister >>= 1;
+        return result | 0x40;
+    }
+    
+    return 0x40; // Default return for invalid reads
+}
+
 void Controller::loadConfiguration()
 {
     // Load joystick settings from configuration

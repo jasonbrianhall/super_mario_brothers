@@ -111,7 +111,7 @@ void SDLScalingCache::updateScalingCache(int window_width, int window_height)
         // Create a buffer for pre-scaled pixels
         int scaled_width = RENDER_WIDTH * cache_scale;
         int scaled_height = RENDER_HEIGHT * cache_scale;
-        scaleInfo.scaledBuffer = new uint32_t[scaled_width * scaled_height];
+        scaleInfo.scaledBuffer = new uint16_t[scaled_width * scaled_height];
         
         // Create texture at the scaled size
         optimizedTexture = SDL_CreateTexture(renderer, 
@@ -141,7 +141,7 @@ bool SDLScalingCache::isScalingCacheValid(int window_width, int window_height)
            currentWindowHeight == window_height;
 }
 
-void SDLScalingCache::renderOptimized(uint32_t* frameBuffer, int window_width, int window_height)
+void SDLScalingCache::renderOptimized(uint16_t* frameBuffer, int window_width, int window_height)
 {
     if (!frameBuffer || !useOptimizedScaling) {
         return; // Let original rendering handle it
@@ -177,7 +177,7 @@ void SDLScalingCache::renderOptimized(uint32_t* frameBuffer, int window_width, i
 }
 
 // FIXED: 1:1 rendering - respects logical size
-void SDLScalingCache::renderGame1x1(uint32_t* frameBuffer)
+void SDLScalingCache::renderGame1x1(uint16_t* frameBuffer)
 {
     // For 1x scaling, create a texture at exactly the render size
     static SDL_Texture* directTexture = nullptr;
@@ -192,7 +192,7 @@ void SDLScalingCache::renderGame1x1(uint32_t* frameBuffer)
     
     if (directTexture) {
         // Update texture with frame data
-        SDL_UpdateTexture(directTexture, nullptr, frameBuffer, sizeof(uint32_t) * RENDER_WIDTH);
+        SDL_UpdateTexture(directTexture, nullptr, frameBuffer, sizeof(uint16_t) * RENDER_WIDTH);
         
         // Render to fill the logical size (SDL handles scaling to window)
         SDL_RenderCopy(renderer, directTexture, nullptr, nullptr);
@@ -200,25 +200,25 @@ void SDLScalingCache::renderGame1x1(uint32_t* frameBuffer)
 }
 
 // FIXED: 2x scaling - create high-res texture but render at logical size
-void SDLScalingCache::renderGame2x(uint32_t* frameBuffer)
+void SDLScalingCache::renderGame2x(uint16_t* frameBuffer)
 {
     if (!scaleInfo.scaledBuffer || !optimizedTexture) {
         renderGameGenericScale(frameBuffer, 2);
         return;
     }
     
-    uint32_t* scaledBuf = scaleInfo.scaledBuffer;
+    uint16_t* scaledBuf = scaleInfo.scaledBuffer;
     const int scaledWidth = RENDER_WIDTH * 2;
     const int scaledHeight = RENDER_HEIGHT * 2;
     
     // Ultra-fast 2x scaling
     for (int y = 0; y < RENDER_HEIGHT; y++) {
-        uint32_t* src_row = &frameBuffer[y * RENDER_WIDTH];
-        uint32_t* dest_row1 = &scaledBuf[y * 2 * scaledWidth];
-        uint32_t* dest_row2 = &scaledBuf[(y * 2 + 1) * scaledWidth];
+        uint16_t* src_row = &frameBuffer[y * RENDER_WIDTH];
+        uint16_t* dest_row1 = &scaledBuf[y * 2 * scaledWidth];
+        uint16_t* dest_row2 = &scaledBuf[(y * 2 + 1) * scaledWidth];
         
         for (int x = 0; x < RENDER_WIDTH; x++) {
-            uint32_t pixel = src_row[x];
+            uint16_t pixel = src_row[x];
             int dest_x = x * 2;
             
             // 2x2 block
@@ -228,33 +228,33 @@ void SDLScalingCache::renderGame2x(uint32_t* frameBuffer)
     }
     
     // Update the high-res texture
-    SDL_UpdateTexture(optimizedTexture, nullptr, scaledBuf, sizeof(uint32_t) * scaledWidth);
+    SDL_UpdateTexture(optimizedTexture, nullptr, scaledBuf, sizeof(uint16_t) * scaledWidth);
     
     // Render the high-res texture to logical size - SDL will scale it properly
     SDL_RenderCopy(renderer, optimizedTexture, nullptr, nullptr);
 }
 
 // FIXED: 3x scaling - create high-res texture but render at logical size
-void SDLScalingCache::renderGame3x(uint32_t* frameBuffer)
+void SDLScalingCache::renderGame3x(uint16_t* frameBuffer)
 {
     if (!scaleInfo.scaledBuffer || !optimizedTexture) {
         renderGameGenericScale(frameBuffer, 3);
         return;
     }
     
-    uint32_t* scaledBuf = scaleInfo.scaledBuffer;
+    uint16_t* scaledBuf = scaleInfo.scaledBuffer;
     const int scaledWidth = RENDER_WIDTH * 3;
     const int scaledHeight = RENDER_HEIGHT * 3;
     
     // 3x scaling with 3x3 blocks
     for (int y = 0; y < RENDER_HEIGHT; y++) {
-        uint32_t* src_row = &frameBuffer[y * RENDER_WIDTH];
-        uint32_t* dest_row1 = &scaledBuf[y * 3 * scaledWidth];
-        uint32_t* dest_row2 = &scaledBuf[(y * 3 + 1) * scaledWidth];
-        uint32_t* dest_row3 = &scaledBuf[(y * 3 + 2) * scaledWidth];
+        uint16_t* src_row = &frameBuffer[y * RENDER_WIDTH];
+        uint16_t* dest_row1 = &scaledBuf[y * 3 * scaledWidth];
+        uint16_t* dest_row2 = &scaledBuf[(y * 3 + 1) * scaledWidth];
+        uint16_t* dest_row3 = &scaledBuf[(y * 3 + 2) * scaledWidth];
         
         for (int x = 0; x < RENDER_WIDTH; x++) {
-            uint32_t pixel = src_row[x];
+            uint16_t pixel = src_row[x];
             int dest_x = x * 3;
             
             // 3x3 block
@@ -265,14 +265,14 @@ void SDLScalingCache::renderGame3x(uint32_t* frameBuffer)
     }
     
     // Update the high-res texture
-    SDL_UpdateTexture(optimizedTexture, nullptr, scaledBuf, sizeof(uint32_t) * scaledWidth);
+    SDL_UpdateTexture(optimizedTexture, nullptr, scaledBuf, sizeof(uint16_t) * scaledWidth);
     
     // Render the high-res texture to logical size - SDL will scale it properly
     SDL_RenderCopy(renderer, optimizedTexture, nullptr, nullptr);
 }
 
 // FIXED: Generic scaling - just use original method
-void SDLScalingCache::renderGameGenericScale(uint32_t* frameBuffer, int scale)
+void SDLScalingCache::renderGameGenericScale(uint16_t* frameBuffer, int scale)
 {
     // For generic scaling, just create a normal texture and let SDL handle scaling
     static SDL_Texture* genericTexture = nullptr;
@@ -287,7 +287,7 @@ void SDLScalingCache::renderGameGenericScale(uint32_t* frameBuffer, int scale)
     
     if (genericTexture) {
         // Update texture with original frame data
-        SDL_UpdateTexture(genericTexture, nullptr, frameBuffer, sizeof(uint32_t) * RENDER_WIDTH);
+        SDL_UpdateTexture(genericTexture, nullptr, frameBuffer, sizeof(uint16_t) * RENDER_WIDTH);
         
         // Render to logical size - SDL handles the scaling
         SDL_RenderCopy(renderer, genericTexture, nullptr, nullptr);
