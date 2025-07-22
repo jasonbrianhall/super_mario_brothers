@@ -200,11 +200,28 @@ uint8_t PPU::readByte(uint16_t address)
     return 0;
 }
 
+void PPU::checkCHRLatch(uint16_t address, uint8_t tileID) {
+    // Forward to the engine's CHR latch checking
+    engine.checkCHRLatch(address, tileID);
+}
+
 uint8_t PPU::readCHR(int index)
 {
     if (index < 0x2000)
     {
-        return engine.readCHRData(index);
+        uint8_t result = engine.readCHRData(index);
+        
+        if (engine.getMapper() == 9) {
+            // Calculate which tile is being read
+            uint16_t tileIndex = (index % 0x1000) / 16;  // Which tile (0-255) within 4KB bank
+            
+            // Only check for latch tiles $FD and $FE
+            if (tileIndex == 0xFD || tileIndex == 0xFE) {
+                engine.checkCHRLatch(index, tileIndex);
+            }
+        }
+        
+        return result;
     }
     else
     {
@@ -1604,6 +1621,7 @@ void PPU::renderBackgroundScanline(int scanline) {
         uint16_t patternBase = tileIndex * 16;
         if (ctrl & 0x10) patternBase += 0x1000; // Background pattern table select
         
+        // CRITICAL: Use readCHR to ensure MMC2 latch checking happens
         uint8_t patternLo = readCHR(patternBase + fineY);
         uint8_t patternHi = readCHR(patternBase + fineY + 8);
         

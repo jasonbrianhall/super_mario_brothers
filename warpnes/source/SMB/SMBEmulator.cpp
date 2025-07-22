@@ -899,7 +899,11 @@ void SMBEmulator::reset() {
     memset(ram, 0, sizeof(ram));
 }
 
-
+void SMBEmulator::checkCHRLatch(uint16_t address, uint8_t tileID) {
+    if (nesHeader.mapper == 9) {
+        checkMMC2CHRLatch(address, tileID);
+    }
+}
 
 void SMBEmulator::step() {
   if (!romLoaded)

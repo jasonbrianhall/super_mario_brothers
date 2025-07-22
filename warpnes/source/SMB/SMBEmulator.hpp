@@ -22,6 +22,7 @@ class SMBEmulator {
 public:
   SMBEmulator();
   ~SMBEmulator();
+  void checkCHRLatch(uint16_t address, uint8_t tileID);
   void checkSprite0Hit(int scanline, int cycle);
   uint8_t *getCHR();
 
@@ -475,6 +476,8 @@ struct MMC1State {
         latch0 = false;  // Start with FD state
         latch1 = false;  // Start with FD state
         mirroring = 0;
+        latch0 = false;  // Start with FD state
+        latch1 = false;  // Start with FD state
         currentCHRBank0 = 0;
         currentCHRBank1 = 0;
     }

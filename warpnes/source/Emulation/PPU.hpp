@@ -33,6 +33,7 @@ class PPU
 {
 public:
     PPU(SMBEmulator& engine);
+    void checkCHRLatch(uint16_t address, uint8_t tileID);
 
     uint8_t readRegister(uint16_t address);
 
