@@ -461,11 +461,11 @@ BasicConfigurationOption<int> Configuration::player1KeyB(
 );
 
 BasicConfigurationOption<int> Configuration::player1KeySelect(
-    "input.player1.key.select", 54  // KEY_RSHIFT in Allegro
+    "input.player1.key.select", 26  // [
 );
 
 BasicConfigurationOption<int> Configuration::player1KeyStart(
-    "input.player1.key.start", 28  // KEY_ENTER in Allegro
+    "input.player1.key.start", 27  // ]
 );
 
 /**
