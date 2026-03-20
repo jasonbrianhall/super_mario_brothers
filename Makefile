@@ -35,7 +35,7 @@ CXXFLAGS_LINUX_GTK = $(CXXFLAGS_COMMON) $(SDL_CFLAGS_LINUX) $(GTK_CFLAGS_LINUX) 
 CXXFLAGS_WIN_GTK = $(CXXFLAGS_COMMON) $(SDL_CFLAGS_WIN) $(GTK_CFLAGS_WIN) $(BOOST_CFLAGS_WIN) -DWIN32 -DGTK_BUILD
 
 # Platform-specific settings for SDL builds
-CXXFLAGS_LINUX_SDL = $(CXXFLAGS_COMMON) $(SDL_CFLAGS_LINUX) $(BOOST_CFLAGS_LINUX) -DLINUX -DSDL_BUILD
+CXXFLAGS_LINUX_SDL = $(CXXFLAGS_COMMON) $(SDL_CFLAGS_LINUX) $(BOOST_CFLAGS_LINUX) -DLINUX -DSDL_BUILD -DKITTY_ENABLED
 CXXFLAGS_WIN_SDL = $(CXXFLAGS_COMMON) $(SDL_CFLAGS_WIN) $(BOOST_CFLAGS_WIN) -DWIN32 -DSDL_BUILD
 
 # Debug-specific flags
@@ -69,19 +69,20 @@ BASE_SOURCE_FILES = \
 GTK_SOURCE_FILES = $(BASE_SOURCE_FILES) source/GTKMainWindow.cpp source/SMB/SMBCheatConstants.cpp
 
 # SDL version source files
-SDL_SOURCE_FILES = $(BASE_SOURCE_FILES) source/SDLMain.cpp source/SDLCacheScaling.cpp source/KittyRenderer.cpp
+SDL_SOURCE_FILES_LINUX = $(BASE_SOURCE_FILES) source/SDLMain.cpp source/SDLCacheScaling.cpp source/KittyRenderer.cpp
+SDL_SOURCE_FILES_WIN   = $(BASE_SOURCE_FILES) source/SDLMain.cpp source/SDLCacheScaling.cpp
 
 # Object files for different variants
 OBJS_LINUX_GTK = $(GTK_SOURCE_FILES:.cpp=.gtk.o)
 OBJS_WIN_GTK = $(GTK_SOURCE_FILES:.cpp=.gtk.win.o)
-OBJS_LINUX_SDL = $(SDL_SOURCE_FILES:.cpp=.sdl.o)
-OBJS_WIN_SDL = $(SDL_SOURCE_FILES:.cpp=.sdl.win.o)
+OBJS_LINUX_SDL = $(SDL_SOURCE_FILES_LINUX:.cpp=.sdl.o)
+OBJS_WIN_SDL = $(SDL_SOURCE_FILES_WIN:.cpp=.sdl.win.o)
 
 # Debug object files
 OBJS_LINUX_GTK_DEBUG = $(GTK_SOURCE_FILES:.cpp=.gtk.debug.o)
 OBJS_WIN_GTK_DEBUG = $(GTK_SOURCE_FILES:.cpp=.gtk.win.debug.o)
-OBJS_LINUX_SDL_DEBUG = $(SDL_SOURCE_FILES:.cpp=.sdl.debug.o)
-OBJS_WIN_SDL_DEBUG = $(SDL_SOURCE_FILES:.cpp=.sdl.win.debug.o)
+OBJS_LINUX_SDL_DEBUG = $(SDL_SOURCE_FILES_LINUX:.cpp=.sdl.debug.o)
+OBJS_WIN_SDL_DEBUG = $(SDL_SOURCE_FILES_WIN:.cpp=.sdl.win.debug.o)
 
 # Target executables
 TARGET_LINUX_GTK = smbc-gtk
