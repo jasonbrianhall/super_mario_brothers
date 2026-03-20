@@ -47,8 +47,8 @@ CXXFLAGS_WIN_SDL_DEBUG = $(CXXFLAGS_WIN_SDL) $(DEBUG_FLAGS)
 # Linker flags
 LDFLAGS_LINUX_GTK = $(SDL_LIBS_LINUX) $(GTK_LIBS_LINUX)
 LDFLAGS_WIN_GTK = $(SDL_LIBS_WIN) $(GTK_LIBS_WIN) -lwinmm -static-libgcc -static-libstdc++
-LDFLAGS_LINUX_SDL = $(SDL_LIBS_LINUX)
-LDFLAGS_WIN_SDL = $(SDL_LIBS_WIN) -lwinmm -static-libgcc -static-libstdc++
+LDFLAGS_LINUX_SDL = $(SDL_LIBS_LINUX) -lz
+LDFLAGS_WIN_SDL = $(SDL_LIBS_WIN) -lz -lwinmm -static-libgcc -static-libstdc++
 
 # Base source files (common to both versions)
 BASE_SOURCE_FILES = \
@@ -69,7 +69,7 @@ BASE_SOURCE_FILES = \
 GTK_SOURCE_FILES = $(BASE_SOURCE_FILES) source/GTKMainWindow.cpp source/SMB/SMBCheatConstants.cpp
 
 # SDL version source files
-SDL_SOURCE_FILES = $(BASE_SOURCE_FILES) source/SDLMain.cpp source/SDLCacheScaling.cpp
+SDL_SOURCE_FILES = $(BASE_SOURCE_FILES) source/SDLMain.cpp source/SDLCacheScaling.cpp source/KittyRenderer.cpp
 
 # Object files for different variants
 OBJS_LINUX_GTK = $(GTK_SOURCE_FILES:.cpp=.gtk.o)
@@ -106,10 +106,11 @@ BUILD_DIR_WIN_DEBUG = $(BUILD_DIR)/windows_debug
 DLL_SOURCE_DIR = /usr/x86_64-w64-mingw32/sys-root/mingw/bin
 
 # Create necessary directories
-$(shell mkdir -p $(BUILD_DIR_LINUX)/source/Emulation $(BUILD_DIR_LINUX)/source/SMB $(BUILD_DIR_LINUX)/source/Util \
-	$(BUILD_DIR_WIN)/source/Emulation $(BUILD_DIR_WIN)/source/SMB $(BUILD_DIR_WIN)/source/Util \
-	$(BUILD_DIR_LINUX_DEBUG)/source/Emulation $(BUILD_DIR_LINUX_DEBUG)/source/SMB $(BUILD_DIR_LINUX_DEBUG)/source/Util \
-	$(BUILD_DIR_WIN_DEBUG)/source/Emulation $(BUILD_DIR_WIN_DEBUG)/source/SMB $(BUILD_DIR_WIN_DEBUG)/source/Util)
+$(shell mkdir -p \
+	$(BUILD_DIR_LINUX)/source $(BUILD_DIR_LINUX)/source/Emulation $(BUILD_DIR_LINUX)/source/SMB $(BUILD_DIR_LINUX)/source/Util \
+	$(BUILD_DIR_WIN)/source $(BUILD_DIR_WIN)/source/Emulation $(BUILD_DIR_WIN)/source/SMB $(BUILD_DIR_WIN)/source/Util \
+	$(BUILD_DIR_LINUX_DEBUG)/source $(BUILD_DIR_LINUX_DEBUG)/source/Emulation $(BUILD_DIR_LINUX_DEBUG)/source/SMB $(BUILD_DIR_LINUX_DEBUG)/source/Util \
+	$(BUILD_DIR_WIN_DEBUG)/source $(BUILD_DIR_WIN_DEBUG)/source/Emulation $(BUILD_DIR_WIN_DEBUG)/source/SMB $(BUILD_DIR_WIN_DEBUG)/source/Util)
 
 # Default target - build GTK version for Linux (maintaining backward compatibility)
 .PHONY: all
@@ -239,67 +240,22 @@ $(BUILD_DIR_WIN_DEBUG)/%.sdl.win.debug.o: %.cpp
 # DLL collection for Windows builds
 #
 .PHONY: collect-gtk-dlls collect-sdl-dlls collect-gtk-debug-dlls collect-sdl-debug-dlls
-collect-gtk-dlls: $(BUILD_DIR_WIN)/$(TARGET_WIN_GTK) create-dll-script
+collect-gtk-dlls: $(BUILD_DIR_WIN)/$(TARGET_WIN_GTK)
 	@echo "Collecting GTK DLLs for Windows build..."
-	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN)/$(TARGET_WIN_GTK) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN) gtk
+	@bash build/windows/collect_dlls.sh $(BUILD_DIR_WIN)/$(TARGET_WIN_GTK) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN)
 
-collect-sdl-dlls: $(BUILD_DIR_WIN)/$(TARGET_WIN_SDL) create-dll-script
+collect-sdl-dlls: $(BUILD_DIR_WIN)/$(TARGET_WIN_SDL)
 	@echo "Collecting SDL DLLs for Windows build..."
-	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN)/$(TARGET_WIN_SDL) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN) sdl
+	@bash build/windows/collect_dlls.sh $(BUILD_DIR_WIN)/$(TARGET_WIN_SDL) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN)
 
-collect-gtk-debug-dlls: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_GTK_DEBUG) create-dll-script
+collect-gtk-debug-dlls: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_GTK_DEBUG)
 	@echo "Collecting GTK Debug DLLs for Windows build..."
-	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_GTK_DEBUG) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN_DEBUG) gtk
+	@bash build/windows/collect_dlls.sh $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_GTK_DEBUG) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN_DEBUG)
 
-collect-sdl-debug-dlls: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_SDL_DEBUG) create-dll-script
+collect-sdl-debug-dlls: $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_SDL_DEBUG)
 	@echo "Collecting SDL Debug DLLs for Windows build..."
-	@build/windows/collect_dlls.sh $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_SDL_DEBUG) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN_DEBUG) sdl
+	@bash build/windows/collect_dlls.sh $(BUILD_DIR_WIN_DEBUG)/$(TARGET_WIN_SDL_DEBUG) $(DLL_SOURCE_DIR) $(BUILD_DIR_WIN_DEBUG)
 
-# Create DLL collection script if it doesn't exist
-.PHONY: create-dll-script
-create-dll-script:
-	@mkdir -p build/windows
-	@if [ ! -f "build/windows/collect_dlls.sh" ]; then \
-		echo "Creating DLL collection script..."; \
-		cat > build/windows/collect_dlls.sh << 'EOF'; \
-#!/bin/bash; \
-# DLL collection script for Windows builds; \
-EXECUTABLE=$$1; \
-DLL_SOURCE=$$2; \
-TARGET_DIR=$$3; \
-BUILD_TYPE=$$4; \
-; \
-echo "Collecting DLLs for $$EXECUTABLE ($$BUILD_TYPE build)"; \
-; \
-# Copy common DLLs; \
-if [ -d "$$DLL_SOURCE" ]; then; \
-    cp "$$DLL_SOURCE"/SDL2.dll "$$TARGET_DIR"/ 2>/dev/null || echo "SDL2.dll not found"; \
-    cp "$$DLL_SOURCE"/libgcc_s_seh-1.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgcc_s_seh-1.dll not found"; \
-    cp "$$DLL_SOURCE"/libstdc++-6.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libstdc++-6.dll not found"; \
-    cp "$$DLL_SOURCE"/libwinpthread-1.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libwinpthread-1.dll not found"; \
-    ; \
-    # Copy GTK3 DLLs if this is a GTK build; \
-    if [ "$$BUILD_TYPE" = "gtk" ]; then; \
-        cp "$$DLL_SOURCE"/libgtk-3-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgtk-3-0.dll not found"; \
-        cp "$$DLL_SOURCE"/libgdk-3-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgdk-3-0.dll not found"; \
-        cp "$$DLL_SOURCE"/libgobject-2.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgobject-2.0-0.dll not found"; \
-        cp "$$DLL_SOURCE"/libglib-2.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libglib-2.0-0.dll not found"; \
-        cp "$$DLL_SOURCE"/libgdk_pixbuf-2.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgdk_pixbuf-2.0-0.dll not found"; \
-        cp "$$DLL_SOURCE"/libgio-2.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libgio-2.0-0.dll not found"; \
-        cp "$$DLL_SOURCE"/libcairo-2.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libcairo-2.dll not found"; \
-        cp "$$DLL_SOURCE"/libpango-1.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libpango-1.0-0.dll not found"; \
-        cp "$$DLL_SOURCE"/libpangocairo-1.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libpangocairo-1.0-0.dll not found"; \
-        cp "$$DLL_SOURCE"/libatk-1.0-0.dll "$$TARGET_DIR"/ 2>/dev/null || echo "libatk-1.0-0.dll not found"; \
-        echo "GTK DLLs copied"; \
-    else; \
-        echo "SDL-only build - no GTK DLLs needed"; \
-    fi; \
-else; \
-    echo "DLL source directory not found: $$DLL_SOURCE"; \
-fi; \
-EOF; \
-		chmod +x build/windows/collect_dlls.sh; \
-	fi
 
 # Check dependencies target
 .PHONY: check-deps
@@ -353,7 +309,6 @@ help:
 	@echo ""
 	@echo "Utility targets:"
 	@echo "  make check-deps         - Check if required dependencies are installed"
-	@echo "  make create-dll-script  - Create DLL collection script"
 	@echo "  make clean              - Remove all build files"
 	@echo "  make help               - Show this help message"
 	@echo ""

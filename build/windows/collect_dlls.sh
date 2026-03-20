@@ -129,6 +129,16 @@ for dll in $initial_dlls; do
     fi
 done
 
+# Add SDL3.dll to required DLLs (required on Fedora 42 and above)
+echo "Checking for SDL3.dll (required on Fedora 42+)..."
+if dll_exists "SDL3.dll"; then
+    if [ "${processed_dlls[SDL3.dll]}" != "1" ]; then
+        dlls_to_process+=("SDL3.dll")
+    fi
+else
+    missing_dlls+=("SDL3.dll")
+fi
+
 # Process DLLs recursively
 while [ ${#dlls_to_process[@]} -gt 0 ]; do
     current_dll="${dlls_to_process[0]}"
