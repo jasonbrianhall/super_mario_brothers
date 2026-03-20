@@ -17,9 +17,7 @@
 #include "Util/VideoFilters.hpp"
 #include "SMBRom.hpp"
 #include "SDLCacheScaling.hpp"
-#ifdef KITTY_ENABLED
 #include "KittyRenderer.hpp"
-#endif
 
 // ─── globals ─────────────────────────────────────────────────────────────────
 static SDLScalingCache* scalingCache     = nullptr;
@@ -28,13 +26,9 @@ static SDL_Renderer*    renderer         = nullptr;
 static SDL_Texture*     texture          = nullptr;
 static SDL_Texture*     scanlineTexture  = nullptr;
 static SMBEngine*       smbEngine        = nullptr;
-#ifdef KITTY_ENABLED
 static KittyRenderer*   kittyRenderer    = nullptr;
 static bool             useKittyMode     = false;
 static int              kittyScale       = 2;
-#else
-static const bool       useKittyMode     = false;
-#endif
 
 static uint32_t renderBuffer  [RENDER_WIDTH * RENDER_HEIGHT];
 static uint32_t filteredBuffer[RENDER_WIDTH * RENDER_HEIGHT];
@@ -48,17 +42,14 @@ static void audioCallback(void* userdata, uint8_t* buffer, int len)
 }
 
 // ─── SDL initialize / shutdown ────────────────────────────────────────────────
-#ifdef KITTY_ENABLED
 static void initKittyKeyHoldMs();
 static void enableKittyKeyboardProto();
 static void disableKittyKeyboardProto();
-#endif
 
 static bool initialize()
 {
     Configuration::initialize(CONFIG_FILE_NAME);
 
-#ifdef KITTY_ENABLED
     if (useKittyMode) {
         // Kitty mode: init timer + optional audio; skip video entirely.
         Uint32 sdlFlags = SDL_INIT_TIMER;
@@ -144,7 +135,6 @@ static bool initialize()
         scalingCache = new SDLScalingCache(renderer);
         scalingCache->initialize();
     }
-#endif // KITTY_ENABLED
 
     // ── Shared init (both SDL and Kitty modes) ────────────────────────────────
 
@@ -178,7 +168,6 @@ static bool initialize()
 
 static void shutdown()
 {
-#ifdef KITTY_ENABLED
     if (useKittyMode) {
         // Restore terminal
         disableKittyKeyboardProto();         // pop keyboard protocol flags
@@ -197,7 +186,6 @@ static void shutdown()
         SDL_DestroyWindow(window);
     }
 
-#endif // KITTY_ENABLED
     SDL_CloseAudio();
     SDL_Quit();
 }
@@ -231,7 +219,6 @@ static const int64_t KEY_HOLD_MS_FALLBACK = 35;
 static int64_t KEY_HOLD_MS = KEY_HOLD_MS_FALLBACK;
 static int64_t s_lastSeen[8] = {};
 
-#ifdef KITTY_ENABLED
 static void initKittyKeyHoldMs() {
 #ifdef _WIN32
     // On Windows, query key repeat rate via SystemParametersInfo
@@ -368,8 +355,6 @@ static void handleKittyInput(Controller& ctrl, bool& running, SMBEngine& engine,
 }
 
 
-#endif // KITTY_ENABLED
-
 // ─── main loop ────────────────────────────────────────────────────────────────
 static void mainLoop()
 {
@@ -412,7 +397,6 @@ static void mainLoop()
     while (running) {
 
         // ── Kitty mode: input via raw terminal ────────────────────────────
-#ifdef KITTY_ENABLED
         if (useKittyMode) {
             // handleKittyInput manages button state via timestamp-based hold detection.
             // No manual clear needed — applyHeldKeys() sets each button true/false.
@@ -420,7 +404,6 @@ static void mainLoop()
             if (!running) break;
 
         } else
-#endif // KITTY_ENABLED
         {
             // ── SDL mode: events and keyboard ─────────────────────────────
             SDL_Event event;
@@ -520,11 +503,9 @@ static void mainLoop()
         }
 
         // ── Render ────────────────────────────────────────────────────────
-#ifdef KITTY_ENABLED
         if (useKittyMode) {
             kittyRenderer->renderFrame(sourceBuffer);
         } else
-#endif // KITTY_ENABLED
         {
             SDL_RenderClear(renderer);
 
@@ -567,10 +548,8 @@ static void mainLoop()
 static void printHelp(const char* prog)
 {
     printf("Usage: %s [options]\n"
-           #ifdef KITTY_ENABLED
            "  --kitty              Render frames to terminal via Kitty graphics protocol\n"
            "  --kitty-scale <N>    Pixel scale factor for kitty mode (default: 2)\n"
-#endif
            "  --help               Show this message\n",
            prog);
 }
@@ -578,16 +557,13 @@ static void printHelp(const char* prog)
 int main(int argc, char** argv)
 {
     for (int i = 1; i < argc; ++i) {
-#ifdef KITTY_ENABLED
         if (strcmp(argv[i], "--kitty") == 0) {
             useKittyMode = true;
         } else if (strcmp(argv[i], "--kitty-scale") == 0 && i + 1 < argc) {
             kittyScale = atoi(argv[++i]);
             if (kittyScale < 1) kittyScale = 1;
             if (kittyScale > 8) kittyScale = 8;
-        } else
-#endif // KITTY_ENABLED
-        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+        } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
             printHelp(argv[0]);
             return 0;
         }
