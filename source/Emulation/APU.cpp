@@ -7,7 +7,6 @@
 #include <pc.h>
 #include <dpmi.h>
 #else
-#include <allegro.h>
 #include <pthread.h>
 #endif
 
