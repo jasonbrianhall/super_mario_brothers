@@ -13,6 +13,9 @@ BUILD    := build
 MIRROR   := $(BUILD)/src
 
 GCCINC   := $(shell $(CXX) -print-file-name=include)
+# Fedora names the GRUB tools grub2-*; Debian/Ubuntu use grub-*.
+GRUB_MKIMAGE  ?= $(shell command -v grub2-mkimage || command -v grub-mkimage)
+GRUB_MKRESCUE ?= $(shell command -v grub2-mkrescue || command -v grub-mkrescue)
 COMMON   := -m64 -ffreestanding -fno-pic -fno-pie -mno-red-zone -mcmodel=kernel \
             -fno-stack-protector -fno-exceptions -fno-rtti -fno-threadsafe-statics \
             -fno-asynchronous-unwind-tables -O2 -nostdinc -isystem $(GCCINC) \
@@ -73,7 +76,7 @@ smb.iso: smb.elf grub.cfg $(ROM)
 	cp smb.elf $(BUILD)/iso/boot/smb.elf
 	cp "$(ROM)" $(BUILD)/iso/boot/smb.nes
 	cp grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
-	grub2-mkrescue -o $@ $(BUILD)/iso 2>/dev/null
+	$(GRUB_MKRESCUE) -o $@ $(BUILD)/iso 2>/dev/null
 
 # Sound card for QEMU: SOUND=hda (default), SOUND=ac97 or SOUND=none.
 # ARGS adds kernel options, e.g. ARGS=debug for a once-a-second heartbeat.
@@ -94,7 +97,7 @@ smb-floppy.img: smb.elf grub.cfg $(ROM)
 	cp "$(ROM)" $(BUILD)/fd/boot/smb.nes
 	cp grub.cfg $(BUILD)/fd/boot/grub/grub.cfg
 	tar -C $(BUILD)/fd -cf $(BUILD)/memdisk.tar boot
-	grub2-mkimage -O i386-pc -o $(BUILD)/core.img -p '(memdisk)/boot/grub' \
+	$(GRUB_MKIMAGE) -O i386-pc -o $(BUILD)/core.img -p '(memdisk)/boot/grub' \
 	    -m $(BUILD)/memdisk.tar memdisk tar normal configfile multiboot vbe video video_fb boot
 	cat /usr/lib/grub/i386-pc/boot.img $(BUILD)/core.img > $@
 	truncate -s 1474560 $@
