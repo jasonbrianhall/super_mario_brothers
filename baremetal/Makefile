@@ -85,13 +85,31 @@ QSOUND_none :=
 QEMU     := qemu-system-x86_64 -enable-kvm -m 256 -serial stdio $(QSOUND_$(SOUND)) \
             -device qemu-xhci -device usb-kbd
 
+# 1.44 MB boot floppy: GRUB's core image with the kernel, ROM and grub.cfg
+# packed inside it (as a compressed memdisk), behind GRUB's boot sector.
+floppy: smb-floppy.img
+smb-floppy.img: smb.elf grub.cfg $(ROM)
+	@rm -rf $(BUILD)/fd && mkdir -p $(BUILD)/fd/boot/grub
+	cp smb.elf $(BUILD)/fd/boot/smb.elf
+	cp "$(ROM)" $(BUILD)/fd/boot/smb.nes
+	cp grub.cfg $(BUILD)/fd/boot/grub/grub.cfg
+	tar -C $(BUILD)/fd -cf $(BUILD)/memdisk.tar boot
+	grub-mkimage -O i386-pc -o $(BUILD)/core.img -p '(memdisk)/boot/grub' \
+	    -m $(BUILD)/memdisk.tar memdisk tar normal configfile multiboot vbe video video_fb boot
+	cat /usr/lib/grub/i386-pc/boot.img $(BUILD)/core.img > $@
+	truncate -s 1474560 $@
+	@echo "$@: $$(( ($$(stat -c %s $(BUILD)/core.img) + 512) * 100 / 1474560 ))% of a 1.44 MB floppy used"
+
 run: smb.elf
 	$(QEMU) -kernel smb.elf -initrd "$(ROM)" -append "audio=$(SOUND) $(ARGS)"
 
 run-iso: smb.iso
 	$(QEMU) -cdrom smb.iso
 
-clean:
-	rm -rf $(BUILD) smb.elf smb.iso
+run-floppy: smb-floppy.img
+	$(QEMU) -fda smb-floppy.img -boot a
 
-.PHONY: all iso run run-iso clean
+clean:
+	rm -rf $(BUILD) smb.elf smb.iso smb-floppy.img
+
+.PHONY: all iso floppy run run-iso run-floppy clean
