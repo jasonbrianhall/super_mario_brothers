@@ -15,6 +15,8 @@ SECTIONS
         __init_array_end = .;
     }
     .data : ALIGN(4K) { *(.data .data.*) }
+    /* ISA DMA buffers must be below 16 MiB, so keep them ahead of the big arrays. */
+    .dmabuf (NOLOAD) : ALIGN(64K) { __dmabuf_start = .; *(.dmabuf) }
     .bss : ALIGN(4K) {
         __bss_start = .;
         *(COMMON)

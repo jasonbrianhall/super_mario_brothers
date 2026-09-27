@@ -18,6 +18,16 @@ make iso ROM=~/nes/smb.nes          # bootable smb.iso (GRUB)
 make run-iso ROM=~/nes/smb.nes
 ```
 
+### Sound
+
+AC97 is used if present, otherwise a Sound Blaster 16 at 0x220 (DMA 1).
+`make run` gives QEMU an AC97 by default; pick with `SOUND=sb16` or
+`SOUND=none`. The QEMU audio backend defaults to PulseAudio (`AUDIODEV=pa`;
+try `pipewire`, `alsa` or `sdl` if needed).
+
+To force a card on real hardware or from the ISO, add `audio=ac97`,
+`audio=sb16` or `audio=off` after `multiboot /boot/smb.elf` in `grub.cfg`.
+
 The ISO can be written to a USB stick with `dd` and booted on a BIOS
 (legacy/CSM) PC with a PS/2 or BIOS-emulated USB keyboard.
 
@@ -39,8 +49,14 @@ The ISO can be written to a USB stick with `dd` and booted on a BIOS
 - `boot.S`: Multiboot header, long-mode switch, identity-mapped 4 GiB, interrupt stubs
 - `kernel.cpp`: framebuffer (GRUB's, or QEMU's VBE adapter), 60 Hz PIT timer, PS/2 keyboard, main loop
 - `runtime.cpp`, `include/`: memcpy/printf/malloc, a minimal `std::string`/`iostream`/`fstream` (RAM-backed, so save states work unchanged)
-- `overrides/`: bare-metal replacements for `Configuration`, `Controller`, `APU` (silent for now), `Video.hpp`
-- Everything else is compiled straight from `../source`
+- `audio.cpp`: SB16 (ISA DMA) and AC97 (PCI bus master) drivers, each streaming a looping DMA buffer, polled once per frame
+- `overrides/`: bare-metal replacements for `Configuration`, `Controller`, `Video.hpp`
+- Everything else, including `APU.cpp`, is compiled straight from `../source`
+
+The APU's samples are unsigned mix levels (0 to about 130). The SDL build
+opens the device as `AUDIO_S8`, so anything above 127 wraps to -128 and
+clicks. Here they're treated as unsigned and passed through a DC-blocking
+filter instead.
 
 `overrides/Emulation/MemoryAccess.*` carries a fix for a dangling pointer in
 `MemoryAccess(SMBEngine&, uint8_t constant)`: it stored `&constant` (the

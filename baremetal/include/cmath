@@ -1,0 +1,2 @@
+#pragma once
+// Nothing needed: the APU only uses plain arithmetic.

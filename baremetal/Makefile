@@ -22,19 +22,24 @@ IRQFLAGS := $(COMMON) -std=gnu++17 -mgeneral-regs-only
 LDFLAGS  := -nostdlib -static -no-pie -T linker.ld -z max-page-size=0x1000 --no-warn-rwx-segments
 
 # Engine sources taken unchanged from ../source
-CORE := SMB/SMB.cpp SMB/SMBData.cpp SMB/SMBEngine.cpp Emulation/PPU.cpp Emulation/MemoryAccess.cpp
+CORE := SMB/SMB.cpp SMB/SMBData.cpp SMB/SMBEngine.cpp Emulation/PPU.cpp Emulation/MemoryAccess.cpp \
+        Emulation/APU.cpp
 HDRS := SMB/SMB.hpp SMB/SMBConstants.hpp SMB/SMBDataPointers.hpp SMB/SMBEngine.hpp \
         Emulation/PPU.hpp Emulation/MemoryAccess.hpp Emulation/APU.hpp
 # Platform pieces replaced for bare metal
 OVERRIDES := Configuration.hpp Util/Video.hpp Emulation/Controller.hpp \
              Emulation/MemoryAccess.hpp Emulation/MemoryAccess.cpp \
-             Emulation/Controller.cpp Emulation/APU.cpp
+             Emulation/Controller.cpp
 
-OBJS := $(BUILD)/boot.o $(BUILD)/kernel.o $(BUILD)/runtime.o $(BUILD)/irq.o \
+OBJS := $(BUILD)/boot.o $(BUILD)/kernel.o $(BUILD)/runtime.o $(BUILD)/irq.o $(BUILD)/audio.o \
         $(patsubst %.cpp,$(BUILD)/core/%.o,$(CORE)) \
-        $(BUILD)/core/Emulation/Controller.o $(BUILD)/core/Emulation/APU.o
+        $(BUILD)/core/Emulation/Controller.o
 
 all: smb.elf
+
+# APU.cpp relies on -fpermissive (as in the main build) and wraps its
+# allocations in try/catch; with exceptions off, turn those into plain blocks.
+$(BUILD)/core/Emulation/APU.o: CXXFLAGS += -fpermissive -w "-Dtry=if (true)" "-Dcatch(x)=if (false)"
 
 $(MIRROR)/.stamp: $(addprefix $(SRC)/,$(CORE) $(HDRS)) $(addprefix overrides/,$(OVERRIDES))
 	@mkdir -p $(MIRROR)/SMB $(MIRROR)/Emulation $(MIRROR)/Util
@@ -70,11 +75,19 @@ smb.iso: smb.elf grub.cfg $(ROM)
 	cp grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
 	grub-mkrescue -o $@ $(BUILD)/iso 2>/dev/null
 
+# Sound card for QEMU: SOUND=ac97 (default), SOUND=sb16 or SOUND=none
+SOUND    ?= ac97
+AUDIODEV ?= $(if $(filter Darwin,$(shell uname)),coreaudio,pa)
+QSOUND_ac97 := -audiodev $(AUDIODEV),id=snd0 -device AC97,audiodev=snd0
+QSOUND_sb16 := -audiodev $(AUDIODEV),id=snd0 -device sb16,audiodev=snd0
+QSOUND_none :=
+QEMU     := qemu-system-x86_64 -enable-kvm -m 256 -serial stdio $(QSOUND_$(SOUND))
+
 run: smb.elf
-	qemu-system-x86_64 -enable-kvm -m 256 -kernel smb.elf -initrd "$(ROM)" -serial stdio
+	$(QEMU) -kernel smb.elf -initrd "$(ROM)" -append "audio=$(SOUND)"
 
 run-iso: smb.iso
-	qemu-system-x86_64 -enable-kvm -m 256 -cdrom smb.iso -serial stdio
+	$(QEMU) -cdrom smb.iso
 
 clean:
 	rm -rf $(BUILD) smb.elf smb.iso

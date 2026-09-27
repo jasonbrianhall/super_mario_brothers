@@ -8,6 +8,8 @@
 #include "include/iostream"
 #include "hw.hpp"
 #include "font.h"
+#include "audio.hpp"
+#include "Configuration.hpp"
 #include "SMB/SMBEngine.hpp"
 #include "Emulation/Controller.hpp"
 
@@ -169,23 +171,32 @@ static bool shift_l, shift_r;
 static int pending_save = -1, pending_load = -1;
 static bool pending_reset, paused;
 
+// A tap can arrive as press+release in the same frame; keep such buttons
+// down for one frame so the game still sees them.
+static bool pressed_now[8], release_later[8];
+static void set_button(Controller& c, ControllerButton b, bool down) {
+    if (down) { c.setButtonState(b, true); pressed_now[b] = true; release_later[b] = false; }
+    else if (pressed_now[b]) release_later[b] = true;
+    else c.setButtonState(b, false);
+}
+
 static void key_event(Controller& c, bool ext, uint8_t code, bool down) {
     if (ext) {
         switch (code) {
-        case 0x48: c.setButtonState(BUTTON_UP, down); break;
-        case 0x50: c.setButtonState(BUTTON_DOWN, down); break;
-        case 0x4B: c.setButtonState(BUTTON_LEFT, down); break;
-        case 0x4D: c.setButtonState(BUTTON_RIGHT, down); break;
-        case 0x1C: c.setButtonState(BUTTON_START, down); break;   // keypad Enter
+        case 0x48: set_button(c, BUTTON_UP, down); break;
+        case 0x50: set_button(c, BUTTON_DOWN, down); break;
+        case 0x4B: set_button(c, BUTTON_LEFT, down); break;
+        case 0x4D: set_button(c, BUTTON_RIGHT, down); break;
+        case 0x1C: set_button(c, BUTTON_START, down); break;   // keypad Enter
         }
         return;
     }
     switch (code) {
-    case 0x2D: c.setButtonState(BUTTON_A, down); break;        // X
-    case 0x2C: c.setButtonState(BUTTON_B, down); break;        // Z
-    case 0x1C: c.setButtonState(BUTTON_START, down); break;    // Enter
-    case 0x0F: c.setButtonState(BUTTON_SELECT, down); break;   // Tab
-    case 0x36: shift_r = down; c.setButtonState(BUTTON_SELECT, down); break;  // Right Shift
+    case 0x2D: set_button(c, BUTTON_A, down); break;        // X
+    case 0x2C: set_button(c, BUTTON_B, down); break;        // Z
+    case 0x1C: set_button(c, BUTTON_START, down); break;    // Enter
+    case 0x0F: set_button(c, BUTTON_SELECT, down); break;   // Tab
+    case 0x36: shift_r = down; set_button(c, BUTTON_SELECT, down); break;  // Right Shift
     case 0x2A: shift_l = down; break;
     case 0x3F: case 0x40: case 0x41: case 0x42:                // F5..F8
         if (down) { int slot = code - 0x3F; if (shift_l || shift_r) pending_load = slot; else pending_save = slot; }
@@ -197,6 +208,10 @@ static void key_event(Controller& c, bool ext, uint8_t code, bool down) {
 
 static void poll_keyboard(Controller& c) {
     static bool ext;
+    for (int b = 0; b < 8; b++) {
+        if (release_later[b]) c.setButtonState((ControllerButton)b, false);
+        release_later[b] = pressed_now[b] = false;
+    }
     while (kbd_tail != kbd_head) {
         uint8_t b = kbd_buf[kbd_tail++];
         if (b == 0xE0) { ext = true; continue; }
@@ -250,6 +265,9 @@ extern "C" void kmain() {
     engine->reset();
     Controller& pad = engine->getController1();
 
+    const char* cmdline = (mbi->flags & (1 << 2)) ? (const char*)(uintptr_t)mbi->cmdline : nullptr;
+    audio_init(cmdline);
+
     interrupts_init();
     printf("Running. Arrows/X/Z/Enter/Tab, F5-F8 save, Shift+F5-F8 load, F12 reset, P pause\n");
 
@@ -274,7 +292,16 @@ extern "C" void kmain() {
             pending_save = pending_load = -1;
         }
 
-        if (!paused) engine->update();
+        if (!paused) {
+            engine->update();
+            if (Configuration::audioEnabled) {
+                static uint8_t samples[1024];
+                int n = Configuration::audioFrequency / 60;
+                memset(samples, 0, n);
+                engine->audioCallback(samples, n);
+                audio_submit(samples, n);
+            }
+        }
         engine->render(frame);
         if (paused) banner("PAUSED");
         else if (msg_frames > 0) { banner(msg); msg_frames--; }

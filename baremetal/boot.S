@@ -45,6 +45,15 @@ _start:
     mov  %eax, mb_magic
     mov  %ebx, mb_info
 
+    # Zero .dmabuf and .bss ourselves rather than trusting the loader.
+    mov  $__dmabuf_start, %edi
+    mov  $__bss_end, %ecx
+    sub  %edi, %ecx
+    xor  %eax, %eax
+    cld
+    rep stosb
+    mov  $stack_top, %esp        # the stack lives in .bss too
+
     # PML4[0] -> PDPT
     mov  $pdpt, %eax
     or   $3, %eax
