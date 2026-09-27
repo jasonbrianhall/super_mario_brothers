@@ -73,7 +73,7 @@ smb.iso: smb.elf grub.cfg $(ROM)
 	cp smb.elf $(BUILD)/iso/boot/smb.elf
 	cp "$(ROM)" $(BUILD)/iso/boot/smb.nes
 	cp grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
-	grub-mkrescue -o $@ $(BUILD)/iso 2>/dev/null
+	grub2-mkrescue -o $@ $(BUILD)/iso 2>/dev/null
 
 # Sound card for QEMU: SOUND=hda (default), SOUND=ac97 or SOUND=none.
 # ARGS adds kernel options, e.g. ARGS=debug for a once-a-second heartbeat.
@@ -94,7 +94,7 @@ smb-floppy.img: smb.elf grub.cfg $(ROM)
 	cp "$(ROM)" $(BUILD)/fd/boot/smb.nes
 	cp grub.cfg $(BUILD)/fd/boot/grub/grub.cfg
 	tar -C $(BUILD)/fd -cf $(BUILD)/memdisk.tar boot
-	grub-mkimage -O i386-pc -o $(BUILD)/core.img -p '(memdisk)/boot/grub' \
+	grub2-mkimage -O i386-pc -o $(BUILD)/core.img -p '(memdisk)/boot/grub' \
 	    -m $(BUILD)/memdisk.tar memdisk tar normal configfile multiboot vbe video video_fb boot
 	cat /usr/lib/grub/i386-pc/boot.img $(BUILD)/core.img > $@
 	truncate -s 1474560 $@
