@@ -165,33 +165,39 @@ static bool shift_l, shift_r;
 static int pending_save = -1, pending_load = -1;
 static bool pending_reset, paused;
 
+// Two NES controllers. Player 1 is on the arrows, player 2 on WASD; Luigi
+// (player 2 in a 2-player game) reads controller 2, as on the real NES.
+static Controller* pads[2];
+
 // A tap can arrive as press+release in the same frame; keep such buttons
 // down for one frame so the game still sees them.
-static bool pressed_now[8], release_later[8];
-static void set_button(Controller& c, ControllerButton b, bool down) {
-    if (down) { c.setButtonState(b, true); pressed_now[b] = true; release_later[b] = false; }
-    else if (pressed_now[b]) release_later[b] = true;
-    else c.setButtonState(b, false);
+static bool pressed_now[2][8], release_later[2][8];
+static void set_button(int player, ControllerButton b, bool down) {
+    Controller& c = *pads[player];
+    Player p = player ? PLAYER_2 : PLAYER_1;
+    if (down) { c.setButtonState(p, b, true); pressed_now[player][b] = true; release_later[player][b] = false; }
+    else if (pressed_now[player][b]) release_later[player][b] = true;
+    else c.setButtonState(p, b, false);
 }
 
-static void key_event(Controller& c, bool ext, uint8_t code, bool down) {
-    if (ext) {
-        switch (code) {
-        case 0x48: set_button(c, BUTTON_UP, down); break;
-        case 0x50: set_button(c, BUTTON_DOWN, down); break;
-        case 0x4B: set_button(c, BUTTON_LEFT, down); break;
-        case 0x4D: set_button(c, BUTTON_RIGHT, down); break;
-        case 0x1C: set_button(c, BUTTON_START, down); break;   // keypad Enter
-        }
-        return;
-    }
+// Scancode (set 1; 0x100 = E0-prefixed) -> player and NES button.
+static const struct { uint16_t code; uint8_t player; ControllerButton button; } bindings[] = {
+    // Player 1: arrows, X = A, Z = B, [ = Select, ] = Start
+    {0x148, 0, BUTTON_UP}, {0x150, 0, BUTTON_DOWN}, {0x14B, 0, BUTTON_LEFT}, {0x14D, 0, BUTTON_RIGHT},
+    {0x2D, 0, BUTTON_A}, {0x2C, 0, BUTTON_B}, {0x1A, 0, BUTTON_SELECT}, {0x1B, 0, BUTTON_START},
+    // Player 2: WASD, G = A, F = B, Q = Select, E = Start
+    {0x11, 1, BUTTON_UP}, {0x1F, 1, BUTTON_DOWN}, {0x1E, 1, BUTTON_LEFT}, {0x20, 1, BUTTON_RIGHT},
+    {0x22, 1, BUTTON_A}, {0x21, 1, BUTTON_B}, {0x10, 1, BUTTON_SELECT}, {0x12, 1, BUTTON_START},
+};
+
+static void key_event(bool ext, uint8_t code, bool down) {
+    uint16_t full = code | (ext ? 0x100 : 0);
+    for (auto& b : bindings)
+        if (b.code == full) { set_button(b.player, b.button, down); return; }
+    if (ext) return;
     switch (code) {
-    case 0x2D: set_button(c, BUTTON_A, down); break;        // X
-    case 0x2C: set_button(c, BUTTON_B, down); break;        // Z
-    case 0x1C: set_button(c, BUTTON_START, down); break;    // Enter
-    case 0x0F: set_button(c, BUTTON_SELECT, down); break;   // Tab
-    case 0x36: shift_r = down; set_button(c, BUTTON_SELECT, down); break;  // Right Shift
     case 0x2A: shift_l = down; break;
+    case 0x36: shift_r = down; break;
     case 0x3F: case 0x40: case 0x41: case 0x42:                // F5..F8
         if (down) { int slot = code - 0x3F; if (shift_l || shift_r) pending_load = slot; else pending_save = slot; }
         break;
@@ -209,17 +215,18 @@ void kbd_push(uint8_t b) {
     __asm__ volatile("push %0; popfq" :: "r"(flags) : "memory", "cc");
 }
 
-static void poll_keyboard(Controller& c) {
+static void poll_keyboard() {
     static bool ext;
-    for (int b = 0; b < 8; b++) {
-        if (release_later[b]) c.setButtonState((ControllerButton)b, false);
-        release_later[b] = pressed_now[b] = false;
-    }
+    for (int p = 0; p < 2; p++)
+        for (int b = 0; b < 8; b++) {
+            if (release_later[p][b]) pads[p]->setButtonState(p ? PLAYER_2 : PLAYER_1, (ControllerButton)b, false);
+            release_later[p][b] = pressed_now[p][b] = false;
+        }
     while (kbd_tail != kbd_head) {
         uint8_t b = kbd_buf[kbd_tail++];
         if (b == 0xE0) { ext = true; continue; }
         if (b == 0xE1) { ext = false; continue; }
-        key_event(c, ext, b & 0x7F, !(b & 0x80));
+        key_event(ext, b & 0x7F, !(b & 0x80));
         ext = false;
     }
 }
@@ -266,7 +273,8 @@ extern "C" void kmain() {
 
     static SMBEngine* engine = new SMBEngine(rom);
     engine->reset();
-    Controller& pad = engine->getController1();
+    pads[0] = &engine->getController1();
+    pads[1] = &engine->getController2();
 
     const char* cmdline = (mbi->flags & (1 << 2)) ? (const char*)(uintptr_t)mbi->cmdline : nullptr;
     audio_init(cmdline);
@@ -276,7 +284,8 @@ extern "C" void kmain() {
         if (strncmp(p, "debug", 5) == 0) debug = true;
 
     interrupts_init();
-    printf("Running. Arrows/X/Z/Enter/Tab, F5-F8 save, Shift+F5-F8 load, F12 reset, P pause\n");
+    printf("Running. P1: arrows, X/Z, [ select, ] start. P2: WASD, G/F, Q select, E start.\n"
+           "F5-F8 save, Shift+F5-F8 load, F12 reset, P pause\n");
 
     char msg[32] = {0};
     int msg_frames = 0;
@@ -286,7 +295,7 @@ extern "C" void kmain() {
         last = ticks;
 
         usb_poll();
-        poll_keyboard(pad);
+        poll_keyboard();
         if (debug) {
             static uint32_t frames, last_report;
             frames++;

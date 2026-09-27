@@ -50,12 +50,17 @@ The ISO can be written to a USB stick with `dd` and booted on a BIOS
 
 ## Controls
 
+| | Player 1 (Mario) | Player 2 (Luigi) |
+|---|---|---|
+| D-pad | Arrows | W A S D |
+| A / B | X / Z | G / F |
+| Select / Start | `[` / `]` | Q / E |
+
+In a 2-player game Luigi reads controller 2, as on the NES. Both players can
+share one keyboard, and either set of keys works on any PS/2 or USB keyboard.
+
 | Key | Action |
 |---|---|
-| Arrows | D-pad |
-| X / Z | A / B |
-| Enter | Start |
-| Tab or Right Shift | Select |
 | F5-F8 | Save state to slot 1-4 (RAM, lost on reboot) |
 | Shift+F5-F8 | Load state |
 | P | Pause |
