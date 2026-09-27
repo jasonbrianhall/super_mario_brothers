@@ -31,7 +31,7 @@ OVERRIDES := Configuration.hpp Util/Video.hpp Emulation/Controller.hpp \
              Emulation/MemoryAccess.hpp Emulation/MemoryAccess.cpp \
              Emulation/Controller.cpp
 
-OBJS := $(BUILD)/boot.o $(BUILD)/kernel.o $(BUILD)/runtime.o $(BUILD)/irq.o $(BUILD)/audio.o \
+OBJS := $(BUILD)/boot.o $(BUILD)/kernel.o $(BUILD)/runtime.o $(BUILD)/irq.o $(BUILD)/audio.o $(BUILD)/pci.o $(BUILD)/usb.o \
         $(patsubst %.cpp,$(BUILD)/core/%.o,$(CORE)) \
         $(BUILD)/core/Emulation/Controller.o
 
@@ -75,16 +75,18 @@ smb.iso: smb.elf grub.cfg $(ROM)
 	cp grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
 	grub-mkrescue -o $@ $(BUILD)/iso 2>/dev/null
 
-# Sound card for QEMU: SOUND=ac97 (default), SOUND=sb16 or SOUND=none
-SOUND    ?= ac97
+# Sound card for QEMU: SOUND=hda (default), SOUND=ac97 or SOUND=none.
+# ARGS adds kernel options, e.g. ARGS=debug for a once-a-second heartbeat.
+SOUND    ?= hda
 AUDIODEV ?= $(if $(filter Darwin,$(shell uname)),coreaudio,pa)
 QSOUND_ac97 := -audiodev $(AUDIODEV),id=snd0 -device AC97,audiodev=snd0
-QSOUND_sb16 := -audiodev $(AUDIODEV),id=snd0 -device sb16,audiodev=snd0
+QSOUND_hda  := -audiodev $(AUDIODEV),id=snd0 -device intel-hda -device hda-output,audiodev=snd0
 QSOUND_none :=
-QEMU     := qemu-system-x86_64 -enable-kvm -m 256 -serial stdio $(QSOUND_$(SOUND))
+QEMU     := qemu-system-x86_64 -enable-kvm -m 256 -serial stdio $(QSOUND_$(SOUND)) \
+            -device qemu-xhci -device usb-kbd
 
 run: smb.elf
-	$(QEMU) -kernel smb.elf -initrd "$(ROM)" -append "audio=$(SOUND)"
+	$(QEMU) -kernel smb.elf -initrd "$(ROM)" -append "audio=$(SOUND) $(ARGS)"
 
 run-iso: smb.iso
 	$(QEMU) -cdrom smb.iso

@@ -20,16 +20,33 @@ make run-iso ROM=~/nes/smb.nes
 
 ### Sound
 
-AC97 is used if present, otherwise a Sound Blaster 16 at 0x220 (DMA 1).
-`make run` gives QEMU an AC97 by default; pick with `SOUND=sb16` or
-`SOUND=none`. The QEMU audio backend defaults to PulseAudio (`AUDIODEV=pa`;
-try `pipewire`, `alsa` or `sdl` if needed).
+Intel HD Audio is used if present (every PC since ~2005), otherwise AC97.
+The driver finds the codec's line-out, speaker and headphone pins and routes
+each to a DAC. `make run` gives QEMU an HD Audio card by default; pick with
+`SOUND=ac97` or `SOUND=none`. The QEMU audio backend defaults to PulseAudio
+(`AUDIODEV=pa`; try `pipewire`, `alsa` or `sdl` if needed). HDMI audio isn't
+supported.
 
-To force a card on real hardware or from the ISO, add `audio=ac97`,
-`audio=sb16` or `audio=off` after `multiboot /boot/smb.elf` in `grub.cfg`.
+### Keyboards
+
+PS/2 keyboards and USB keyboards on an xHCI controller both work, including
+USB keyboards plugged in after boot. USB keyboards must be on a root port
+(not behind a hub). `make run` adds a QEMU USB keyboard; to prove it's the one
+being used, run QEMU with `-machine pc,i8042=off`.
+
+### Boot options
+
+Add these after `multiboot /boot/smb.elf` in `grub.cfg`, or via `ARGS=` with
+`make run`:
+
+| Option | Effect |
+|---|---|
+| `audio=hda` / `audio=ac97` / `audio=off` | Force a sound card, or none |
+| `usb=off` | Leave the USB controller to the BIOS |
+| `debug` | Once-a-second heartbeat on the serial port |
 
 The ISO can be written to a USB stick with `dd` and booted on a BIOS
-(legacy/CSM) PC with a PS/2 or BIOS-emulated USB keyboard.
+(legacy/CSM) PC.
 
 ## Controls
 
@@ -48,8 +65,10 @@ The ISO can be written to a USB stick with `dd` and booted on a BIOS
 
 - `boot.S`: Multiboot header, long-mode switch, identity-mapped 4 GiB, interrupt stubs
 - `kernel.cpp`: framebuffer (GRUB's, or QEMU's VBE adapter), 60 Hz PIT timer, PS/2 keyboard, main loop
+- `usb.cpp`: polled xHCI driver: BIOS handoff, enumeration, HID boot-protocol keyboards, hot-plug
 - `runtime.cpp`, `include/`: memcpy/printf/malloc, a minimal `std::string`/`iostream`/`fstream` (RAM-backed, so save states work unchanged)
-- `audio.cpp`: SB16 (ISA DMA) and AC97 (PCI bus master) drivers, each streaming a looping DMA buffer, polled once per frame
+- `audio.cpp`: HD Audio (CORB/RIRB codec setup, one output stream) and AC97 drivers sharing one looping DMA ring, polled once per frame
+- `pci.cpp`: PCI configuration-space helpers
 - `overrides/`: bare-metal replacements for `Configuration`, `Controller`, `Video.hpp`
 - Everything else, including `APU.cpp`, is compiled straight from `../source`
 

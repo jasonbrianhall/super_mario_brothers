@@ -9,6 +9,8 @@
 #include "hw.hpp"
 #include "font.h"
 #include "audio.hpp"
+#include "pci.hpp"
+#include "usb.hpp"
 #include "Configuration.hpp"
 #include "SMB/SMBEngine.hpp"
 #include "Emulation/Controller.hpp"
@@ -49,19 +51,11 @@ extern "C" uint32_t mb_magic, mb_info;
 static volatile uint32_t* fb;
 static uint32_t fb_w, fb_h, fb_pitch;   // pitch in pixels
 
-static uint32_t pci_read(int bus, int dev, int fn, int off) {
-    outl(0xCF8, 0x80000000u | (bus << 16) | (dev << 11) | (fn << 8) | (off & 0xFC));
-    return inl(0xCFC);
-}
-
 static bool bga_init(uint32_t w, uint32_t h) {
     uint32_t base = 0;
-    for (int bus = 0; bus < 256 && !base; bus++)
-        for (int dev = 0; dev < 32; dev++)
-            if (pci_read(bus, dev, 0, 0) == 0x11111234) {   // QEMU/Bochs std VGA
-                base = pci_read(bus, dev, 0, 0x10) & 0xFFFFFFF0;
-                break;
-            }
+    PciDevice vga;
+    if (pci_find_id(0x1234, 0x1111, &vga))                  // QEMU/Bochs std VGA
+        base = pci_read(vga, 0x10) & 0xFFFFFFF0;
     outw(0x1CE, 0); if (!base || inw(0x1CF) < 0xB0C0) return false;
     auto w16 = [](uint16_t i, uint16_t v) { outw(0x1CE, i); outw(0x1CF, v); };
     w16(4, 0); w16(1, w); w16(2, h); w16(3, 32); w16(4, 0x41);
@@ -162,7 +156,7 @@ static void interrupts_init() {
     uint16_t div = 1193182 / 60;
     outb(0x43, 0x36); outb(0x40, div & 0xFF); outb(0x40, div >> 8);
 
-    while (inb(0x64) & 1) inb(0x60);   // flush stale keyboard bytes
+    for (int i = 0; i < 64 && (inb(0x64) & 1); i++) inb(0x60);   // flush stale bytes (bounded: no i8042 reads 0xFF)
     __asm__ volatile("sti");
 }
 
@@ -204,6 +198,15 @@ static void key_event(Controller& c, bool ext, uint8_t code, bool down) {
     case 0x58: if (down) pending_reset = true; break;          // F12
     case 0x19: if (down) paused = !paused; break;              // P
     }
+}
+
+// Queue a scancode from a source other than the PS/2 interrupt (USB).
+void kbd_push(uint8_t b) {
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
+    kbd_buf[kbd_head] = b;
+    kbd_head = kbd_head + 1;
+    __asm__ volatile("push %0; popfq" :: "r"(flags) : "memory", "cc");
 }
 
 static void poll_keyboard(Controller& c) {
@@ -267,6 +270,10 @@ extern "C" void kmain() {
 
     const char* cmdline = (mbi->flags & (1 << 2)) ? (const char*)(uintptr_t)mbi->cmdline : nullptr;
     audio_init(cmdline);
+    usb_init(cmdline);
+    bool debug = false;
+    for (const char* p = cmdline; p && *p; p++)
+        if (strncmp(p, "debug", 5) == 0) debug = true;
 
     interrupts_init();
     printf("Running. Arrows/X/Z/Enter/Tab, F5-F8 save, Shift+F5-F8 load, F12 reset, P pause\n");
@@ -278,7 +285,17 @@ extern "C" void kmain() {
         while (ticks == last) __asm__ volatile("hlt");
         last = ticks;
 
+        usb_poll();
         poll_keyboard(pad);
+        if (debug) {
+            static uint32_t frames, last_report;
+            frames++;
+            if (ticks - last_report >= 60) {
+                last_report = ticks;
+                printf("heartbeat: ticks %u frames %u audio %s pos %u\n",
+                       ticks, frames, audio_name(), audio_play_pos());
+            }
+        }
         if (pending_reset) { engine->reset(); pending_reset = false; }
         if (pending_save >= 0 || pending_load >= 0) {
             bool save = pending_save >= 0;
