@@ -1,0 +1,19 @@
+#pragma once
+// Minimal std::cout / std::cerr that write to the serial port.
+#include "string"
+#include "stdio.h"
+namespace std {
+struct ostream {
+    ostream& operator<<(const char* s) { printf("%s", s); return *this; }
+    ostream& operator<<(const string& s) { printf("%s", s.c_str()); return *this; }
+    ostream& operator<<(char c) { printf("%c", c); return *this; }
+    ostream& operator<<(int v) { printf("%d", v); return *this; }
+    ostream& operator<<(unsigned v) { printf("%u", v); return *this; }
+    ostream& operator<<(long v) { printf("%ld", v); return *this; }
+    ostream& operator<<(unsigned long v) { printf("%lu", v); return *this; }
+    ostream& operator<<(bool v) { printf("%d", (int)v); return *this; }
+    ostream& operator<<(ostream& (*m)(ostream&)) { return m(*this); }
+};
+inline ostream& endl(ostream& o) { printf("\n"); return o; }
+extern ostream cout, cerr;
+}

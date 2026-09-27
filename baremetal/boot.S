@@ -1,0 +1,150 @@
+# Multiboot entry: switch from 32-bit protected mode to 64-bit long mode,
+# identity-map the first 4 GiB with 2 MiB pages, then call kmain().
+
+.set MB_MAGIC,  0x1BADB002
+.set MB_FLAGS,  (1<<0) | (1<<1) | (1<<2)   # page-align modules, memory info, video mode
+.set MB_CHECK,  -(MB_MAGIC + MB_FLAGS)
+
+.section .multiboot, "a"
+.align 4
+    .long MB_MAGIC, MB_FLAGS, MB_CHECK
+    .long 0, 0, 0, 0, 0          # a.out kludge fields (unused for ELF)
+    .long 0                      # mode_type: 0 = linear graphics
+    .long 1024, 768, 32          # preferred width, height, depth
+
+.section .bss
+.align 4096
+pml4:   .skip 4096
+pdpt:   .skip 4096
+pdir:   .skip 4096 * 4
+stack_bottom:
+        .skip 65536
+.global stack_top
+stack_top:
+
+.section .data
+.global mb_magic, mb_info
+mb_magic: .long 0
+mb_info:  .long 0
+
+.align 16
+gdt64:
+    .quad 0
+    .quad 0x00AF9A000000FFFF     # 0x08: 64-bit code
+    .quad 0x00CF92000000FFFF     # 0x10: data
+gdt64_ptr:
+    .word gdt64_ptr - gdt64 - 1
+    .quad gdt64
+
+.section .text
+.code32
+.global _start
+_start:
+    cli
+    mov  $stack_top, %esp
+    mov  %eax, mb_magic
+    mov  %ebx, mb_info
+
+    # PML4[0] -> PDPT
+    mov  $pdpt, %eax
+    or   $3, %eax
+    mov  %eax, pml4
+
+    # PDPT[0..3] -> four page directories
+    mov  $pdir, %eax
+    or   $3, %eax
+    xor  %ecx, %ecx
+1:  mov  %eax, pdpt(,%ecx,8)
+    add  $4096, %eax
+    inc  %ecx
+    cmp  $4, %ecx
+    jne  1b
+
+    # 2048 x 2 MiB pages = 4 GiB identity map
+    xor  %ecx, %ecx
+2:  mov  %ecx, %eax
+    shl  $21, %eax
+    or   $0x83, %eax             # present | writable | huge
+    mov  %eax, pdir(,%ecx,8)
+    movl $0, pdir+4(,%ecx,8)
+    inc  %ecx
+    cmp  $2048, %ecx
+    jne  2b
+
+    # CR4: PAE | OSFXSR | OSXMMEXCPT (enables SSE)
+    mov  %cr4, %eax
+    or   $((1<<5) | (1<<9) | (1<<10)), %eax
+    mov  %eax, %cr4
+
+    mov  $pml4, %eax
+    mov  %eax, %cr3
+
+    # EFER.LME
+    mov  $0xC0000080, %ecx
+    rdmsr
+    or   $(1<<8), %eax
+    wrmsr
+
+    # CR0: paging on, FPU monitoring on, emulation off
+    mov  %cr0, %eax
+    and  $~(1<<2), %eax
+    or   $((1<<31) | (1<<1)), %eax
+    mov  %eax, %cr0
+
+    lgdt gdt64_ptr
+    ljmp $0x08, $long_mode
+
+.code64
+long_mode:
+    mov  $0x10, %ax
+    mov  %ax, %ds
+    mov  %ax, %es
+    mov  %ax, %ss
+    mov  %ax, %fs
+    mov  %ax, %gs
+    mov  $stack_top, %rsp
+    fninit
+    call kmain
+3:  cli
+    hlt
+    jmp  3b
+
+# ---- Interrupt stubs (save caller-saved registers, call C, iretq) ----
+.macro IRQ_STUB name, handler
+.global \name
+\name:
+    push %rax
+    push %rcx
+    push %rdx
+    push %rsi
+    push %rdi
+    push %r8
+    push %r9
+    push %r10
+    push %r11
+    cld
+    call \handler
+    pop  %r11
+    pop  %r10
+    pop  %r9
+    pop  %r8
+    pop  %rdi
+    pop  %rsi
+    pop  %rdx
+    pop  %rcx
+    pop  %rax
+    iretq
+.endm
+
+IRQ_STUB isr_timer,    irq_timer
+IRQ_STUB isr_keyboard, irq_keyboard
+IRQ_STUB isr_spurious, irq_spurious
+
+.global isr_fault
+isr_fault:
+    cli
+    call fault_handler
+4:  hlt
+    jmp 4b
+
+.section .note.GNU-stack,"",@progbits

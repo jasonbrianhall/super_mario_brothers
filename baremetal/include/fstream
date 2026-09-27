@@ -1,0 +1,32 @@
+#pragma once
+// std::ofstream / std::ifstream backed by the in-RAM memfs.
+#include "string"
+#include "iostream"
+#include "../memfs.hpp"
+namespace std {
+struct ios { enum openmode { binary = 1, in = 2, out = 4 }; };
+class ofstream {
+    memfs::File* f_; bool ok_;
+public:
+    ofstream(const string& name, int = 0) : f_(memfs::open(name.c_str(), true)), ok_(f_ != nullptr) { if (f_) f_->size = 0; }
+    bool is_open() const { return f_ != nullptr; }
+    ofstream& write(const char* d, size_t n) {
+        if (!f_ || f_->size + n > memfs::MAX_SIZE) { ok_ = false; return *this; }
+        memcpy(f_->data + f_->size, d, n); f_->size += n; return *this;
+    }
+    void close() {}
+    bool good() const { return ok_; }
+};
+class ifstream {
+    memfs::File* f_; size_t pos_; bool ok_;
+public:
+    ifstream(const string& name, int = 0) : f_(memfs::open(name.c_str(), false)), pos_(0), ok_(f_ != nullptr) {}
+    bool is_open() const { return f_ != nullptr; }
+    ifstream& read(char* d, size_t n) {
+        if (!f_ || pos_ + n > f_->size) { ok_ = false; return *this; }
+        memcpy(d, f_->data + pos_, n); pos_ += n; return *this;
+    }
+    void close() {}
+    bool good() const { return ok_; }
+};
+}

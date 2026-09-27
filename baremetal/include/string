@@ -1,0 +1,44 @@
+#pragma once
+// Minimal std::string: just enough for the engine's save-state code.
+#include "cstddef"
+#include "cstring"
+#include "cstdlib"
+namespace std {
+class string {
+    char* p_; size_t n_;
+    void set(const char* s, size_t n) {
+        char* q = (char*)malloc(n + 1); memcpy(q, s, n); q[n] = 0;
+        free(p_); p_ = q; n_ = n;
+    }
+public:
+    static const size_t npos = (size_t)-1;
+    string() : p_(nullptr), n_(0) { set("", 0); }
+    string(const char* s) : p_(nullptr), n_(0) { set(s, strlen(s)); }
+    string(const char* s, size_t n) : p_(nullptr), n_(0) { set(s, n); }
+    string(const string& o) : p_(nullptr), n_(0) { set(o.p_, o.n_); }
+    ~string() { free(p_); }
+    string& operator=(const string& o) { if (this != &o) set(o.p_, o.n_); return *this; }
+    string& operator=(const char* s) { set(s, strlen(s)); return *this; }
+    const char* c_str() const { return p_; }
+    size_t length() const { return n_; }
+    size_t size() const { return n_; }
+    bool empty() const { return n_ == 0; }
+    char operator[](size_t i) const { return p_[i]; }
+    size_t find_last_of(char c) const { for (size_t i = n_; i--;) if (p_[i] == c) return i; return npos; }
+    size_t find(char c) const { for (size_t i = 0; i < n_; i++) if (p_[i] == c) return i; return npos; }
+    string substr(size_t pos, size_t len = npos) const {
+        if (pos > n_) pos = n_;
+        if (len > n_ - pos) len = n_ - pos;
+        return string(p_ + pos, len);
+    }
+    string operator+(const string& o) const {
+        string r; char* q = (char*)malloc(n_ + o.n_ + 1);
+        memcpy(q, p_, n_); memcpy(q + n_, o.p_, o.n_); q[n_ + o.n_] = 0;
+        free(r.p_); r.p_ = q; r.n_ = n_ + o.n_; return r;
+    }
+    string operator+(const char* s) const { return *this + string(s); }
+    bool operator==(const string& o) const { return n_ == o.n_ && memcmp(p_, o.p_, n_) == 0; }
+    bool operator!=(const string& o) const { return !(*this == o); }
+};
+inline string operator+(const char* a, const string& b) { return string(a) + b; }
+}
