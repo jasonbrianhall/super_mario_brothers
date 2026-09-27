@@ -93,6 +93,42 @@ static void text(int x, int y, const char* s, int scale, uint32_t c) {
 // Scale the 256x240 NES frame by an integer factor, centered.
 static uint32_t frame[256 * 240];
 
+// F1 help: a dimmed panel listing the key bindings, drawn into the NES frame.
+static const char* const help_lines[] = {
+    "        KEY BINDINGS",
+    "",
+    "         MARIO     LUIGI",
+    "MOVE     ARROWS    W A S D",
+    "A / B    X / Z     G / F",
+    "SELECT   [         Q",
+    "START    ]         E",
+    "",
+    "F5-F8        SAVE STATE",
+    "SHIFT+F5-F8  LOAD STATE",
+    "P            PAUSE",
+    "F12          RESET",
+    "F1 / ESC     CLOSE HELP",
+};
+static void help_overlay() {
+    const int n = sizeof(help_lines) / sizeof(help_lines[0]);
+    const int x0 = 8, y0 = (240 - n * 16) / 2 - 4, w = 240, h = n * 16 + 8;
+    for (int y = y0; y < y0 + h; y++)
+        for (int x = x0; x < x0 + w; x++) {
+            uint32_t p = frame[y * 256 + x];                   // darken to ~25%
+            frame[y * 256 + x] = (p >> 2) & 0x3F3F3F;
+        }
+    for (int l = 0; l < n; l++)
+        for (int i = 0; help_lines[l][i]; i++) {
+            char ch = help_lines[l][i];
+            const unsigned char* g = font8x16[(ch < 32 || ch > 126 ? '?' : ch) - 32];
+            uint32_t color = l == 0 ? 0xFFD040 : 0xFFFFFF;
+            for (int r = 0; r < 16; r++)
+                for (int b = 0; b < 8; b++)
+                    if (g[r] & (0x80 >> b))
+                        frame[(y0 + 4 + l * 16 + r) * 256 + x0 + 8 + i * 8 + b] = color;
+        }
+}
+
 // Draw a centered status banner into the NES frame (below the HUD).
 static void banner(const char* s) {
     int w = (int)strlen(s) * 8 + 8, x0 = (256 - w) / 2, y0 = 40;
@@ -163,7 +199,7 @@ static void interrupts_init() {
 // ---------------------------------------------------------------- input
 static bool shift_l, shift_r;
 static int pending_save = -1, pending_load = -1;
-static bool pending_reset, paused;
+static bool pending_reset, paused, help;
 
 // Two NES controllers. Player 1 is on the arrows, player 2 on WASD; Luigi
 // (player 2 in a 2-player game) reads controller 2, as on the real NES.
@@ -203,6 +239,8 @@ static void key_event(bool ext, uint8_t code, bool down) {
         break;
     case 0x58: if (down) pending_reset = true; break;          // F12
     case 0x19: if (down) paused = !paused; break;              // P
+    case 0x3B: if (down) help = !help; break;                  // F1
+    case 0x01: if (down) help = false; break;                  // Esc
     }
 }
 
@@ -285,7 +323,7 @@ extern "C" void kmain() {
 
     interrupts_init();
     printf("Running. P1: arrows, X/Z, [ select, ] start. P2: WASD, G/F, Q select, E start.\n"
-           "F5-F8 save, Shift+F5-F8 load, F12 reset, P pause\n");
+           "F1 help, F5-F8 save, Shift+F5-F8 load, F12 reset, P pause\n");
 
     char msg[32] = {0};
     int msg_frames = 0;
@@ -318,7 +356,7 @@ extern "C" void kmain() {
             pending_save = pending_load = -1;
         }
 
-        if (!paused) {
+        if (!paused && !help) {
             engine->update();
             if (Configuration::audioEnabled) {
                 static uint8_t samples[1024];
@@ -329,7 +367,8 @@ extern "C" void kmain() {
             }
         }
         engine->render(frame);
-        if (paused) banner("PAUSED");
+        if (help) help_overlay();
+        else if (paused) banner("PAUSED");
         else if (msg_frames > 0) { banner(msg); msg_frames--; }
         present();
     }

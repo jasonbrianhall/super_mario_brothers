@@ -11,12 +11,20 @@ It is loaded at boot as a module and is never compiled in.
 
 ```
 sudo apt install build-essential qemu-system-x86 grub-pc-bin grub-common xorriso mtools
+# Fedora: sudo dnf install gcc-c++ qemu-system-x86 grub2-tools grub2-tools-extra grub2-pc-modules xorriso mtools
 cd baremetal
 make
 make run ROM=~/nes/smb.nes          # QEMU/KVM, direct kernel boot
 make iso ROM=~/nes/smb.nes          # bootable smb.iso (GRUB)
 make run-iso ROM=~/nes/smb.nes
+make floppy ROM=~/nes/smb.nes       # 1.44 MB boot floppy (smb-floppy.img), ~19% full
+make run-floppy ROM=~/nes/smb.nes
 ```
+
+The floppy image holds GRUB, the kernel, the ROM and `grub.cfg` in GRUB's
+compressed core image, with no filesystem. Write it with
+`dd if=smb-floppy.img of=/dev/fdX`, or use it with a USB floppy drive or
+emulator that boots as drive A:.
 
 ### Sound
 
@@ -61,6 +69,7 @@ share one keyboard, and either set of keys works on any PS/2 or USB keyboard.
 
 | Key | Action |
 |---|---|
+| F1 | Show/hide key bindings (Esc also closes) |
 | F5-F8 | Save state to slot 1-4 (RAM, lost on reboot) |
 | Shift+F5-F8 | Load state |
 | P | Pause |
