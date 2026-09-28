@@ -16,7 +16,15 @@ GCCINC   := $(shell $(CXX) -print-file-name=include)
 # Fedora names the GRUB tools grub2-*; Debian/Ubuntu use grub-*.
 GRUB_MKIMAGE  ?= $(shell command -v grub2-mkimage || command -v grub-mkimage)
 GRUB_MKRESCUE ?= $(shell command -v grub2-mkrescue || command -v grub-mkrescue)
-COMMON   := -m64 -ffreestanding -fno-pic -fno-pie -mno-red-zone -mcmodel=kernel \
+# PIE=1 builds the position-independent kernel that smb.efi embeds.
+ifeq ($(PIE),1)
+CODEGEN  := -fpie
+BOOTDEFS := -DEFI
+else
+CODEGEN  := -fno-pic -fno-pie -mcmodel=kernel
+BOOTDEFS :=
+endif
+COMMON   := -m64 -ffreestanding $(CODEGEN) -mno-red-zone \
             -fno-stack-protector -fno-exceptions -fno-rtti -fno-threadsafe-statics \
             -fno-asynchronous-unwind-tables -O2 -nostdinc -isystem $(GCCINC) \
             -Iinclude -I$(MIRROR) -Wno-write-strings -Wno-narrowing
@@ -56,7 +64,7 @@ $(BUILD)/core/%.o: $(MIRROR)/.stamp
 
 $(BUILD)/boot.o: boot.S
 	@mkdir -p $(BUILD)
-	$(CXX) -m64 -c $< -o $@
+	$(CXX) -m64 $(BOOTDEFS) -c $< -o $@
 
 $(BUILD)/irq.o: irq.cpp hw.hpp $(MIRROR)/.stamp
 	$(CXX) $(IRQFLAGS) -c $< -o $@
@@ -69,6 +77,47 @@ $(BUILD)/%.o: %.cpp $(wildcard *.hpp include/*) font.h $(MIRROR)/.stamp
 smb.elf: $(OBJS) linker.ld
 	ld $(LDFLAGS) $(OBJS) $(shell $(CXX) -print-libgcc-file-name) -o $(BUILD)/smb64.elf
 	objcopy -O elf32-i386 $(BUILD)/smb64.elf $@
+
+# ---------------------------------------------------------------- UEFI
+# smb.efi = a small UEFI loader (gnu-efi) with the kernel embedded. It loads
+# smb.nes from its own directory. gnu-efi's files live in different places on
+# different distros, so find them.
+EFI_INC  ?= $(firstword $(wildcard /usr/include/efi))
+EFI_CRT0 ?= $(firstword $(shell find /usr/lib /usr/lib64 \( -name 'crt0-efi-x86_64.o' -o -path '*gnuefi*x64*crt0.o' \) 2>/dev/null))
+EFI_LDS  ?= $(firstword $(shell find /usr/lib /usr/lib64 \( -name 'elf_x86_64_efi.lds' -o -name 'elf_x64_efi.lds' \) 2>/dev/null))
+EFI_LIBS ?= $(shell find /usr/lib /usr/lib64 \( -name libgnuefi.a -o -name libefi.a \) 2>/dev/null | sort -u)
+EFI_BUILD := $(BUILD)/efi
+EFI_CFLAGS := -I$(EFI_INC) -I$(EFI_INC)/x86_64 -I$(EFI_BUILD) -fpic -ffreestanding -fno-stack-protector \
+              -fno-stack-check -fshort-wchar -mno-red-zone -maccumulate-outgoing-args -O2 -Wall
+
+efi: smb.efi
+
+# The kernel again, position-independent, built in its own directory.
+$(EFI_BUILD)/kernel.elf: FORCE
+	$(MAKE) --no-print-directory PIE=1 BUILD=$(EFI_BUILD)/k $(EFI_BUILD)/k/kernel-pie.elf
+	cp $(EFI_BUILD)/k/kernel-pie.elf $@
+FORCE:
+
+$(BUILD)/kernel-pie.elf: $(OBJS) efi/kernel.ld
+	ld -nostdlib -pie --no-dynamic-linker -z notext -z max-page-size=0x1000 --no-warn-rwx-segments \
+	   -T efi/kernel.ld $(OBJS) $(shell $(CXX) -print-libgcc-file-name) -o $@
+
+$(EFI_BUILD)/kernel.bin $(EFI_BUILD)/kernel_layout.h: $(EFI_BUILD)/kernel.elf
+	objcopy -O binary $< $(EFI_BUILD)/kernel.bin
+	@nm $< | awk '/ __kernel_end$$/ {print "#define KERNEL_MEM_SIZE 0x" $$1} \
+	              / efi_entry64$$/  {print "#define KERNEL_ENTRY 0x" $$1} \
+	              / __rela_start$$/ {print "#define KERNEL_RELA_START 0x" $$1} \
+	              / __rela_end$$/   {print "#define KERNEL_RELA_END 0x" $$1}' > $(EFI_BUILD)/kernel_layout.h
+	@test $$(grep -c define $(EFI_BUILD)/kernel_layout.h) = 4 || { echo "kernel layout symbols missing"; exit 1; }
+
+smb.efi: efi/loader.c efi/image.S $(EFI_BUILD)/kernel.bin $(EFI_BUILD)/kernel_layout.h
+	@test -n "$(EFI_CRT0)" -a -n "$(EFI_LDS)" || { echo "gnu-efi not found (Debian: gnu-efi, Fedora: gnu-efi-devel)"; exit 1; }
+	gcc $(EFI_CFLAGS) -c efi/loader.c -o $(EFI_BUILD)/loader.o
+	gcc -c -DKERNEL_BIN='"$(EFI_BUILD)/kernel.bin"' efi/image.S -o $(EFI_BUILD)/image.o
+	ld -nostdlib -znocombreloc -shared -Bsymbolic -T $(EFI_LDS) $(EFI_CRT0) \
+	   $(EFI_BUILD)/loader.o $(EFI_BUILD)/image.o $(EFI_LIBS) $(EFI_LIBS) -o $(EFI_BUILD)/smb.so
+	objcopy -j .text -j .sdata -j .data -j .rodata -j .dynamic -j .dynsym -j .rel -j .rela \
+	        -j '.rel.*' -j '.rela.*' -j .reloc --target efi-app-x86_64 --subsystem=10 $(EFI_BUILD)/smb.so $@
 
 iso: smb.iso
 smb.iso: smb.elf grub.cfg $(ROM)
@@ -109,10 +158,19 @@ run: smb.elf
 run-iso: smb.iso
 	$(QEMU) -cdrom smb.iso
 
+# Boot smb.efi under UEFI firmware (OVMF) from a folder QEMU presents as a FAT disk.
+OVMF ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd \
+          /usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/qemu/ovmf-x86_64.bin))
+run-efi: smb.efi
+	@rm -rf $(BUILD)/esp && mkdir -p $(BUILD)/esp/EFI/BOOT
+	cp smb.efi $(BUILD)/esp/EFI/BOOT/BOOTX64.EFI
+	cp "$(ROM)" $(BUILD)/esp/EFI/BOOT/smb.nes
+	$(QEMU) -drive if=pflash,format=raw,readonly=on,file=$(OVMF) -drive format=raw,file=fat:rw:$(BUILD)/esp
+
 run-floppy: smb-floppy.img
 	$(QEMU) -fda smb-floppy.img -boot a
 
 clean:
-	rm -rf $(BUILD) smb.elf smb.iso smb-floppy.img
+	rm -rf $(BUILD) smb.elf smb.iso smb-floppy.img smb.efi
 
-.PHONY: all iso floppy run run-iso run-floppy clean
+.PHONY: all iso floppy efi run run-iso run-floppy run-efi clean FORCE

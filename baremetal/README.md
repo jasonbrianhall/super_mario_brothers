@@ -12,6 +12,7 @@ It is loaded at boot as a module and is never compiled in.
 ```
 sudo apt install build-essential qemu-system-x86 grub-pc-bin grub-common xorriso mtools
 # Fedora: sudo dnf install gcc-c++ qemu-system-x86 grub2-tools grub2-tools-extra grub2-pc-modules xorriso mtools
+# For UEFI (smb.efi): Debian gnu-efi ovmf / Fedora gnu-efi-devel edk2-ovmf
 cd baremetal
 make
 make run ROM=~/nes/smb.nes          # QEMU/KVM, direct kernel boot
@@ -19,12 +20,50 @@ make iso ROM=~/nes/smb.nes          # bootable smb.iso (GRUB)
 make run-iso ROM=~/nes/smb.nes
 make floppy ROM=~/nes/smb.nes       # 1.44 MB boot floppy (smb-floppy.img), ~19% full
 make run-floppy ROM=~/nes/smb.nes
+make efi                            # smb.efi, a UEFI application
+make run-efi ROM=~/nes/smb.nes      # boots it under OVMF UEFI firmware
 ```
 
 The floppy image holds GRUB, the kernel, the ROM and `grub.cfg` in GRUB's
 compressed core image, with no filesystem. Write it with
 `dd if=smb-floppy.img of=/dev/fdX`, or use it with a USB floppy drive or
 emulator that boots as drive A:.
+
+### UEFI machines
+
+`smb.efi` is a UEFI application with the kernel embedded; it loads `smb.nes`
+from its own folder, takes the screen mode UEFI's graphics output is using,
+and runs full screen at whatever resolution that is. To add it to Fedora's
+GRUB menu, put both files on the EFI system partition:
+
+```
+sudo mkdir -p /boot/efi/EFI/smb
+sudo cp smb.efi smb.nes /boot/efi/EFI/smb/
+```
+
+then add this to `/etc/grub.d/40_custom` and run
+`sudo grub2-mkconfig -o /boot/grub2/grub.cfg`:
+
+```
+menuentry "Super Mario Bros. (bare metal)" {
+    search --no-floppy --set=root --file /EFI/smb/smb.efi
+    chainloader /EFI/smb/smb.efi
+}
+```
+
+Boot options go after the path (`chainloader /EFI/smb/smb.efi audio=ac97`).
+With Secure Boot on, the firmware only runs signed binaries: either turn
+Secure Boot off, or sign `smb.efi` with your own Machine Owner Key (see below).
+
+**Signing for Secure Boot** (Fedora: `sudo dnf install sbsigntools mokutil openssl`):
+
+```
+openssl req -new -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=SMB bare metal/" \
+        -keyout MOK.key -out MOK.crt
+openssl x509 -in MOK.crt -outform DER -out MOK.cer
+sudo mokutil --import MOK.cer            # set a one-time password; enroll it in MokManager on reboot
+sbsign --key MOK.key --cert MOK.crt --output smb.efi smb.efi
+```
 
 ### Sound
 
@@ -53,8 +92,7 @@ Add these after `multiboot /boot/smb.elf` in `grub.cfg`, or via `ARGS=` with
 | `usb=off` | Leave the USB controller to the BIOS |
 | `debug` | Once-a-second heartbeat on the serial port |
 
-The ISO can be written to a USB stick with `dd` and booted on a BIOS
-(legacy/CSM) PC.
+The ISO and floppy boot on BIOS (legacy/CSM) PCs; `smb.efi` covers UEFI.
 
 ## Controls
 
@@ -77,7 +115,8 @@ share one keyboard, and either set of keys works on any PS/2 or USB keyboard.
 
 ## How it's put together
 
-- `boot.S`: Multiboot header, long-mode switch, identity-mapped 4 GiB, interrupt stubs
+- `boot.S`: Multiboot header, long-mode switch, identity-mapped 4 GiB, interrupt stubs; UEFI entry point
+- `efi/loader.c`: the UEFI loader in `smb.efi`: reads the ROM, sets up graphics, relocates the embedded kernel, exits boot services and passes Multiboot-style info
 - `kernel.cpp`: framebuffer (GRUB's, or QEMU's VBE adapter), 60 Hz PIT timer, PS/2 keyboard, main loop
 - `usb.cpp`: polled xHCI driver: BIOS handoff, enumeration, HID boot-protocol keyboards, hot-plug
 - `runtime.cpp`, `include/`: memcpy/printf/malloc, a minimal `std::string`/`iostream`/`fstream` (RAM-backed, so save states work unchanged)

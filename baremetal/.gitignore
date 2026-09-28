@@ -1,0 +1,6 @@
+build/
+smb.elf
+smb.iso
+smb-floppy.img
+smb.efi
+*.nes

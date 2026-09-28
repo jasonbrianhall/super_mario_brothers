@@ -395,7 +395,7 @@ static bool init_controller(const PciDevice& d) {
     uint32_t bar = pci_read(d, 0x10);
     uint64_t base = bar & 0xFFFFFFF0;
     if ((bar & 0x6) == 0x4) base |= (uint64_t)pci_read(d, 0x14) << 32;
-    if (!base || base >= 0x100000000ull) { printf("USB: xHCI registers above 4 GiB\n"); return false; }
+    if (!base || base >= phys_limit) { printf("USB: xHCI registers above 4 GiB\n"); return false; }
     pci_write(d, 0x04, pci_read(d, 0x04) | 0x06);      // memory + bus master
 
     cap = (volatile uint8_t*)(uintptr_t)base;

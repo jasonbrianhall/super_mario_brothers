@@ -46,6 +46,8 @@ struct __attribute__((packed)) MultibootModule {
     uint32_t mod_start, mod_end, string, reserved;
 };
 extern "C" uint32_t mb_magic, mb_info;
+extern "C" uint64_t phys_limit;
+uint64_t phys_limit = 0x100000000ull;
 
 // ---------------------------------------------------------------- video
 static volatile uint32_t* fb;
@@ -65,7 +67,7 @@ static bool bga_init(uint32_t w, uint32_t h) {
 }
 
 static bool video_init(const MultibootInfo* mbi) {
-    if ((mbi->flags & (1 << 12)) && mbi->fb_type == 1 && mbi->fb_bpp == 32 && mbi->fb_addr < 0x100000000ull) {
+    if ((mbi->flags & (1 << 12)) && mbi->fb_type == 1 && mbi->fb_bpp == 32 && mbi->fb_addr < phys_limit) {
         fb = (volatile uint32_t*)(uintptr_t)mbi->fb_addr;
         fb_w = mbi->fb_width; fb_h = mbi->fb_height; fb_pitch = mbi->fb_pitch / 4;
         printf("Using bootloader framebuffer %ux%u\n", fb_w, fb_h);

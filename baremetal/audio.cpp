@@ -218,7 +218,7 @@ static bool hda_init() {
     uint32_t bar = pci_read(d, 0x10);
     uint64_t base = bar & 0xFFFFFFF0;
     if ((bar & 0x6) == 0x4) base |= (uint64_t)pci_read(d, 0x14) << 32;
-    if (base == 0 || base >= 0x100000000ull) { printf("HDA: BAR out of reach\n"); return false; }
+    if (base == 0 || base >= phys_limit) { printf("HDA: BAR out of reach\n"); return false; }
     hda = (volatile uint8_t*)(uintptr_t)base;
     pci_write(d, 0x04, pci_read(d, 0x04) | 0x06);    // memory + bus master
 

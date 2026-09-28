@@ -1,6 +1,7 @@
 # Multiboot entry: switch from 32-bit protected mode to 64-bit long mode,
 # identity-map the first 4 GiB with 2 MiB pages, then call kmain().
 
+#ifndef EFI
 .set MB_MAGIC,  0x1BADB002
 .set MB_FLAGS,  (1<<0) | (1<<1) | (1<<2)   # page-align modules, memory info, video mode
 .set MB_CHECK,  -(MB_MAGIC + MB_FLAGS)
@@ -12,11 +13,15 @@
     .long 0                      # mode_type: 0 = linear graphics
     .long 1024, 768, 32          # preferred width, height, depth
 
+#endif
+
 .section .bss
 .align 4096
+#ifndef EFI
 pml4:   .skip 4096
 pdpt:   .skip 4096
 pdir:   .skip 4096 * 4
+#endif
 stack_bottom:
         .skip 65536
 .global stack_top
@@ -37,6 +42,7 @@ gdt64_ptr:
     .quad gdt64
 
 .section .text
+#ifndef EFI
 .code32
 .global _start
 _start:
@@ -117,6 +123,37 @@ long_mode:
 3:  cli
     hlt
     jmp  3b
+#else
+# UEFI build: smb.efi has already left boot services, copied this kernel
+# somewhere below 4 GiB and applied its relocations. We arrive in long mode on
+# the firmware's identity-mapped page tables (which cover every RAM and MMIO
+# region, including a framebuffer above 4 GiB), so we keep them and only
+# switch to our own GDT and stack. %rdi = Multiboot-style info block.
+.code64
+.global efi_entry64
+efi_entry64:
+    cli
+    lea  stack_top(%rip), %rsp
+    movl $0x2BADB002, mb_magic(%rip)
+    movl %edi, mb_info(%rip)
+    movq $-1, phys_limit(%rip)
+    lgdt gdt64_ptr(%rip)
+    pushq $0x08
+    lea  1f(%rip), %rax
+    pushq %rax
+    lretq
+1:  mov  $0x10, %ax
+    mov  %ax, %ds
+    mov  %ax, %es
+    mov  %ax, %ss
+    mov  %ax, %fs
+    mov  %ax, %gs
+    fninit
+    call kmain
+3:  cli
+    hlt
+    jmp  3b
+#endif
 
 # ---- Interrupt stubs (save caller-saved registers, call C, iretq) ----
 .macro IRQ_STUB name, handler

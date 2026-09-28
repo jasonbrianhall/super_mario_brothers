@@ -10,3 +10,7 @@ static inline uint32_t inl(uint16_t p) { uint32_t v; __asm__ volatile("inl %1,%0
 
 extern "C" void serial_putc(char c);
 extern "C" void serial_puts(const char* s);
+
+// Highest physical address we can touch: 4 GiB with our own page tables
+// (Multiboot boot), everything when running on the firmware's (UEFI boot).
+extern "C" uint64_t phys_limit;
