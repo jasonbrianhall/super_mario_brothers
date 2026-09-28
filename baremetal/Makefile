@@ -159,13 +159,18 @@ run-iso: smb.iso
 	$(QEMU) -cdrom smb.iso
 
 # Boot smb.efi under UEFI firmware (OVMF) from a folder QEMU presents as a FAT disk.
+# OVMF needs its code image plus a writable copy of the matching variable store.
 OVMF ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd \
           /usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/edk2/x64/OVMF_CODE.4m.fd /usr/share/qemu/ovmf-x86_64.bin))
+OVMF_VARS ?= $(firstword $(wildcard $(subst CODE,VARS,$(OVMF))))
 run-efi: smb.efi
+	@test -n "$(OVMF)" -a -n "$(OVMF_VARS)" || { echo "OVMF firmware not found (Debian: ovmf, Fedora: edk2-ovmf); set OVMF= and OVMF_VARS="; exit 1; }
 	@rm -rf $(BUILD)/esp && mkdir -p $(BUILD)/esp/EFI/BOOT
 	cp smb.efi $(BUILD)/esp/EFI/BOOT/BOOTX64.EFI
 	cp "$(ROM)" $(BUILD)/esp/EFI/BOOT/smb.nes
-	$(QEMU) -drive if=pflash,format=raw,readonly=on,file=$(OVMF) -drive format=raw,file=fat:rw:$(BUILD)/esp
+	cp $(OVMF_VARS) $(BUILD)/ovmf_vars.fd
+	$(QEMU) -drive if=pflash,format=raw,readonly=on,file=$(OVMF) \
+	        -drive if=pflash,format=raw,file=$(BUILD)/ovmf_vars.fd -drive format=raw,file=fat:rw:$(BUILD)/esp
 
 run-floppy: smb-floppy.img
 	$(QEMU) -fda smb-floppy.img -boot a
