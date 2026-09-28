@@ -4,18 +4,30 @@
 #   make run ROM=path/to/smb.nes boot it in QEMU/KVM
 #   make iso ROM=path/to/smb.nes build a bootable GRUB ISO (smb.iso)
 #
+# ARCH=x86_64 (default) builds the 64-bit kernel, with UEFI support (make efi).
+# ARCH=i586 builds a 32-bit kernel for a Pentium or later; its outputs are
+# named smb-i586.elf, smb-i586.iso and smb-i586-floppy.img. CPU=pentium-mmx
+# tunes it for a Pentium MMX. It needs a 32-bit toolchain (g++-multilib).
+#
 # The ROM is never compiled in. It's loaded at boot as a Multiboot module.
 
+ARCH     ?= x86_64
 CXX      ?= g++
 ROM      ?= smb.nes
 SRC      := ../source
-BUILD    := build
+BUILD    := build/$(ARCH)
 MIRROR   := $(BUILD)/src
 
-GCCINC   := $(shell $(CXX) -print-file-name=include)
 # Fedora names the GRUB tools grub2-*; Debian/Ubuntu use grub-*.
 GRUB_MKIMAGE  ?= $(shell command -v grub2-mkimage || command -v grub-mkimage)
 GRUB_MKRESCUE ?= $(shell command -v grub2-mkrescue || command -v grub-mkrescue)
+GRUB_I386     ?= $(firstword $(wildcard /usr/lib/grub/i386-pc /usr/lib/grub2/i386-pc))
+
+ifeq ($(ARCH),x86_64)
+MFLAG    := -m64
+SUFFIX   :=
+GFXMODE  := 1024x768x32
+BOOT_S   := boot.S
 # PIE=1 builds the position-independent kernel that smb.efi embeds.
 ifeq ($(PIE),1)
 CODEGEN  := -fpie
@@ -24,13 +36,37 @@ else
 CODEGEN  := -fno-pic -fno-pie -mcmodel=kernel
 BOOTDEFS :=
 endif
-COMMON   := -m64 -ffreestanding $(CODEGEN) -mno-red-zone \
+ARCHFLAGS := $(CODEGEN) -mno-red-zone
+FPFLAGS  := -msse2
+LDEMU    :=
+else ifeq ($(ARCH),i586)
+CPU      ?= pentium
+MFLAG    := -m32
+SUFFIX   := -i586
+GFXMODE  := 640x480x32
+BOOT_S   := boot32.S
+BOOTDEFS := -march=$(CPU)
+# No SSE on a Pentium: floats go through the x87 FPU.
+ARCHFLAGS := -fno-pic -fno-pie -march=$(CPU) -mtune=$(CPU)
+FPFLAGS  := -mfpmath=387 -mno-sse
+LDEMU    := -m elf_i386
+else
+$(error ARCH must be x86_64 or i586)
+endif
+
+GCCINC   := $(shell $(CXX) $(MFLAG) -print-file-name=include)
+LIBGCC   := $(shell $(CXX) $(MFLAG) -print-libgcc-file-name)
+COMMON   := $(MFLAG) -ffreestanding $(ARCHFLAGS) \
             -fno-stack-protector -fno-exceptions -fno-rtti -fno-threadsafe-statics \
             -fno-asynchronous-unwind-tables -O2 -nostdinc -isystem $(GCCINC) \
             -Iinclude -I$(MIRROR) -Wno-write-strings -Wno-narrowing
-CXXFLAGS := $(COMMON) -std=gnu++17 -msse2
+CXXFLAGS := $(COMMON) -std=gnu++17 $(FPFLAGS)
 IRQFLAGS := $(COMMON) -std=gnu++17 -mgeneral-regs-only
-LDFLAGS  := -nostdlib -static -no-pie -T linker.ld -z max-page-size=0x1000 --no-warn-rwx-segments
+LDFLAGS  := $(LDEMU) -nostdlib -static -no-pie -T linker.ld -z max-page-size=0x1000 --no-warn-rwx-segments
+
+KERNEL   := smb$(SUFFIX).elf
+ISO      := smb$(SUFFIX).iso
+FLOPPY   := smb$(SUFFIX)-floppy.img
 
 # Engine sources taken unchanged from ../source
 CORE := SMB/SMB.cpp SMB/SMBData.cpp SMB/SMBEngine.cpp Emulation/PPU.cpp Emulation/MemoryAccess.cpp \
@@ -46,7 +82,7 @@ OBJS := $(BUILD)/boot.o $(BUILD)/kernel.o $(BUILD)/runtime.o $(BUILD)/irq.o $(BU
         $(patsubst %.cpp,$(BUILD)/core/%.o,$(CORE)) \
         $(BUILD)/core/Emulation/Controller.o
 
-all: smb.elf
+all: $(KERNEL)
 
 # APU.cpp relies on -fpermissive (as in the main build) and wraps its
 # allocations in try/catch; with exceptions off, turn those into plain blocks.
@@ -62,9 +98,9 @@ $(BUILD)/core/%.o: $(MIRROR)/.stamp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $(MIRROR)/$*.cpp -o $@
 
-$(BUILD)/boot.o: boot.S
+$(BUILD)/boot.o: $(BOOT_S)
 	@mkdir -p $(BUILD)
-	$(CXX) -m64 $(BOOTDEFS) -c $< -o $@
+	$(CXX) $(MFLAG) $(BOOTDEFS) -c $< -o $@
 
 $(BUILD)/irq.o: irq.cpp hw.hpp $(MIRROR)/.stamp
 	$(CXX) $(IRQFLAGS) -c $< -o $@
@@ -72,35 +108,42 @@ $(BUILD)/irq.o: irq.cpp hw.hpp $(MIRROR)/.stamp
 $(BUILD)/%.o: %.cpp $(wildcard *.hpp include/*) font.h $(MIRROR)/.stamp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
+ifeq ($(ARCH),x86_64)
 # Link as ELF64, then wrap as ELF32 so QEMU's -kernel and GRUB's
 # multiboot loader both accept it. The 32-bit entry stub switches to long mode.
-smb.elf: $(OBJS) linker.ld
-	ld $(LDFLAGS) $(OBJS) $(shell $(CXX) -print-libgcc-file-name) -o $(BUILD)/smb64.elf
+$(KERNEL): $(OBJS) linker.ld
+	ld $(LDFLAGS) $(OBJS) $(LIBGCC) -o $(BUILD)/smb64.elf
 	objcopy -O elf32-i386 $(BUILD)/smb64.elf $@
+else
+# Already ELF32; the entry stub stays in 32-bit protected mode.
+$(KERNEL): $(OBJS) linker.ld
+	ld $(LDFLAGS) $(OBJS) $(LIBGCC) -o $@
+endif
 
 # ---------------------------------------------------------------- UEFI
 # smb.efi = a small UEFI loader (gnu-efi) with the kernel embedded. It loads
 # smb.nes from its own directory. gnu-efi's files live in different places on
-# different distros, so find them.
+# different distros, so find them. x86_64 only.
 EFI_INC  ?= $(firstword $(wildcard /usr/include/efi))
 EFI_CRT0 ?= $(firstword $(shell find /usr/lib /usr/lib64 \( -name 'crt0-efi-x86_64.o' -o -path '*gnuefi*x64*crt0.o' \) 2>/dev/null))
 EFI_LDS  ?= $(firstword $(shell find /usr/lib /usr/lib64 \( -name 'elf_x86_64_efi.lds' -o -name 'elf_x64_efi.lds' \) 2>/dev/null))
 EFI_LIBS ?= $(shell find /usr/lib /usr/lib64 \( -name libgnuefi.a -o -name libefi.a \) 2>/dev/null | sort -u)
-EFI_BUILD := $(BUILD)/efi
+EFI_BUILD := build/efi
 EFI_CFLAGS := -I$(EFI_INC) -I$(EFI_INC)/x86_64 -I$(EFI_BUILD) -fpic -ffreestanding -fno-stack-protector \
               -fno-stack-check -fshort-wchar -mno-red-zone -maccumulate-outgoing-args -O2 -Wall
 
 efi: smb.efi
 
+ifeq ($(ARCH),x86_64)
 # The kernel again, position-independent, built in its own directory.
 $(EFI_BUILD)/kernel.elf: FORCE
-	$(MAKE) --no-print-directory PIE=1 BUILD=$(EFI_BUILD)/k $(EFI_BUILD)/k/kernel-pie.elf
+	$(MAKE) --no-print-directory ARCH=x86_64 PIE=1 BUILD=$(EFI_BUILD)/k $(EFI_BUILD)/k/kernel-pie.elf
 	cp $(EFI_BUILD)/k/kernel-pie.elf $@
 FORCE:
 
 $(BUILD)/kernel-pie.elf: $(OBJS) efi/kernel.ld
 	ld -nostdlib -pie --no-dynamic-linker -z notext -z max-page-size=0x1000 --no-warn-rwx-segments \
-	   -T efi/kernel.ld $(OBJS) $(shell $(CXX) -print-libgcc-file-name) -o $@
+	   -T efi/kernel.ld $(OBJS) $(LIBGCC) -o $@
 
 $(EFI_BUILD)/kernel.bin $(EFI_BUILD)/kernel_layout.h: $(EFI_BUILD)/kernel.elf
 	objcopy -O binary $< $(EFI_BUILD)/kernel.bin
@@ -118,46 +161,63 @@ smb.efi: efi/loader.c efi/image.S $(EFI_BUILD)/kernel.bin $(EFI_BUILD)/kernel_la
 	   $(EFI_BUILD)/loader.o $(EFI_BUILD)/image.o $(EFI_LIBS) $(EFI_LIBS) -o $(EFI_BUILD)/smb.so
 	objcopy -j .text -j .sdata -j .data -j .rodata -j .dynamic -j .dynsym -j .rel -j .rela \
 	        -j '.rel.*' -j '.rela.*' -j .reloc -O efi-app-x86_64 --subsystem=10 $(EFI_BUILD)/smb.so $@
+else
+smb.efi run-efi:
+	@echo "UEFI is x86_64 only; build it without ARCH=i586"; exit 1
+.PHONY: smb.efi
+endif
 
-iso: smb.iso
-smb.iso: smb.elf grub.cfg $(ROM)
+# grub.cfg carries the x86_64 video mode; the i586 images get their own.
+iso: $(ISO)
+$(ISO): $(KERNEL) grub.cfg $(ROM)
 	@rm -rf $(BUILD)/iso && mkdir -p $(BUILD)/iso/boot/grub
-	cp smb.elf $(BUILD)/iso/boot/smb.elf
+	cp $(KERNEL) $(BUILD)/iso/boot/smb.elf
 	cp "$(ROM)" $(BUILD)/iso/boot/smb.nes
-	cp grub.cfg $(BUILD)/iso/boot/grub/grub.cfg
+	sed 's/1024x768x32/$(GFXMODE)/' grub.cfg > $(BUILD)/iso/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) -o $@ $(BUILD)/iso 2>/dev/null
 
-# Sound card for QEMU: SOUND=hda (default), SOUND=ac97 or SOUND=none.
-# ARGS adds kernel options, e.g. ARGS=debug for a once-a-second heartbeat.
-SOUND    ?= hda
+# Sound card for QEMU: SOUND=hda or ac97 (the default for each ARCH is below)
+# or none. ARGS adds kernel options, e.g. ARGS=debug for a once-a-second heartbeat.
 AUDIODEV ?= $(if $(filter Darwin,$(shell uname)),coreaudio,pa)
 QSOUND_ac97 := -audiodev $(AUDIODEV),id=snd0 -device AC97,audiodev=snd0
 QSOUND_hda  := -audiodev $(AUDIODEV),id=snd0 -device intel-hda -device hda-output,audiodev=snd0
 QSOUND_none :=
-QEMU     := qemu-system-x86_64 -enable-kvm -m 256 -serial stdio $(QSOUND_$(SOUND)) \
-            -device qemu-xhci -device usb-kbd
+QUSB_xhci   := -device qemu-xhci -device usb-kbd
+QUSB_none   :=
+ifeq ($(ARCH),x86_64)
+SOUND    ?= hda
+USB      ?= xhci
+QEMU     := qemu-system-x86_64 -enable-kvm -m 256 -serial stdio $(QSOUND_$(SOUND)) $(QUSB_$(USB))
+else
+# A period machine: Pentium CPU, 64 MB, PS/2 keyboard, no KVM.
+# USB=xhci adds a USB keyboard on an xHCI controller.
+SOUND    ?= ac97
+USB      ?= none
+QEMU     := qemu-system-i386 -cpu $(CPU) -m 64 -serial stdio $(QSOUND_$(SOUND)) $(QUSB_$(USB))
+endif
 
 # 1.44 MB boot floppy: GRUB's core image with the kernel, ROM and grub.cfg
 # packed inside it (as a compressed memdisk), behind GRUB's boot sector.
-floppy: smb-floppy.img
-smb-floppy.img: smb.elf grub.cfg $(ROM)
+floppy: $(FLOPPY)
+$(FLOPPY): $(KERNEL) grub.cfg $(ROM)
 	@rm -rf $(BUILD)/fd && mkdir -p $(BUILD)/fd/boot/grub
-	cp smb.elf $(BUILD)/fd/boot/smb.elf
+	cp $(KERNEL) $(BUILD)/fd/boot/smb.elf
 	cp "$(ROM)" $(BUILD)/fd/boot/smb.nes
-	cp grub.cfg $(BUILD)/fd/boot/grub/grub.cfg
+	sed 's/1024x768x32/$(GFXMODE)/' grub.cfg > $(BUILD)/fd/boot/grub/grub.cfg
 	tar -C $(BUILD)/fd -cf $(BUILD)/memdisk.tar boot
 	$(GRUB_MKIMAGE) -O i386-pc -o $(BUILD)/core.img -p '(memdisk)/boot/grub' \
 	    -m $(BUILD)/memdisk.tar memdisk tar normal configfile multiboot vbe video video_fb boot
-	cat /usr/lib/grub/i386-pc/boot.img $(BUILD)/core.img > $@
+	cat $(GRUB_I386)/boot.img $(BUILD)/core.img > $@
 	truncate -s 1474560 $@
 	@echo "$@: $$(( ($$(stat -c %s $(BUILD)/core.img) + 512) * 100 / 1474560 ))% of a 1.44 MB floppy used"
 
-run: smb.elf
-	$(QEMU) -kernel smb.elf -initrd "$(ROM)" -append "audio=$(SOUND) $(ARGS)"
+run: $(KERNEL)
+	$(QEMU) -kernel $(KERNEL) -initrd "$(ROM)" -append "audio=$(SOUND) $(ARGS)"
 
-run-iso: smb.iso
-	$(QEMU) -cdrom smb.iso
+run-iso: $(ISO)
+	$(QEMU) -cdrom $(ISO)
 
+ifeq ($(ARCH),x86_64)
 # Boot smb.efi under UEFI firmware (OVMF) from a folder QEMU presents as a FAT disk.
 # OVMF needs its code image plus a writable copy of the matching variable store.
 OVMF ?= $(firstword $(wildcard /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd \
@@ -171,11 +231,12 @@ run-efi: smb.efi
 	cp $(OVMF_VARS) $(BUILD)/ovmf_vars.fd
 	$(QEMU) -drive if=pflash,format=raw,readonly=on,file=$(OVMF) \
 	        -drive if=pflash,format=raw,file=$(BUILD)/ovmf_vars.fd -drive format=raw,file=fat:rw:$(BUILD)/esp
+endif
 
-run-floppy: smb-floppy.img
-	$(QEMU) -fda smb-floppy.img -boot a
+run-floppy: $(FLOPPY)
+	$(QEMU) -fda $(FLOPPY) -boot a
 
 clean:
-	rm -rf $(BUILD) smb.elf smb.iso smb-floppy.img smb.efi
+	rm -rf build smb.elf smb.iso smb-floppy.img smb.efi smb-i586.elf smb-i586.iso smb-i586-floppy.img
 
 .PHONY: all iso floppy efi run run-iso run-floppy run-efi clean FORCE

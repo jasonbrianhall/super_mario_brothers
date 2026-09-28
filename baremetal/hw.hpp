@@ -12,5 +12,6 @@ extern "C" void serial_putc(char c);
 extern "C" void serial_puts(const char* s);
 
 // Highest physical address we can touch: 4 GiB with our own page tables
-// (Multiboot boot), everything when running on the firmware's (UEFI boot).
+// (Multiboot boot), everything when running on the firmware's (UEFI boot),
+// and 4 GiB on i586 (flat 32-bit, paging off).
 extern "C" uint64_t phys_limit;

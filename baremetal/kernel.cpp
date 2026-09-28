@@ -50,6 +50,14 @@ extern "C" uint64_t phys_limit;
 uint64_t phys_limit = 0x100000000ull;
 
 // ---------------------------------------------------------------- video
+// i586 asks for 640x480 so a frame stays about 1 MB of PCI writes.
+#ifdef __x86_64__
+#define SCREEN_W 1024u
+#define SCREEN_H 768u
+#else
+#define SCREEN_W 640u
+#define SCREEN_H 480u
+#endif
 static volatile uint32_t* fb;
 static uint32_t fb_w, fb_h, fb_pitch;   // pitch in pixels
 
@@ -73,7 +81,7 @@ static bool video_init(const MultibootInfo* mbi) {
         printf("Using bootloader framebuffer %ux%u\n", fb_w, fb_h);
         return true;
     }
-    if (bga_init(1024, 768)) { printf("Using Bochs/QEMU VBE 1024x768\n"); return true; }
+    if (bga_init(SCREEN_W, SCREEN_H)) { printf("Using Bochs/QEMU VBE %ux%u\n", SCREEN_W, SCREEN_H); return true; }
     return false;
 }
 
@@ -160,15 +168,25 @@ static void present() {
 }
 
 // ---------------------------------------------------------------- interrupts
+#ifdef __x86_64__
 struct __attribute__((packed)) IdtEntry {
     uint16_t off_lo, sel; uint8_t ist, type; uint16_t off_mid; uint32_t off_hi, zero;
 };
+#else
+struct __attribute__((packed)) IdtEntry {         // 32-bit interrupt gate
+    uint16_t off_lo, sel; uint8_t zero, type; uint16_t off_hi;
+};
+#endif
 static IdtEntry idt[256];
 extern "C" void isr_timer(), isr_keyboard(), isr_spurious(), isr_fault();
 
 static void set_gate(int n, void (*h)()) {
     uintptr_t a = (uintptr_t)h;
+#ifdef __x86_64__
     idt[n] = { (uint16_t)a, 0x08, 0, 0x8E, (uint16_t)(a >> 16), (uint32_t)(a >> 32), 0 };
+#else
+    idt[n] = { (uint16_t)a, 0x08, 0, 0x8E, (uint16_t)(a >> 16) };
+#endif
 }
 
 extern volatile uint32_t ticks;
@@ -180,7 +198,7 @@ static void interrupts_init() {
     for (int i = 32; i < 256; i++) set_gate(i, isr_spurious);
     set_gate(32, isr_timer);
     set_gate(33, isr_keyboard);
-    struct __attribute__((packed)) { uint16_t lim; uint64_t base; } idtr = { sizeof(idt) - 1, (uintptr_t)idt };
+    struct __attribute__((packed)) { uint16_t lim; uintptr_t base; } idtr = { sizeof(idt) - 1, (uintptr_t)idt };
     __asm__ volatile("lidt %0" ::"m"(idtr));
 
     // Remap the PICs to vectors 32..47; unmask only timer and keyboard.
@@ -248,11 +266,11 @@ static void key_event(bool ext, uint8_t code, bool down) {
 
 // Queue a scancode from a source other than the PS/2 interrupt (USB).
 void kbd_push(uint8_t b) {
-    uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
+    uintptr_t flags;
+    __asm__ volatile("pushf; pop %0; cli" : "=r"(flags) :: "memory");
     kbd_buf[kbd_head] = b;
     kbd_head = kbd_head + 1;
-    __asm__ volatile("push %0; popfq" :: "r"(flags) : "memory", "cc");
+    __asm__ volatile("push %0; popf" :: "r"(flags) : "memory", "cc");
 }
 
 static void poll_keyboard() {
