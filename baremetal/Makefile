@@ -117,7 +117,7 @@ smb.efi: efi/loader.c efi/image.S $(EFI_BUILD)/kernel.bin $(EFI_BUILD)/kernel_la
 	ld -nostdlib -znocombreloc -shared -Bsymbolic -T $(EFI_LDS) $(EFI_CRT0) \
 	   $(EFI_BUILD)/loader.o $(EFI_BUILD)/image.o $(EFI_LIBS) $(EFI_LIBS) -o $(EFI_BUILD)/smb.so
 	objcopy -j .text -j .sdata -j .data -j .rodata -j .dynamic -j .dynsym -j .rel -j .rela \
-	        -j '.rel.*' -j '.rela.*' -j .reloc --target efi-app-x86_64 --subsystem=10 $(EFI_BUILD)/smb.so $@
+	        -j '.rel.*' -j '.rela.*' -j .reloc -O efi-app-x86_64 --subsystem=10 $(EFI_BUILD)/smb.so $@
 
 iso: smb.iso
 smb.iso: smb.elf grub.cfg $(ROM)
