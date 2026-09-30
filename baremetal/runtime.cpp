@@ -86,21 +86,49 @@ int printf(const char* f, ...) { va_list ap; va_start(ap, f); vprintf(f, ap); va
 int puts(const char* s) { serial_puts(s); serial_putc('\n'); return 0; }
 int putchar(int c) { serial_putc((char)c); return c; }
 
-// ---- heap: first-fit free list over a static arena ----
-struct Block { size_t size; Block* next; int free; };
-static uint8_t heap_area[16 << 20] __attribute__((aligned(16)));
+// ---- heap: first-fit free list ----
+// It starts on a small static arena (enough for global constructors); kmain
+// then hands it the machine's free RAM with heap_add(), so the kernel image
+// itself stays small and boots in VMs with little memory.
+struct Block { size_t size; Block* next; size_t free; size_t pad; };
+static uint8_t boot_arena[256 << 10] __attribute__((aligned(16)));
 static Block* heap_head;
+static size_t heap_total, heap_used, heap_peak;
+
+static inline bool adjacent(Block* a, Block* b) { return (uint8_t*)(a + 1) + a->size == (uint8_t*)b; }
+
+static void add_region(void* p, size_t n) {
+    uintptr_t a = ((uintptr_t)p + 15) & ~(uintptr_t)15;
+    uintptr_t e = ((uintptr_t)p + n) & ~(uintptr_t)15;
+    if (e <= a || e - a < sizeof(Block) + 4096) return;
+    Block* b = (Block*)a;
+    b->size = e - a - sizeof(Block);
+    b->free = 1;
+    Block** pp = &heap_head;                     // keep the list in address order
+    while (*pp && *pp < b) pp = &(*pp)->next;
+    b->next = *pp;
+    *pp = b;
+    heap_total += b->size;
+}
+
+void heap_add(void* p, size_t n) {
+    if (!heap_head) add_region(boot_arena, sizeof(boot_arena));
+    add_region(p, n);
+}
+size_t heap_peak_bytes(void) { return heap_peak; }
 
 void* malloc(size_t n) {
     n = (n + 15) & ~(size_t)15;
-    if (!heap_head) {
-        heap_head = (Block*)heap_area;
-        heap_head->size = sizeof(heap_area) - sizeof(Block);
-        heap_head->next = nullptr;
-        heap_head->free = 1;
-    }
+    if (!n) n = 16;
+    if (!heap_head) add_region(boot_arena, sizeof(boot_arena));
     for (Block* b = heap_head; b; b = b->next) {
-        if (!b->free || b->size < n) continue;
+        if (!b->free) continue;
+        while (b->next && b->next->free && adjacent(b, b->next)) {   // merge neighbours
+            b->size += sizeof(Block) + b->next->size;
+            heap_total += sizeof(Block);
+            b->next = b->next->next;
+        }
+        if (b->size < n) continue;
         if (b->size >= n + sizeof(Block) + 64) {
             Block* rest = (Block*)((uint8_t*)(b + 1) + n);
             rest->size = b->size - n - sizeof(Block);
@@ -108,19 +136,25 @@ void* malloc(size_t n) {
             rest->free = 1;
             b->next = rest;
             b->size = n;
+            heap_total -= sizeof(Block);
         }
         b->free = 0;
+        heap_used += b->size;
+        if (heap_used > heap_peak) heap_peak = heap_used;
         return b + 1;
     }
-    printf("malloc: out of memory (%lu bytes)\n", (unsigned long)n);
+    printf("malloc: out of memory (%lu bytes, %lu of %lu KB in use)\n",
+           (unsigned long)n, (unsigned long)(heap_used >> 10), (unsigned long)(heap_total >> 10));
     return nullptr;
 }
 void free(void* p) {
     if (!p) return;
     Block* b = (Block*)p - 1;
     b->free = 1;
-    while (b->next && b->next->free) {          // merge with following free blocks
+    heap_used -= b->size;
+    while (b->next && b->next->free && adjacent(b, b->next)) {
         b->size += sizeof(Block) + b->next->size;
+        heap_total += sizeof(Block);
         b->next = b->next->next;
     }
 }

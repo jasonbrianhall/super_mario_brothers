@@ -45,9 +45,50 @@ struct __attribute__((packed)) MultibootInfo {
 struct __attribute__((packed)) MultibootModule {
     uint32_t mod_start, mod_end, string, reserved;
 };
+struct __attribute__((packed)) MultibootMmap { uint32_t size; uint64_t addr, len; uint32_t type; };
 extern "C" uint32_t mb_magic, mb_info;
 extern "C" uint64_t phys_limit;
 uint64_t phys_limit = 0x100000000ull;
+extern "C" char __kernel_start[], __kernel_end[];
+extern "C" void heap_add(void* p, size_t n);
+extern "C" size_t heap_peak_bytes(void);
+
+// ---------------------------------------------------------------- memory
+// Give the heap every usable RAM region the boot loader reports, minus the
+// kernel image and anything below 1 MiB. Uses the Multiboot memory map (GRUB,
+// QEMU, and the UEFI loader, which translates the UEFI map), else the "upper
+// memory" size. Call it only once the ROM module and command line have been
+// copied: their memory may be handed out.
+static void heap_init(const MultibootInfo* mbi) {
+    const uint64_t k0 = (uintptr_t)__kernel_start & ~0xFFFull;
+    const uint64_t k1 = ((uintptr_t)__kernel_end + 0xFFF) & ~0xFFFull;
+    uint64_t total = 0;
+    auto add = [&](uint64_t a, uint64_t e) {
+        if (e > phys_limit) e = phys_limit;
+        if (e > (uint64_t)(uintptr_t)-1) e = (uint64_t)(uintptr_t)-1;   // i586: 32-bit pointers
+        if (a < 0x100000) a = 0x100000;
+        if (a < k1 && e > k0) {                        // skip the kernel image
+            if (a < k0) { heap_add((void*)(uintptr_t)a, (size_t)(k0 - a)); total += k0 - a; }
+            a = k1;
+        }
+        if (e > a) { heap_add((void*)(uintptr_t)a, (size_t)(e - a)); total += e - a; }
+    };
+    if (mbi->flags & (1 << 6)) {
+        static MultibootMmap map[128];               // copy first: the heap may reuse it
+        uintptr_t p = mbi->mmap_addr, end = p + mbi->mmap_length;
+        int n = 0;
+        while (p < end && n < 128) {
+            const MultibootMmap* m = (const MultibootMmap*)p;
+            map[n++] = *m;
+            p += m->size + 4;
+        }
+        for (int i = 0; i < n; i++)
+            if (map[i].type == 1) add(map[i].addr, map[i].addr + map[i].len);
+    } else if (mbi->flags & 1) {
+        add(0x100000, 0x100000 + (uint64_t)mbi->mem_upper * 1024);
+    }
+    printf("Heap: %u MB of RAM\n", (unsigned)(total >> 20));
+}
 
 // ---------------------------------------------------------------- video
 // i586 asks for 640x480 so a frame stays about 1 MB of PCI writes.
@@ -329,12 +370,21 @@ extern "C" void kmain() {
     memcpy(rom, m, size);
     printf("ROM module: %u bytes\n", size);
 
+    static char cmdbuf[512];
+    const char* cmdline = nullptr;
+    if (mbi->flags & (1 << 2)) {
+        strncpy(cmdbuf, (const char*)(uintptr_t)mbi->cmdline, sizeof(cmdbuf) - 1);
+        cmdline = cmdbuf;
+    }
+    static MultibootInfo info;
+    info = *mbi;
+    heap_init(&info);
+
     static SMBEngine* engine = new SMBEngine(rom);
     engine->reset();
     pads[0] = &engine->getController1();
     pads[1] = &engine->getController2();
 
-    const char* cmdline = (mbi->flags & (1 << 2)) ? (const char*)(uintptr_t)mbi->cmdline : nullptr;
     audio_init(cmdline);
     usb_init(cmdline);
     bool debug = false;
@@ -359,8 +409,8 @@ extern "C" void kmain() {
             frames++;
             if (ticks - last_report >= 60) {
                 last_report = ticks;
-                printf("heartbeat: ticks %u frames %u audio %s pos %u\n",
-                       ticks, frames, audio_name(), audio_play_pos());
+                printf("heartbeat: ticks %u frames %u audio %s pos %u heap peak %u KB\n",
+                       ticks, frames, audio_name(), audio_play_pos(), (unsigned)(heap_peak_bytes() >> 10));
             }
         }
         if (pending_reset) { engine->reset(); pending_reset = false; }

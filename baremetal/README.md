@@ -24,6 +24,8 @@ make efi                            # smb.efi, a UEFI application
 make run-efi ROM=~/nes/smb.nes      # boots it under OVMF UEFI firmware
 ```
 
+8 MB of RAM is enough; the heap uses whatever RAM the machine has.
+
 The floppy image holds GRUB, the kernel, the ROM and `grub.cfg` in GRUB's
 compressed core image, with no filesystem. Write it with
 `dd if=smb-floppy.img of=/dev/fdX`, or use it with a USB floppy drive or
