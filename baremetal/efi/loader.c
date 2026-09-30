@@ -23,7 +23,9 @@ struct __attribute__((packed)) MultibootInfo {
     UINT8 fb_bpp, fb_type;
 };
 struct __attribute__((packed)) MultibootModule { UINT32 mod_start, mod_end, string, reserved; };
+struct __attribute__((packed)) MultibootMmap { UINT32 size; UINT64 addr, len; UINT32 type; };
 typedef struct { UINT64 r_offset, r_info; INT64 r_addend; } Elf64_Rela;
+#define MAX_MMAP 512
 
 static EFI_SYSTEM_TABLE* ST_;
 
@@ -113,7 +115,8 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE* st) {
     // Kernel: copy, zero .bss, relocate.
     UINT8* kbase = alloc_low(KERNEL_MEM_SIZE);
     struct MultibootInfo* mbi = alloc_low(4096);
-    if (!kbase || !mbi) { fail(L"out of memory below 4 GiB"); return EFI_OUT_OF_RESOURCES; }
+    struct MultibootMmap* mmap = alloc_low(MAX_MMAP * sizeof(struct MultibootMmap));
+    if (!kbase || !mbi || !mmap) { fail(L"out of memory below 4 GiB"); return EFI_OUT_OF_RESOURCES; }
     UINTN image_size = kernel_image_end - kernel_image;
     CopyMem(kbase, (void*)kernel_image, image_size);
     SetMem(kbase + image_size, KERNEL_MEM_SIZE - image_size, 0);
@@ -167,6 +170,24 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE* st) {
 
 exited:
     __asm__ volatile("cli");
+    // Hand the kernel the free RAM as a Multiboot memory map. Only
+    // EfiConventionalMemory: boot-services memory still holds the page
+    // tables the kernel keeps using, and smb.nes sits in loader memory.
+    {
+        UINTN count = 0;
+        for (UINTN off = 0; off < map_size && count < MAX_MMAP; off += desc_size) {
+            EFI_MEMORY_DESCRIPTOR* d = (EFI_MEMORY_DESCRIPTOR*)((UINT8*)map + off);
+            if (d->Type != EfiConventionalMemory) continue;
+            mmap[count].size = sizeof(struct MultibootMmap) - 4;
+            mmap[count].addr = d->PhysicalStart;
+            mmap[count].len = d->NumberOfPages * 4096;
+            mmap[count].type = 1;
+            count++;
+        }
+        mbi->mmap_addr = (UINT32)(UINTN)mmap;
+        mbi->mmap_length = (UINT32)(count * sizeof(struct MultibootMmap));
+        mbi->flags |= 1 << 6;
+    }
     ((void (*)(void*))(kbase + KERNEL_ENTRY))(mbi);   // never returns
     for (;;) __asm__ volatile("hlt");
 }

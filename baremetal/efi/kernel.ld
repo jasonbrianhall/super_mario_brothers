@@ -5,6 +5,7 @@ ENTRY(efi_entry64)
 SECTIONS
 {
     . = 0;
+    __kernel_start = .;
     .text : ALIGN(4K) { *(.text .text.*) }
     .rodata : ALIGN(4K) {
         *(.rodata .rodata.*)
