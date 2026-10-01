@@ -167,4 +167,9 @@ filter instead.
 parameter) instead of `&this->constant`. The game only worked at `-O0`; any
 optimization level hangs at boot. The same fix applies to `../source`.
 
+Sound runs about 40 ms ahead of the speaker, held steady: the game's 60 Hz
+timer and the sound card's clock drift apart, so each frame's audio is
+stretched or squeezed slightly (at most 3%) to keep the gap fixed. With the
+`debug` boot option the heartbeat shows it.
+
 Serial output (COM1) logs boot progress; `make run` shows it in the terminal.

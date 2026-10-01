@@ -308,7 +308,7 @@ AudioDriver audio_init(const char* cmdline) {
     Configuration::audioEnabled = driver != AUDIO_NONE;
     if (driver == AUDIO_NONE) { printf("Audio: none\n"); return driver; }
 
-    target_ahead = Configuration::audioFrequency / 15;   // ~4 frames of latency
+    target_ahead = Configuration::audioFrequency / 25;   // 40 ms: 2.4 frames of latency
     write_pos = (audio_play_pos() + target_ahead) % RING_FRAMES;
     printf("Audio: %s at %d Hz\n", audio_name(), Configuration::audioFrequency);
     return driver;
@@ -327,22 +327,43 @@ void audio_set_volume(int level) {
     volume = level < 0 ? 0 : level > AUDIO_VOLUME_MAX ? AUDIO_VOLUME_MAX : level;
 }
 
-// The APU's samples are unsigned mix levels (0 = silence, ~130 = loudest).
-// Scale them up and run a one-pole DC blocker so the output is centered.
-// in < 0 means silence: hold the input so the output decays smoothly to 0.
-static int32_t prev_in, prev_out;
-static void write_samples(const uint8_t* samples, int n) {
+// How many frames to write for a batch of n so the write position stays a
+// steady target_ahead in front of the card. The game makes sound on the PIT's
+// 60 Hz and the card plays on its own crystal; left alone, the gap drifts (and
+// with it the delay you hear). So each batch is stretched or squeezed by up
+// to ~3% to pull the gap back, and only a real stall forces a jump.
+static int locked_count(int n) {
     uint32_t play = audio_play_pos();
     uint32_t ahead = (write_pos + RING_FRAMES - play) % RING_FRAMES;
-    // If we've drifted too close (underrun) or too far (overrun), resync.
-    if (ahead < target_ahead / 4 || ahead > target_ahead * 3)
-        write_pos = (play + target_ahead) % RING_FRAMES;
+    if (ahead < target_ahead / 8 || ahead > target_ahead * 2) {
+        write_pos = (play + target_ahead - n) % RING_FRAMES;     // stalled or ran away: restart the gap
+        return n;
+    }
+    int err = (int)(ahead + n) - (int)target_ahead;               // + : more delay than wanted
+    int m = n - err / 8, lim = n / 32 + 1;
+    return m < n - lim ? n - lim : m > n + lim ? n + lim : m;
+}
+
+// The APU's samples are unsigned mix levels (0 = silence, ~130 = loudest).
+// Scale them up and run a one-pole DC blocker so the output is centered.
+// samples == nullptr means silence: hold the input so the output decays to 0.
+static int32_t prev_in, prev_out;
+static void write_samples(const uint8_t* samples, int n) {
+    static int32_t level[4096];
+    if (n > 4096) n = 4096;
     for (int i = 0; i < n; i++) {
         int32_t in = samples ? samples[i] * 160 : prev_in;
         int32_t out = in - prev_in + ((prev_out * 255) >> 8);
         prev_in = in;
         prev_out = out;
-        out = out * volume / AUDIO_VOLUME_MAX;
+        level[i] = out * volume / AUDIO_VOLUME_MAX;
+    }
+    int m = locked_count(n);
+    uint32_t step = ((uint32_t)n << 16) / (uint32_t)m;           // input samples per output frame, 16.16
+    for (int j = 0; j < m; j++) {
+        uint32_t pos = j * step, i = pos >> 16, f = pos & 0xFFFF;
+        int32_t a = level[i < (uint32_t)n ? i : n - 1], b = level[i + 1 < (uint32_t)n ? i + 1 : n - 1];
+        int32_t out = a + (int32_t)(((int64_t)(b - a) * f) >> 16);
         if (out > 32767) out = 32767;
         if (out < -32768) out = -32768;
         ring[write_pos * 2] = (int16_t)out;
@@ -357,6 +378,12 @@ void audio_submit(const uint8_t* samples, int n) {
 // (or the last half second repeats).
 void audio_silence(int n) {
     if (driver != AUDIO_NONE) write_samples(nullptr, n);
+}
+
+uint32_t audio_delay_ms() {
+    if (driver == AUDIO_NONE) return 0;
+    uint32_t ahead = (write_pos + RING_FRAMES - audio_play_pos()) % RING_FRAMES;
+    return ahead * 1000 / Configuration::audioFrequency;
 }
 
 const char* audio_name() {

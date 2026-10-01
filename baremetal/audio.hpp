@@ -12,3 +12,4 @@ void audio_silence(int n);                          // n samples of silence (pau
 void audio_set_volume(int level);                   // 0 (mute) .. AUDIO_VOLUME_MAX
 constexpr int AUDIO_VOLUME_MAX = 10;
 const char* audio_name();
+uint32_t audio_delay_ms();                          // queued ahead of the speaker right now

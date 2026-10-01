@@ -746,8 +746,8 @@ extern "C" void kmain() {
             frames++;
             if (ticks - last_report >= 60) {
                 last_report = ticks;
-                printf("heartbeat: ticks %u frames %u audio %s pos %u heap peak %u KB\n",
-                       ticks, frames, audio_name(), audio_play_pos(), (unsigned)(heap_peak_bytes() >> 10));
+                printf("heartbeat: ticks %u frames %u audio %s pos %u delay %u ms heap peak %u KB\n",
+                       ticks, frames, audio_name(), audio_play_pos(), audio_delay_ms(), (unsigned)(heap_peak_bytes() >> 10));
             }
         }
         if (pending_reset) { engine->reset(); pending_reset = false; }
