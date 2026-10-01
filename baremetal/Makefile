@@ -79,6 +79,7 @@ OVERRIDES := Configuration.hpp Util/Video.hpp Emulation/Controller.hpp \
              Emulation/Controller.cpp
 
 OBJS := $(BUILD)/boot.o $(BUILD)/kernel.o $(BUILD)/runtime.o $(BUILD)/irq.o $(BUILD)/audio.o $(BUILD)/pci.o $(BUILD)/usb.o \
+        $(BUILD)/floppy.o $(BUILD)/fat12.o $(BUILD)/storage.o \
         $(patsubst %.cpp,$(BUILD)/core/%.o,$(CORE)) \
         $(BUILD)/core/Emulation/Controller.o
 
@@ -196,20 +197,28 @@ USB      ?= none
 QEMU     := qemu-system-i386 -cpu $(CPU) -m 64 -serial stdio $(QSOUND_$(SOUND)) $(QUSB_$(USB))
 endif
 
-# 1.44 MB boot floppy: GRUB's core image with the kernel, ROM and grub.cfg
-# packed inside it (as a compressed memdisk), behind GRUB's boot sector.
+# 1.44 MB FAT12 boot floppy: GRUB's boot sector (keeping the FAT header) in
+# sector 0, GRUB's core image in the reserved sectors after it, and the
+# kernel (gzipped; GRUB unpacks it), ROM and grub.cfg as files. Save states
+# go in /smb on the same disk (storage.cpp).
+MKFS_FAT ?= $(shell command -v mkfs.fat || command -v mkfs.vfat || echo /usr/sbin/mkfs.fat)
 floppy: $(FLOPPY)
 $(FLOPPY): $(KERNEL) grub.cfg $(ROM)
-	@rm -rf $(BUILD)/fd && mkdir -p $(BUILD)/fd/boot/grub
-	cp $(KERNEL) $(BUILD)/fd/boot/smb.elf
-	cp "$(ROM)" $(BUILD)/fd/boot/smb.nes
-	sed 's/1024x768x32/$(GFXMODE)/' grub.cfg > $(BUILD)/fd/boot/grub/grub.cfg
-	tar -C $(BUILD)/fd -cf $(BUILD)/memdisk.tar boot
-	$(GRUB_MKIMAGE) -O i386-pc -o $(BUILD)/core.img -p '(memdisk)/boot/grub' \
-	    -m $(BUILD)/memdisk.tar memdisk tar normal configfile multiboot vbe video video_fb boot
-	cat $(GRUB_I386)/boot.img $(BUILD)/core.img > $@
-	truncate -s 1474560 $@
-	@echo "$@: $$(( ($$(stat -c %s $(BUILD)/core.img) + 512) * 100 / 1474560 ))% of a 1.44 MB floppy used"
+	$(GRUB_MKIMAGE) -O i386-pc -o $(BUILD)/core.img -p /boot/grub \
+	    biosdisk fat gzio normal configfile multiboot vbe video video_fb boot
+	gzip -9 -n -c $(KERNEL) > $(BUILD)/kernel.gz
+	sed 's/1024x768x32/$(GFXMODE)/' grub.cfg > $(BUILD)/grub.cfg
+	rm -f $@
+	$(MKFS_FAT) -C -F 12 -f 2 -r 224 -R $$(( $$(stat -c %s $(BUILD)/core.img) / 512 + 2 )) -n SMB $@ 1440 >/dev/null
+	mmd -i $@ ::/boot ::/boot/grub ::/smb
+	mcopy -i $@ $(BUILD)/kernel.gz ::/boot/smb.elf
+	mcopy -i $@ "$(ROM)" ::/boot/smb.nes
+	mcopy -i $@ $(BUILD)/grub.cfg ::/boot/grub/grub.cfg
+	cp $(GRUB_I386)/boot.img $(BUILD)/boot.img
+	dd if=$@ of=$(BUILD)/boot.img bs=1 skip=3 seek=3 count=59 conv=notrunc status=none
+	dd if=$(BUILD)/boot.img of=$@ bs=512 count=1 conv=notrunc status=none
+	dd if=$(BUILD)/core.img of=$@ bs=512 seek=1 conv=notrunc status=none
+	@echo "$@: GRUB $$(( $$(stat -c %s $(BUILD)/core.img) / 1024 )) KB + kernel $$(( $$(stat -c %s $(BUILD)/kernel.gz) / 1024 )) KB (gzipped) + ROM; $$(( $$(mdir -i $@ :: | sed -n 's/ *\([0-9 ]*\) bytes free/\1/p' | tr -d ' ') / 1024 )) KB free for saves"
 
 run: $(KERNEL)
 	$(QEMU) -kernel $(KERNEL) -initrd "$(ROM)" -append "audio=$(SOUND) $(ARGS)"

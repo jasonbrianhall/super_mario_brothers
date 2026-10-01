@@ -13,6 +13,7 @@
 #include "usb.hpp"
 
 void kbd_push(uint8_t b);                 // kernel.cpp: feeds the scancode queue
+void mouse_push(int dx, int dy, int buttons);   // kernel.cpp: relative motion + buttons
 
 static void io_delay(int n) { while (n--) inb(0x80); }   // ~1 us each
 static void delay_ms(int ms) { io_delay(ms * 1000); }
@@ -121,6 +122,7 @@ struct Keyboard {
     Ring ep0, intr;
     volatile uint8_t* reports;             // one 8-byte buffer per ring slot
     uint8_t prev[8];
+    bool mouse;                            // boot-protocol mouse instead of keyboard
 };
 #define MAX_KBD 4
 static Keyboard kbds[MAX_KBD];
@@ -132,14 +134,21 @@ static inline volatile uint32_t* ctx(volatile uint8_t* base, int idx) {
 }
 
 // ---------------------------------------------------------------- key reports
-// HID usage -> PS/2 set-1 scancode (0x100 flag = E0-prefixed).
+// HID usage -> PS/2 set-1 scancode (0x100 flag = E0-prefixed): letters,
+// digits, punctuation, Enter/Esc/Backspace/Tab/Space, F1-F12, arrows, keypad Enter.
 static const struct { uint8_t usage; uint16_t code; } keymap[] = {
-    {0x52, 0x148}, {0x51, 0x150}, {0x50, 0x14B}, {0x4F, 0x14D},     // arrows
-    {0x1B, 0x2D}, {0x1D, 0x2C}, {0x2F, 0x1A}, {0x30, 0x1B},         // X, Z, [, ]
-    {0x1A, 0x11}, {0x04, 0x1E}, {0x16, 0x1F}, {0x07, 0x20},         // W, A, S, D
-    {0x0A, 0x22}, {0x09, 0x21}, {0x14, 0x10}, {0x08, 0x12},         // G, F, Q, E
-    {0x3E, 0x3F}, {0x3F, 0x40}, {0x40, 0x41}, {0x41, 0x42},         // F5-F8
-    {0x45, 0x58}, {0x13, 0x19}, {0x29, 0x01}, {0x3A, 0x3B},         // F12, P, Esc, F1
+    {0x04, 0x1E}, {0x05, 0x30}, {0x06, 0x2E}, {0x07, 0x20}, {0x08, 0x12}, {0x09, 0x21},
+    {0x0A, 0x22}, {0x0B, 0x23}, {0x0C, 0x17}, {0x0D, 0x24}, {0x0E, 0x25}, {0x0F, 0x26},
+    {0x10, 0x32}, {0x11, 0x31}, {0x12, 0x18}, {0x13, 0x19}, {0x14, 0x10}, {0x15, 0x13},
+    {0x16, 0x1F}, {0x17, 0x14}, {0x18, 0x16}, {0x19, 0x2F}, {0x1A, 0x11}, {0x1B, 0x2D},
+    {0x1C, 0x15}, {0x1D, 0x2C}, {0x1E, 0x2}, {0x1F, 0x3}, {0x20, 0x4}, {0x21, 0x5},
+    {0x22, 0x6}, {0x23, 0x7}, {0x24, 0x8}, {0x25, 0x9}, {0x26, 0xA}, {0x27, 0xB},
+    {0x28, 0x1C}, {0x29, 0x1}, {0x2A, 0xE}, {0x2B, 0xF}, {0x2C, 0x39}, {0x2D, 0xC},
+    {0x2E, 0xD}, {0x2F, 0x1A}, {0x30, 0x1B}, {0x31, 0x2B}, {0x33, 0x27}, {0x34, 0x28},
+    {0x35, 0x29}, {0x36, 0x33}, {0x37, 0x34}, {0x38, 0x35}, {0x3A, 0x3B}, {0x3B, 0x3C},
+    {0x3C, 0x3D}, {0x3D, 0x3E}, {0x3E, 0x3F}, {0x3F, 0x40}, {0x40, 0x41}, {0x41, 0x42},
+    {0x42, 0x43}, {0x43, 0x44}, {0x44, 0x57}, {0x45, 0x58}, {0x4F, 0x14D}, {0x50, 0x14B},
+    {0x51, 0x150}, {0x52, 0x148}, {0x58, 0x11C},
 };
 
 static void emit(uint16_t code, bool down) {
@@ -151,12 +160,20 @@ static void emit_usage(uint8_t usage, bool down) {
 }
 
 static void handle_report(Keyboard& k, const volatile uint8_t* r) {
+    if (k.mouse) {                                         // buttons, dx, dy (boot protocol)
+        mouse_push((int8_t)r[1], (int8_t)r[2], r[0] & 7);
+        return;
+    }
     uint8_t cur[8];
     for (int i = 0; i < 8; i++) cur[i] = r[i];
     if (cur[2] == 1) return;                               // rollover error: ignore
     uint8_t mchg = cur[0] ^ k.prev[0];
     if (mchg & 0x02) emit(0x2A, cur[0] & 0x02);            // left shift
     if (mchg & 0x20) emit(0x36, cur[0] & 0x20);            // right shift
+    if (mchg & 0x01) emit(0x1D, cur[0] & 0x01);            // left ctrl
+    if (mchg & 0x10) emit(0x11D, cur[0] & 0x10);           // right ctrl
+    if (mchg & 0x04) emit(0x38, cur[0] & 0x04);            // left alt
+    if (mchg & 0x40) emit(0x138, cur[0] & 0x40);           // right alt
     for (int i = 2; i < 8; i++) {                          // releases
         uint8_t u = k.prev[i];
         if (!u) continue;
@@ -182,6 +199,7 @@ static void queue_report(Keyboard& k) {
 }
 
 static void release_all(Keyboard& k) {
+    if (k.mouse) { mouse_push(0, 0, 0); return; }
     uint8_t empty[8] = {0};
     handle_report(k, empty);
 }
@@ -203,7 +221,7 @@ static void dispatch(const Trb& e) {
         if (idx >= 0 && idx < RING_TRBS && (cc == 1 || cc == 13))
             handle_report(k, k.reports + idx * 8);
         if (cc == 1 || cc == 13) queue_report(k);
-        else { release_all(k); k.active = false; printf("USB: keyboard on port %d stopped (code %d)\n", k.port, cc); }
+        else { release_all(k); k.active = false; printf("USB: %s on port %d stopped (code %d)\n", k.mouse ? "mouse" : "keyboard", k.port, cc); }
         db[slot] = k.dci;
     }
 }
@@ -322,19 +340,20 @@ static void setup_port(int port) {
 
     // Find a boot keyboard interface and its interrupt IN endpoint.
     int iface = -1, ep_addr = 0, ep_mps = 8, ep_interval = 10;
-    bool in_kbd = false;
+    bool in_kbd = false, is_mouse = false;
     for (int i = 0; i + 1 < total && desc[i] >= 2; i += desc[i]) {
         uint8_t type = desc[i + 1];
         if (type == 4) {
-            in_kbd = desc[i + 5] == 3 && desc[i + 6] == 1 && desc[i + 7] == 1;
-            if (in_kbd && iface < 0) iface = desc[i + 2];
+            // HID boot interface: protocol 1 = keyboard, 2 = mouse.
+            in_kbd = iface < 0 && desc[i + 5] == 3 && desc[i + 6] == 1 && (desc[i + 7] == 1 || desc[i + 7] == 2);
+            if (in_kbd) { iface = desc[i + 2]; is_mouse = desc[i + 7] == 2; }
         } else if (type == 5 && in_kbd && !ep_addr && (desc[i + 2] & 0x80) && (desc[i + 3] & 3) == 3) {
             ep_addr = desc[i + 2];
             ep_mps = (desc[i + 4] | desc[i + 5] << 8) & 0x7FF;
             ep_interval = desc[i + 6];
         }
     }
-    if (iface < 0 || !ep_addr) { printf("USB: port %d: not a keyboard\n", port); return; }
+    if (iface < 0 || !ep_addr) { printf("USB: port %d: not a keyboard or mouse\n", port); return; }
 
     if (!control(k, 0x00, 9, config, 0, 0, nullptr)) return;          // SET_CONFIGURATION
     control(k, 0x21, 0x0B, 0, iface, 0, nullptr);                      // SET_PROTOCOL boot
@@ -365,10 +384,11 @@ static void setup_port(int port) {
     cc = command((uint32_t)ic, (uint32_t)(ic >> 32), 0, TRB_CONFIGURE_EP << 10 | (uint32_t)k.slot << 24, nullptr);
     if (cc != 1) { printf("USB: port %d: configure failed (%d)\n", port, cc); return; }
 
+    k.mouse = is_mouse;
     k.active = true;
     for (int i = 0; i < 8; i++) queue_report(k);
     db[k.slot] = k.dci;
-    printf("USB: keyboard on port %d (slot %d, %s speed)\n", port, k.slot,
+    printf("USB: %s on port %d (slot %d, %s speed)\n", k.mouse ? "mouse" : "keyboard", port, k.slot,
            k.speed == 2 ? "low" : k.speed == 1 ? "full" : k.speed == 3 ? "high" : "super");
 }
 
@@ -468,7 +488,7 @@ bool usb_init(const char* cmdline) {
         if (portsc(p) & PORT_CCS) setup_port(p);
     int n = 0;
     for (auto& k : kbds) n += k.active;
-    printf("USB: xHCI with %d ports, %d keyboard%s\n", num_ports, n, n == 1 ? "" : "s");
+    printf("USB: xHCI with %d ports, %d device%s\n", num_ports, n, n == 1 ? "" : "s");
     return true;
 }
 
@@ -489,7 +509,7 @@ void usb_poll() {
                     release_all(k);
                     k.active = false;
                     command(0, 0, 0, 10 << 10 | (uint32_t)k.slot << 24, nullptr);   // disable slot
-                    printf("USB: keyboard on port %d unplugged\n", p);
+                    printf("USB: %s on port %d unplugged\n", k.mouse ? "mouse" : "keyboard", p);
                 }
         }
     }

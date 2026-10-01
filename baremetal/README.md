@@ -18,7 +18,7 @@ make
 make run ROM=~/nes/smb.nes          # QEMU/KVM, direct kernel boot
 make iso ROM=~/nes/smb.nes          # bootable smb.iso (GRUB)
 make run-iso ROM=~/nes/smb.nes
-make floppy ROM=~/nes/smb.nes       # 1.44 MB boot floppy (smb-floppy.img), ~19% full
+make floppy ROM=~/nes/smb.nes       # 1.44 MB FAT12 boot floppy (smb-floppy.img)
 make run-floppy ROM=~/nes/smb.nes
 make efi                            # smb.efi, a UEFI application
 make run-efi ROM=~/nes/smb.nes      # boots it under OVMF UEFI firmware
@@ -26,8 +26,12 @@ make run-efi ROM=~/nes/smb.nes      # boots it under OVMF UEFI firmware
 
 8 MB of RAM is enough; the heap uses whatever RAM the machine has.
 
-The floppy image holds GRUB, the kernel, the ROM and `grub.cfg` in GRUB's
-compressed core image, with no filesystem. Write it with
+The floppy image is a FAT12 disk: GRUB in the boot and reserved sectors,
+then the kernel (gzipped), the ROM and `grub.cfg` as ordinary files. When the
+game boots from it, save states are kept in `/smb/save1.dat` .. `save4.dat`
+on the same disk, so they survive a reboot (`floppy=off` turns that off;
+a write-protected or removed disk just keeps them in RAM). It needs mtools
+and dosfstools to build. Write it with
 `dd if=smb-floppy.img of=/dev/fdX`, or use it with a USB floppy drive or
 emulator that boots as drive A:.
 
@@ -110,17 +114,22 @@ share one keyboard, and either set of keys works on any PS/2 or USB keyboard.
 | Key | Action |
 |---|---|
 | F1 | Show/hide key bindings (Esc also closes) |
-| F5-F8 | Save state to slot 1-4 (RAM, lost on reboot) |
+| F5-F8 | Save state to slot 1-4 (kept on the boot floppy, else RAM only) |
 | Shift+F5-F8 | Load state |
 | P | Pause |
 | F12 | Reset |
+
+A PS/2 or USB mouse opens a menu with the same actions: right-click anywhere,
+or click MENU at the bottom right while the pointer shows. Load buttons are
+greyed out for empty slots.
 
 ## How it's put together
 
 - `boot.S`: Multiboot header, long-mode switch, identity-mapped 4 GiB, interrupt stubs; UEFI entry point
 - `efi/loader.c`: the UEFI loader in `smb.efi`: reads the ROM, sets up graphics, relocates the embedded kernel, exits boot services and passes Multiboot-style info
-- `kernel.cpp`: framebuffer (GRUB's, or QEMU's VBE adapter), 60 Hz PIT timer, PS/2 keyboard, main loop
-- `usb.cpp`: polled xHCI driver: BIOS handoff, enumeration, HID boot-protocol keyboards, hot-plug
+- `kernel.cpp`: framebuffer (GRUB's, or QEMU's VBE adapter), 60 Hz PIT timer, PS/2 keyboard and mouse, the mouse menu, main loop
+- `usb.cpp`: polled xHCI driver: BIOS handoff, enumeration, HID boot-protocol keyboards and mice, hot-plug
+- `floppy.cpp`: polled floppy controller (82077AA) driver with ISA DMA; `fat12.cpp`: FAT12 filesystem with long file names (host test: `tools/fat12_test.sh`); `storage.cpp`: save states on the boot floppy
 - `runtime.cpp`, `include/`: memcpy/printf/malloc, a minimal `std::string`/`iostream`/`fstream` (RAM-backed, so save states work unchanged)
 - `audio.cpp`: HD Audio (CORB/RIRB codec setup, one output stream) and AC97 drivers sharing one looping DMA ring, polled once per frame
 - `pci.cpp`: PCI configuration-space helpers

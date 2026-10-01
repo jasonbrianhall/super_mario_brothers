@@ -1,6 +1,8 @@
 // Bare-metal frontend for Super Mario Bros. Virtualized.
 // Boots via Multiboot (GRUB or QEMU -kernel), takes the ROM as a boot
 // module, and runs the engine on a framebuffer with PS/2 keyboard input.
+// A PS/2 or USB mouse opens a clickable menu (save/load/reset/help), and
+// save states persist on the boot floppy (storage.cpp).
 #include <stdint.h>
 #include <stddef.h>
 #include "include/string.h"
@@ -11,6 +13,9 @@
 #include "audio.hpp"
 #include "pci.hpp"
 #include "usb.hpp"
+#include "floppy.hpp"
+#include "storage.hpp"
+#include "memfs.hpp"
 #include "Configuration.hpp"
 #include "SMB/SMBEngine.hpp"
 #include "Emulation/Controller.hpp"
@@ -144,6 +149,25 @@ static void text(int x, int y, const char* s, int scale, uint32_t c) {
 // Scale the 256x240 NES frame by an integer factor, centered.
 static uint32_t frame[256 * 240];
 
+// Text and boxes drawn into the NES frame (8x16 font).
+static void frame_text(int x, int y, const char* s, uint32_t color) {
+    for (int i = 0; s[i]; i++) {
+        const unsigned char* g = font8x16[(s[i] < 32 || s[i] > 126 ? '?' : s[i]) - 32];
+        for (int r = 0; r < 16; r++)
+            for (int b = 0; b < 8; b++)
+                if ((g[r] & (0x80 >> b)) && x + i * 8 + b >= 0 && x + i * 8 + b < 256 && y + r >= 0 && y + r < 240)
+                    frame[(y + r) * 256 + x + i * 8 + b] = color;
+    }
+}
+static void frame_fill(int x0, int y0, int w, int h, uint32_t c) {
+    for (int y = y0 < 0 ? 0 : y0; y < y0 + h && y < 240; y++)
+        for (int x = x0 < 0 ? 0 : x0; x < x0 + w && x < 256; x++) frame[y * 256 + x] = c;
+}
+static void frame_dim(int x0, int y0, int w, int h) {             // darken to ~25%
+    for (int y = y0; y < y0 + h; y++)
+        for (int x = x0; x < x0 + w; x++) frame[y * 256 + x] = (frame[y * 256 + x] >> 2) & 0x3F3F3F;
+}
+
 // F1 help: a dimmed panel listing the key bindings, drawn into the NES frame.
 static const char* const help_lines[] = {
     "        KEY BINDINGS",
@@ -158,6 +182,7 @@ static const char* const help_lines[] = {
     "SHIFT+F5-F8  LOAD STATE",
     "P            PAUSE",
     "F12          RESET",
+    "RIGHT CLICK  MOUSE MENU",
     "F1 / ESC     CLOSE HELP",
 };
 static void help_overlay() {
@@ -219,7 +244,7 @@ struct __attribute__((packed)) IdtEntry {         // 32-bit interrupt gate
 };
 #endif
 static IdtEntry idt[256];
-extern "C" void isr_timer(), isr_keyboard(), isr_spurious(), isr_fault();
+extern "C" void isr_timer(), isr_keyboard(), isr_mouse(), isr_spurious(), isr_fault();
 
 static void set_gate(int n, void (*h)()) {
     uintptr_t a = (uintptr_t)h;
@@ -239,15 +264,16 @@ static void interrupts_init() {
     for (int i = 32; i < 256; i++) set_gate(i, isr_spurious);
     set_gate(32, isr_timer);
     set_gate(33, isr_keyboard);
+    set_gate(44, isr_mouse);
     struct __attribute__((packed)) { uint16_t lim; uintptr_t base; } idtr = { sizeof(idt) - 1, (uintptr_t)idt };
     __asm__ volatile("lidt %0" ::"m"(idtr));
 
-    // Remap the PICs to vectors 32..47; unmask only timer and keyboard.
+    // Remap the PICs to vectors 32..47; unmask timer, keyboard, cascade and mouse.
     outb(0x20, 0x11); outb(0xA0, 0x11);
     outb(0x21, 32);   outb(0xA1, 40);
     outb(0x21, 4);    outb(0xA1, 2);
     outb(0x21, 1);    outb(0xA1, 1);
-    outb(0x21, 0xFC); outb(0xA1, 0xFF);
+    outb(0x21, 0xF8); outb(0xA1, 0xEF);
 
     // PIT channel 0 at ~60 Hz.
     uint16_t div = 1193182 / 60;
@@ -260,7 +286,7 @@ static void interrupts_init() {
 // ---------------------------------------------------------------- input
 static bool shift_l, shift_r;
 static int pending_save = -1, pending_load = -1;
-static bool pending_reset, paused, help;
+static bool pending_reset, paused, help, menu;
 
 // Two NES controllers. Player 1 is on the arrows, player 2 on WASD; Luigi
 // (player 2 in a 2-player game) reads controller 2, as on the real NES.
@@ -301,7 +327,7 @@ static void key_event(bool ext, uint8_t code, bool down) {
     case 0x58: if (down) pending_reset = true; break;          // F12
     case 0x19: if (down) paused = !paused; break;              // P
     case 0x3B: if (down) help = !help; break;                  // F1
-    case 0x01: if (down) help = false; break;                  // Esc
+    case 0x01: if (down) help = menu = false; break;           // Esc
     }
 }
 
@@ -328,6 +354,159 @@ static void poll_keyboard() {
         key_event(ext, b & 0x7F, !(b & 0x80));
         ext = false;
     }
+}
+
+// ---------------------------------------------------------------- mouse
+// PS/2 mouse on the i8042's second port (USB mice arrive via mouse_push too).
+extern volatile uint8_t mouse_buf[256];
+extern volatile uint8_t mouse_head, mouse_tail;
+static bool i8042_wait_write() { for (int i = 0; i < 100000; i++) if (!(inb(0x64) & 2)) return true; return false; }
+static bool i8042_wait_read()  { for (int i = 0; i < 100000; i++) if (inb(0x64) & 1) return true; return false; }
+static bool mouse_cmd(uint8_t b) {
+    i8042_wait_write(); outb(0x64, 0xD4);
+    i8042_wait_write(); outb(0x60, b);
+    for (int tries = 0; tries < 4; tries++) {          // skip stray bytes until the ACK
+        if (!i8042_wait_read()) return false;
+        if (inb(0x60) == 0xFA) return true;
+    }
+    return false;
+}
+static bool ps2_mouse_init() {
+    i8042_wait_write(); outb(0x64, 0xA8);              // enable the aux port
+    i8042_wait_write(); outb(0x64, 0x20);              // read controller config
+    if (!i8042_wait_read()) return false;
+    uint8_t cfg = inb(0x60);
+    cfg = (cfg | 0x02) & ~0x20;                        // aux interrupt on, aux clock on
+    i8042_wait_write(); outb(0x64, 0x60);
+    i8042_wait_write(); outb(0x60, cfg);
+    if (!mouse_cmd(0xF6) || !mouse_cmd(0xF4)) {        // defaults, then start streaming
+        printf("PS/2 mouse: none\n");
+        return false;
+    }
+    printf("PS/2 mouse: ready\n");
+    return true;
+}
+
+// The pointer lives in screen pixels inside the game area; the menu works
+// in NES pixels (screen / scale).
+static int mouse_sx, mouse_sy, mouse_buttons;
+static bool mouse_seen;                  // any mouse has reported
+static uint32_t mouse_active;            // ticks of the last movement or click
+static int click_x = -1, click_y;        // a left click waiting to be handled
+static bool right_click;
+
+void mouse_push(int dx, int dy, int b) {
+    if (dx || dy || b != mouse_buttons) { mouse_seen = true; mouse_active = ticks; }
+    mouse_sx += dx; mouse_sy += dy;
+    if (mouse_sx < 0) mouse_sx = 0;
+    if (mouse_sy < 0) mouse_sy = 0;
+    if (mouse_sx >= 256 * scale) mouse_sx = 256 * scale - 1;
+    if (mouse_sy >= 240 * scale) mouse_sy = 240 * scale - 1;
+    int pressed = b & ~mouse_buttons;
+    if (pressed & 1) { click_x = mouse_sx / scale; click_y = mouse_sy / scale; }
+    if (pressed & 2) right_click = true;
+    mouse_buttons = b;
+}
+
+static void poll_ps2_mouse() {
+    static uint8_t pkt[3];
+    static int n;
+    while (mouse_tail != mouse_head) {
+        uint8_t b = mouse_buf[mouse_tail++];
+        if (n == 0 && !(b & 0x08)) continue;           // resync: byte 0 always has bit 3 set
+        pkt[n++] = b;
+        if (n < 3) continue;
+        n = 0;
+        if (pkt[0] & 0xC0) continue;                   // overflow: drop the packet
+        int dx = pkt[1] - ((pkt[0] << 4) & 0x100);
+        int dy = pkt[2] - ((pkt[0] << 3) & 0x100);
+        mouse_push(dx, -dy, pkt[0] & 7);               // PS/2 y grows upward
+    }
+}
+
+// The pointer shows while the menu or help is open, and for 3 s after the
+// mouse was last used.
+static bool cursor_visible() { return mouse_seen && (menu || help || ticks - mouse_active < 180); }
+
+static const char* const CURSOR[] = {
+    "X.........", "XX........", "XOX.......", "XOOX......", "XOOOX.....", "XOOOOX....",
+    "XOOOOOX...", "XOOOOOOX..", "XOOOOXXXX.", "XOXOOX....", "XX.XOOX...", "X...XOX...", "....XX....",
+};
+static void draw_cursor() {
+    int cx = mouse_sx / scale, cy = mouse_sy / scale;
+    for (int r = 0; r < 13; r++)
+        for (int c = 0; CURSOR[r][c]; c++) {
+            int x = cx + c, y = cy + r;
+            if (x >= 256 || y >= 240 || CURSOR[r][c] == '.') continue;
+            frame[y * 256 + x] = CURSOR[r][c] == 'X' ? 0x000000 : 0xFFFFFF;
+        }
+}
+
+// ---------------------------------------------------------------- mouse menu
+enum Action { ACT_NONE, ACT_SAVE1, ACT_LOAD1 = ACT_SAVE1 + 4, ACT_RESUME = ACT_LOAD1 + 4, ACT_RESET, ACT_HELP, ACT_OPEN };
+struct Button { int x, y, w, h; const char* label; int action; };
+static const int MENU_X = 10, MENU_Y = 66, MENU_W = 236, MENU_H = 102;
+static const Button menu_buttons[] = {
+    {13,  92, 56, 20, "SAVE 1", ACT_SAVE1},     {71,  92, 56, 20, "SAVE 2", ACT_SAVE1 + 1},
+    {129, 92, 56, 20, "SAVE 3", ACT_SAVE1 + 2}, {187, 92, 56, 20, "SAVE 4", ACT_SAVE1 + 3},
+    {13, 116, 56, 20, "LOAD 1", ACT_LOAD1},     {71, 116, 56, 20, "LOAD 2", ACT_LOAD1 + 1},
+    {129, 116, 56, 20, "LOAD 3", ACT_LOAD1 + 2}, {187, 116, 56, 20, "LOAD 4", ACT_LOAD1 + 3},
+    {13, 140, 74, 20, "RESUME", ACT_RESUME},     {91, 140, 74, 20, "RESET", ACT_RESET},
+    {169, 140, 74, 20, "HELP", ACT_HELP},
+};
+static const Button open_button = {206, 220, 46, 16, "MENU", ACT_OPEN};   // bottom right, while the pointer shows
+
+static bool slot_used(int slot) {
+    char name[] = "save1.dat";
+    name[4] = (char)('1' + slot);
+    return memfs::exists(name);
+}
+static bool button_enabled(const Button& b) {
+    return !(b.action >= ACT_LOAD1 && b.action < ACT_LOAD1 + 4) || slot_used(b.action - ACT_LOAD1);
+}
+static bool inside(const Button& b, int x, int y) { return x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h; }
+
+static void draw_button(const Button& b) {
+    bool on = button_enabled(b);
+    bool hover = on && cursor_visible() && inside(b, mouse_sx / scale, mouse_sy / scale);
+    frame_fill(b.x, b.y, b.w, b.h, hover ? 0xFFFFFF : 0x606060);
+    frame_fill(b.x + 1, b.y + 1, b.w - 2, b.h - 2, hover ? 0xC84C0C : on ? 0x303030 : 0x181818);
+    int len = (int)strlen(b.label);
+    frame_text(b.x + (b.w - len * 8) / 2, b.y + (b.h - 16) / 2, b.label, on ? 0xFFFFFF : 0x606060);
+}
+static void menu_overlay() {
+    frame_dim(0, 0, 256, 240);
+    frame_fill(MENU_X, MENU_Y, MENU_W, MENU_H, 0xFFFFFF);
+    frame_fill(MENU_X + 1, MENU_Y + 1, MENU_W - 2, MENU_H - 2, 0x000000);
+    frame_text(MENU_X + (MENU_W - 4 * 8) / 2, MENU_Y + 5, "MENU", 0xFFD040);
+    for (auto& b : menu_buttons) draw_button(b);
+}
+
+static void menu_action(int a) {
+    if (a >= ACT_SAVE1 && a < ACT_SAVE1 + 4) pending_save = a - ACT_SAVE1;
+    else if (a >= ACT_LOAD1 && a < ACT_LOAD1 + 4) pending_load = a - ACT_LOAD1;
+    else if (a == ACT_RESUME) paused = false;
+    else if (a == ACT_RESET) pending_reset = true;
+    else if (a == ACT_HELP) help = true;
+    menu = false;
+}
+// Once per frame: act on clicks.
+static void handle_mouse() {
+    if (right_click) {
+        right_click = false;
+        if (help) help = false; else menu = !menu;
+    }
+    if (click_x < 0) return;
+    int x = click_x, y = click_y;
+    click_x = -1;
+    if (help) { help = false; return; }
+    if (menu) {
+        for (auto& b : menu_buttons)
+            if (inside(b, x, y)) { if (button_enabled(b)) menu_action(b.action); return; }
+        if (x < MENU_X || x >= MENU_X + MENU_W || y < MENU_Y || y >= MENU_Y + MENU_H) menu = false;
+        return;
+    }
+    if (inside(open_button, x, y)) menu = true;
 }
 
 // ---------------------------------------------------------------- main
@@ -391,9 +570,12 @@ extern "C" void kmain() {
     for (const char* p = cmdline; p && *p; p++)
         if (strncmp(p, "debug", 5) == 0) debug = true;
 
+    mouse_sx = 128 * scale; mouse_sy = 120 * scale;
+    ps2_mouse_init();
     interrupts_init();
+    storage_init(info.flags, info.boot_device, cmdline);
     printf("Running. P1: arrows, X/Z, [ select, ] start. P2: WASD, G/F, Q select, E start.\n"
-           "F1 help, F5-F8 save, Shift+F5-F8 load, F12 reset, P pause\n");
+           "F1 help, F5-F8 save, Shift+F5-F8 load, F12 reset, P pause, right click: menu\n");
 
     char msg[32] = {0};
     int msg_frames = 0;
@@ -402,8 +584,11 @@ extern "C" void kmain() {
         while (ticks == last) __asm__ volatile("hlt");
         last = ticks;
 
+        floppy_poll();
         usb_poll();
         poll_keyboard();
+        poll_ps2_mouse();
+        handle_mouse();
         if (debug) {
             static uint32_t frames, last_report;
             frames++;
@@ -419,14 +604,18 @@ extern "C" void kmain() {
             int slot = save ? pending_save : pending_load;
             char name[] = "save1.dat"; name[4] = (char)('1' + slot);
             bool ok = true;
-            if (save) engine->saveState(name); else ok = engine->loadState(name);
+            int disk = 0;
+            if (save) { engine->saveState(name); disk = storage_save(name); }
+            else ok = engine->loadState(name);
             const char* verb = save ? "SAVED SLOT " : (ok ? "LOADED SLOT " : "EMPTY SLOT ");
-            size_t n = strlen(verb); memcpy(msg, verb, n); msg[n] = (char)('1' + slot); msg[n + 1] = 0;
+            const char* note = disk < 0 ? " - DISK ERROR" : "";
+            size_t n = strlen(verb), k = strlen(note);
+            memcpy(msg, verb, n); msg[n] = (char)('1' + slot); memcpy(msg + n + 1, note, k + 1);
             msg_frames = 120;
             pending_save = pending_load = -1;
         }
 
-        if (!paused && !help) {
+        if (!paused && !help && !menu) {
             engine->update();
             if (Configuration::audioEnabled) {
                 static uint8_t samples[1024];
@@ -438,8 +627,13 @@ extern "C" void kmain() {
         }
         engine->render(frame);
         if (help) help_overlay();
+        else if (menu) menu_overlay();
         else if (paused) banner("PAUSED");
         else if (msg_frames > 0) { banner(msg); msg_frames--; }
+        if (cursor_visible()) {
+            if (!menu && !help) draw_button(open_button);
+            draw_cursor();
+        }
         present();
     }
 }

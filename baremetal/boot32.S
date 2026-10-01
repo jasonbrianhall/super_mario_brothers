@@ -92,6 +92,7 @@ _start:
 
 IRQ_STUB isr_timer,    irq_timer
 IRQ_STUB isr_keyboard, irq_keyboard
+IRQ_STUB isr_mouse,    irq_mouse
 IRQ_STUB isr_spurious, irq_spurious
 
 .global isr_fault

@@ -19,4 +19,15 @@ extern "C" void irq_keyboard() {
     outb(0x20, 0x20);
 }
 
+volatile uint8_t mouse_buf[256];
+volatile uint8_t mouse_head, mouse_tail;
+
+extern "C" void irq_mouse() {                 // IRQ12, on the slave PIC
+    uint8_t b = inb(0x60);
+    mouse_buf[mouse_head] = b;
+    mouse_head = mouse_head + 1;
+    outb(0xA0, 0x20);
+    outb(0x20, 0x20);
+}
+
 extern "C" void irq_spurious() {}
