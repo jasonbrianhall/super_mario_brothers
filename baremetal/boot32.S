@@ -1,4 +1,4 @@
-# Multiboot entry for i586 (Pentium) and up: stay in 32-bit protected mode
+# Multiboot entry for the 32-bit builds (i386 and up): stay in 32-bit protected mode
 # with a flat GDT and paging off, so every physical address (RAM, the
 # framebuffer, PCI MMIO) below 4 GiB is directly addressable. Then call kmain().
 
@@ -11,7 +11,12 @@
     .long MB_MAGIC, MB_FLAGS, MB_CHECK
     .long 0, 0, 0, 0, 0          # a.out kludge fields (unused for ELF)
     .long 0                      # mode_type: 0 = linear graphics
-    .long 640, 480, 32           # preferred width, height, depth
+#ifndef FB_W
+#define FB_W 640
+#define FB_H 480
+#define FB_BPP 32
+#endif
+    .long FB_W, FB_H, FB_BPP     # preferred width, height, depth
 
 .section .bss
 .align 16
@@ -24,6 +29,9 @@ stack_top:
 .global mb_magic, mb_info
 mb_magic: .long 0
 mb_info:  .long 0
+.global fpu_present
+fpu_present: .long 0
+fpu_sw:   .word 0x5A5A
 
 .align 8
 gdt32:
@@ -62,13 +70,24 @@ _start:
     mov  %ax, %fs
     mov  %ax, %gs
 
-    # CR0: paging off, x87 on (EM clear), MP and NE set (native FPU errors).
-    # No SSE: a Pentium has none, so CR4 is left alone.
+    # CR0: paging off. Look for an x87: FNINIT then FNSTSW leaves the status
+    # word untouched when there's none (a 386 or 486SX on its own).
+    # No SSE before the Pentium III, so CR4 (which a 386 lacks) is left alone.
     mov  %cr0, %eax
-    and  $~((1<<31) | (1<<2)), %eax
-    or   $((1<<5) | (1<<1)), %eax
+    and  $~((1<<31) | (1<<2) | (1<<1)), %eax
     mov  %eax, %cr0
     fninit
+    fnstsw fpu_sw
+    cmpw $0, fpu_sw
+    jne  2f
+    movl $1, fpu_present
+    or   $(1<<1), %eax           # MP: an FPU is there
+#ifndef CPU_386
+    or   $(1<<5), %eax           # NE: native FPU errors (486 and later)
+#endif
+    jmp  4f
+2:  or   $(1<<2), %eax           # EM: no FPU, so x87 instructions trap (#NM) instead of hanging
+4:  mov  %eax, %cr0
 
     call kmain
 3:  cli

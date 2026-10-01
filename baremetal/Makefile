@@ -3,15 +3,20 @@
 #   make                         build smb.elf (the kernel)
 #   make run ROM=path/to/smb.nes boot it in QEMU/KVM
 #   make iso ROM=path/to/smb.nes build a bootable GRUB ISO (smb.iso)
+#   make floppies ROM=...        all three boot floppies: smb-floppy.img (x86_64),
+#                                smb-i586-floppy.img and smb-i386-floppy.img
 #
 # ARCH=x86_64 (default) builds the 64-bit kernel, with UEFI support (make efi).
 # ARCH=i586 builds a 32-bit kernel for a Pentium or later; its outputs are
 # named smb-i586.elf, smb-i586.iso and smb-i586-floppy.img. CPU=pentium-mmx
-# tunes it for a Pentium MMX. It needs a 32-bit toolchain (g++-multilib).
+# tunes it for a Pentium MMX. ARCH=i386 builds one that runs on a 386 (with
+# or without a 387) and asks for 1024x768 at 8 bits per pixel first, which
+# 1 MB VESA cards of the time can do. The 32-bit builds need g++-multilib.
 #
 # The ROM is never compiled in. It's loaded at boot as a Multiboot module.
 
 ARCH     ?= x86_64
+USB_OBJ  := usb
 CXX      ?= g++
 ROM      ?= smb.nes
 SRC      := ../source
@@ -45,13 +50,30 @@ MFLAG    := -m32
 SUFFIX   := -i586
 GFXMODE  := 640x480x32
 BOOT_S   := boot32.S
-BOOTDEFS := -march=$(CPU)
+BOOTDEFS := -march=$(CPU) -DFB_W=640 -DFB_H=480 -DFB_BPP=32
 # No SSE on a Pentium: floats go through the x87 FPU.
-ARCHFLAGS := -fno-pic -fno-pie -march=$(CPU) -mtune=$(CPU)
+ARCHFLAGS := -fno-pic -fno-pie -march=$(CPU) -mtune=$(CPU) -DFB_W=640 -DFB_H=480 -DFB_BPP=32
+FPFLAGS  := -mfpmath=387 -mno-sse
+LDEMU    := -m elf_i386
+else ifeq ($(ARCH),i386)
+CPU      ?= i386
+MFLAG    := -m32
+SUFFIX   := -i386
+# 8 bits loses nothing (the NES has 64 colours). GRUB actually goes by the
+# kernel's Multiboot header (FB_* below): 1024x768x8, else 1024x768 at any
+# depth the card has, else whatever it can do; the kernel handles 8-32 bits.
+GFXMODE  := 1024x768x8
+BOOT_S   := boot32.S
+USB_OBJ  := usb_none
+FBDEFS   := -DFB_W=1024 -DFB_H=768 -DFB_BPP=8
+BOOTDEFS := -march=$(CPU) -DCPU_386 $(FBDEFS)
+ARCHFLAGS := -fno-pic -fno-pie -march=$(CPU) -mtune=i486 $(FBDEFS)
+# x87 when there is one; without a 387 the kernel keeps sound (the only
+# floating-point code) switched off.
 FPFLAGS  := -mfpmath=387 -mno-sse
 LDEMU    := -m elf_i386
 else
-$(error ARCH must be x86_64 or i586)
+$(error ARCH must be x86_64, i586 or i386)
 endif
 
 GCCINC   := $(shell $(CXX) $(MFLAG) -print-file-name=include)
@@ -78,7 +100,7 @@ OVERRIDES := Configuration.hpp Util/Video.hpp Emulation/Controller.hpp \
              Emulation/MemoryAccess.hpp Emulation/MemoryAccess.cpp \
              Emulation/Controller.cpp
 
-OBJS := $(BUILD)/boot.o $(BUILD)/kernel.o $(BUILD)/runtime.o $(BUILD)/irq.o $(BUILD)/audio.o $(BUILD)/pci.o $(BUILD)/usb.o \
+OBJS := $(BUILD)/boot.o $(BUILD)/kernel.o $(BUILD)/runtime.o $(BUILD)/irq.o $(BUILD)/audio.o $(BUILD)/pci.o $(BUILD)/$(USB_OBJ).o \
         $(BUILD)/floppy.o $(BUILD)/fat12.o $(BUILD)/storage.o \
         $(patsubst %.cpp,$(BUILD)/core/%.o,$(CORE)) \
         $(BUILD)/core/Emulation/Controller.o
@@ -189,6 +211,11 @@ ifeq ($(ARCH),x86_64)
 SOUND    ?= hda
 USB      ?= xhci
 QEMU     := qemu-system-x86_64 -enable-kvm -m 256 -serial stdio $(QSOUND_$(SOUND)) $(QUSB_$(USB))
+else ifeq ($(ARCH),i386)
+# The oldest CPU QEMU models is a 486; 8 MB, ISA-era settings, no sound card.
+SOUND    ?= none
+USB      ?= none
+QEMU     := qemu-system-i386 -cpu 486 -m 8 -serial stdio $(QSOUND_$(SOUND)) $(QUSB_$(USB))
 else
 # A period machine: Pentium CPU, 64 MB, PS/2 keyboard, no KVM.
 # USB=xhci adds a USB keyboard on an xHCI controller.
@@ -220,6 +247,12 @@ $(FLOPPY): $(KERNEL) grub.cfg $(ROM)
 	dd if=$(BUILD)/core.img of=$@ bs=512 seek=1 conv=notrunc status=none
 	@echo "$@: GRUB $$(( $$(stat -c %s $(BUILD)/core.img) / 1024 )) KB + kernel $$(( $$(stat -c %s $(BUILD)/kernel.gz) / 1024 )) KB (gzipped) + ROM; $$(( $$(mdir -i $@ :: | sed -n 's/ *\([0-9 ]*\) bytes free/\1/p' | tr -d ' ') / 1024 )) KB free for saves"
 
+# Every architecture's floppy, each in its own build directory.
+floppies:
+	$(MAKE) --no-print-directory ARCH=x86_64 floppy
+	$(MAKE) --no-print-directory ARCH=i586 floppy
+	$(MAKE) --no-print-directory ARCH=i386 floppy
+
 run: $(KERNEL)
 	$(QEMU) -kernel $(KERNEL) -initrd "$(ROM)" -append "audio=$(SOUND) $(ARGS)"
 
@@ -246,6 +279,7 @@ run-floppy: $(FLOPPY)
 	$(QEMU) -fda $(FLOPPY) -boot a
 
 clean:
-	rm -rf build smb.elf smb.iso smb-floppy.img smb.efi smb-i586.elf smb-i586.iso smb-i586-floppy.img
+	rm -rf build smb.elf smb.iso smb-floppy.img smb.efi smb-i586.elf smb-i586.iso smb-i586-floppy.img \
+	       smb-i386.elf smb-i386.iso smb-i386-floppy.img
 
-.PHONY: all iso floppy efi run run-iso run-floppy run-efi clean FORCE
+.PHONY: all iso floppy floppies efi run run-iso run-floppy run-efi clean FORCE

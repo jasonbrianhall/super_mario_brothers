@@ -19,12 +19,33 @@ make run ROM=~/nes/smb.nes          # QEMU/KVM, direct kernel boot
 make iso ROM=~/nes/smb.nes          # bootable smb.iso (GRUB)
 make run-iso ROM=~/nes/smb.nes
 make floppy ROM=~/nes/smb.nes       # 1.44 MB FAT12 boot floppy (smb-floppy.img)
+make floppies ROM=~/nes/smb.nes     # floppies for x86_64, i586 and i386 at once
 make run-floppy ROM=~/nes/smb.nes
 make efi                            # smb.efi, a UEFI application
 make run-efi ROM=~/nes/smb.nes      # boots it under OVMF UEFI firmware
 ```
 
 8 MB of RAM is enough; the heap uses whatever RAM the machine has.
+
+### 32-bit builds
+
+`ARCH=` picks the CPU; every build has its own output names, so they sit
+side by side (`make floppies` makes all three floppies):
+
+| | CPU | Outputs | Video |
+|---|---|---|---|
+| `ARCH=x86_64` (default) | any 64-bit PC, BIOS or UEFI | `smb.elf`, `smb.iso`, `smb-floppy.img`, `smb.efi` | 1024x768 |
+| `ARCH=i586` | Pentium or later | `smb-i586.*` | 640x480 |
+| `ARCH=i386` | 386 or later, with or without a 387 | `smb-i386.*` | 1024x768 |
+
+The 32-bit builds need `g++-multilib`. The i386 build asks for 1024x768 at
+8 bits per pixel, the mode 1 MB VESA cards of the period offer (the NES has
+64 colours, so nothing is lost); GRUB falls back to 1024x768 at any depth,
+and the kernel draws at 8, 15, 16, 24 or 32 bits. The card needs a VESA BIOS
+with a linear framebuffer (VBE 2.0; UniVBE adds it to older cards). Without
+a 387 there's no sound (the mixer is the only floating-point code), which
+costs nothing on a 386 as the sound drivers are PCI ones. USB is left out of
+the i386 build, which needs about 6 MB of RAM.
 
 The floppy image is a FAT12 disk: GRUB in the boot and reserved sectors,
 then the kernel (gzipped), the ROM and `grub.cfg` as ordinary files. When the
