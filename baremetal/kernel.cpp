@@ -264,7 +264,6 @@ static void frame_dim(int x0, int y0, int w, int h) {             // darken to ~
 // F1 help: a dimmed panel listing the key bindings, drawn into the NES frame.
 static const char* const help_lines[] = {
     "        KEY BINDINGS",
-    "",
     "         MARIO     LUIGI",
     "MOVE     ARROWS    W A S D",
     "A / B    X / Z     G / F",
@@ -274,6 +273,7 @@ static const char* const help_lines[] = {
     "F5-F8        SAVE STATE",
     "SHIFT+F5-F8  LOAD STATE",
     "P            PAUSE",
+    "- / =        VOLUME",
     "F12          RESET",
     "RIGHT CLICK  MOUSE MENU",
     "F1 / ESC     CLOSE HELP",
@@ -391,6 +391,16 @@ static void interrupts_init() {
 static bool shift_l, shift_r;
 static int pending_save = -1, pending_load = -1;
 static bool pending_reset, paused, help, menu;
+static int volume = 8;                   // 0 .. AUDIO_VOLUME_MAX
+static bool volume_dirty;                // changed since it was last written to the floppy
+static int volume_shown = -1;            // show "VOLUME n" for this level
+static void set_volume(int v) {
+    if (v < 0) v = 0;
+    if (v > AUDIO_VOLUME_MAX) v = AUDIO_VOLUME_MAX;
+    if (v != volume) volume_dirty = true;
+    volume = v;
+    audio_set_volume(v);
+}
 
 // Two NES controllers. Player 1 is on the arrows, player 2 on WASD; Luigi
 // (player 2 in a 2-player game) reads controller 2, as on the real NES.
@@ -429,6 +439,8 @@ static void key_event(bool ext, uint8_t code, bool down) {
         if (down) { int slot = code - 0x3F; if (shift_l || shift_r) pending_load = slot; else pending_save = slot; }
         break;
     case 0x58: if (down) pending_reset = true; break;          // F12
+    case 0x0C: if (down) { set_volume(volume - 1); volume_shown = volume; } break;   // -
+    case 0x0D: if (down) { set_volume(volume + 1); volume_shown = volume; } break;   // = (+)
     case 0x19: if (down) paused = !paused; break;              // P
     case 0x3B: if (down) help = !help; break;                  // F1
     case 0x01: if (down) help = menu = false; break;           // Esc
@@ -547,17 +559,21 @@ static void draw_cursor() {
 }
 
 // ---------------------------------------------------------------- mouse menu
-enum Action { ACT_NONE, ACT_SAVE1, ACT_LOAD1 = ACT_SAVE1 + 4, ACT_RESUME = ACT_LOAD1 + 4, ACT_RESET, ACT_HELP, ACT_OPEN };
+enum Action { ACT_NONE, ACT_SAVE1, ACT_LOAD1 = ACT_SAVE1 + 4, ACT_RESUME = ACT_LOAD1 + 4, ACT_RESET, ACT_HELP, ACT_OPEN,
+              ACT_VOL_DOWN, ACT_VOL_UP };
 struct Button { int x, y, w, h; const char* label; int action; };
-static const int MENU_X = 10, MENU_Y = 66, MENU_W = 236, MENU_H = 102;
+static const int MENU_X = 10, MENU_Y = 57, MENU_W = 236, MENU_H = 126;
 static const Button menu_buttons[] = {
-    {13,  92, 56, 20, "SAVE 1", ACT_SAVE1},     {71,  92, 56, 20, "SAVE 2", ACT_SAVE1 + 1},
-    {129, 92, 56, 20, "SAVE 3", ACT_SAVE1 + 2}, {187, 92, 56, 20, "SAVE 4", ACT_SAVE1 + 3},
-    {13, 116, 56, 20, "LOAD 1", ACT_LOAD1},     {71, 116, 56, 20, "LOAD 2", ACT_LOAD1 + 1},
-    {129, 116, 56, 20, "LOAD 3", ACT_LOAD1 + 2}, {187, 116, 56, 20, "LOAD 4", ACT_LOAD1 + 3},
-    {13, 140, 74, 20, "RESUME", ACT_RESUME},     {91, 140, 74, 20, "RESET", ACT_RESET},
-    {169, 140, 74, 20, "HELP", ACT_HELP},
+    {13,  83, 56, 20, "SAVE 1", ACT_SAVE1},     {71,  83, 56, 20, "SAVE 2", ACT_SAVE1 + 1},
+    {129, 83, 56, 20, "SAVE 3", ACT_SAVE1 + 2}, {187, 83, 56, 20, "SAVE 4", ACT_SAVE1 + 3},
+    {13, 107, 56, 20, "LOAD 1", ACT_LOAD1},     {71, 107, 56, 20, "LOAD 2", ACT_LOAD1 + 1},
+    {129, 107, 56, 20, "LOAD 3", ACT_LOAD1 + 2}, {187, 107, 56, 20, "LOAD 4", ACT_LOAD1 + 3},
+    {77, 131, 24, 20, "-", ACT_VOL_DOWN},       {219, 131, 24, 20, "+", ACT_VOL_UP},
+    {13, 155, 74, 20, "RESUME", ACT_RESUME},     {91, 155, 74, 20, "RESET", ACT_RESET},
+    {169, 155, 74, 20, "HELP", ACT_HELP},
 };
+// The volume bar between - and +: one 9-pixel step per level, 2 pixels apart.
+static const int VOL_X = 106, VOL_Y = 134, VOL_STEP = 11, VOL_H = 14;
 static const Button open_button = {206, 220, 46, 16, "MENU", ACT_OPEN};   // bottom right, while the pointer shows
 
 static bool slot_used(int slot) {
@@ -566,6 +582,7 @@ static bool slot_used(int slot) {
     return memfs::exists(name);
 }
 static bool button_enabled(const Button& b) {
+    if (b.action == ACT_VOL_DOWN || b.action == ACT_VOL_UP) return Configuration::audioEnabled;
     return !(b.action >= ACT_LOAD1 && b.action < ACT_LOAD1 + 4) || slot_used(b.action - ACT_LOAD1);
 }
 static bool inside(const Button& b, int x, int y) { return x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h; }
@@ -584,6 +601,14 @@ static void menu_overlay() {
     frame_fill(MENU_X + 1, MENU_Y + 1, MENU_W - 2, MENU_H - 2, 0x000000);
     frame_text(MENU_X + (MENU_W - 4 * 8) / 2, MENU_Y + 5, "MENU", 0xFFD040);
     for (auto& b : menu_buttons) draw_button(b);
+    bool sound = Configuration::audioEnabled;
+    frame_text(17, 133, "VOLUME", sound ? 0xFFFFFF : 0x606060);
+    if (!sound) { frame_text(VOL_X + 14, 133, "NO SOUND", 0x606060); return; }
+    for (int i = 0; i < AUDIO_VOLUME_MAX; i++) {           // filled steps grow taller, like a meter
+        int h = 4 + i;
+        uint32_t c = i < volume ? (i < 7 ? 0x00A800 : i < 9 ? 0xF8B800 : 0xD82800) : 0x303030;
+        frame_fill(VOL_X + i * VOL_STEP, VOL_Y + VOL_H - h, VOL_STEP - 2, h, c);
+    }
 }
 
 static void menu_action(int a) {
@@ -592,6 +617,8 @@ static void menu_action(int a) {
     else if (a == ACT_RESUME) paused = false;
     else if (a == ACT_RESET) pending_reset = true;
     else if (a == ACT_HELP) help = true;
+    else if (a == ACT_VOL_DOWN) { set_volume(volume - 1); return; }   // the menu stays open
+    else if (a == ACT_VOL_UP) { set_volume(volume + 1); return; }
     menu = false;
 }
 // Once per frame: act on clicks.
@@ -607,6 +634,12 @@ static void handle_mouse() {
     if (menu) {
         for (auto& b : menu_buttons)
             if (inside(b, x, y)) { if (button_enabled(b)) menu_action(b.action); return; }
+        if (Configuration::audioEnabled && y >= VOL_Y - 3 && y < VOL_Y + VOL_H + 3 &&
+            x >= VOL_X - 3 && x < VOL_X + AUDIO_VOLUME_MAX * VOL_STEP) {   // click on the bar: that level
+            int level = (x - VOL_X) / VOL_STEP + 1;
+            set_volume(level < 1 ? 0 : level);
+            return;
+        }
         if (x < MENU_X || x >= MENU_X + MENU_W || y < MENU_Y || y >= MENU_Y + MENU_H) menu = false;
         return;
     }
@@ -683,6 +716,16 @@ extern "C" void kmain() {
     ps2_mouse_init();
     interrupts_init();
     storage_init(info.flags, info.boot_device, cmdline);
+    {
+        char buf[8] = {0};
+        size_t len = 0;
+        if (storage_read("volume.txt", buf, sizeof buf - 1, &len) && buf[0] >= '0' && buf[0] <= '9') {
+            volume = 0;
+            for (int i = 0; buf[i] >= '0' && buf[i] <= '9'; i++) volume = volume * 10 + (buf[i] - '0');
+        }
+        set_volume(volume);
+        volume_dirty = false;
+    }
     printf("Running. P1: arrows, X/Z, [ select, ] start. P2: WASD, G/F, Q select, E start.\n"
            "F1 help, F5-F8 save, Shift+F5-F8 load, F12 reset, P pause, right click: menu\n");
 
@@ -724,15 +767,41 @@ extern "C" void kmain() {
             pending_save = pending_load = -1;
         }
 
-        if (!paused && !help && !menu) {
-            engine->update();
-            if (Configuration::audioEnabled) {
+        bool running = !paused && !help && !menu;
+        if (running) engine->update();
+        if (Configuration::audioEnabled) {
+            int n = Configuration::audioFrequency / 60;
+            if (running) {
                 static uint8_t samples[1024];
-                int n = Configuration::audioFrequency / 60;
                 memset(samples, 0, n);
                 engine->audioCallback(samples, n);
                 audio_submit(samples, n);
+            } else {
+                audio_silence(n);                          // muted while paused, in help or the menu
             }
+        }
+        // Keep the volume on the floppy, but only write while the game is
+        // stopped (the menu just closed, or paused), as the drive takes a moment.
+        static bool menu_was_open;
+        if (volume_dirty && ((menu_was_open && !menu) || paused)) {
+            char buf[4];
+            int k = 0;
+            if (volume >= 10) buf[k++] = (char)('0' + volume / 10);
+            buf[k++] = (char)('0' + volume % 10);
+            buf[k++] = '\n';
+            storage_write("volume.txt", buf, k);
+            volume_dirty = false;
+        }
+        menu_was_open = menu;
+        if (volume_shown >= 0) {
+            const char* v = "VOLUME ";
+            size_t n = strlen(v);
+            memcpy(msg, v, n);
+            if (volume_shown >= 10) msg[n++] = (char)('0' + volume_shown / 10);
+            msg[n++] = (char)('0' + volume_shown % 10);
+            msg[n] = 0;
+            msg_frames = 60;
+            volume_shown = -1;
         }
         engine->render(frame);
         if (help) help_overlay();

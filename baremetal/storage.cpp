@@ -93,3 +93,18 @@ int storage_save(const char* name) {
     printf("Storage: couldn't write %s%s\n", path, floppy_write_protected() ? " (write-protected)" : "");
     return -1;
 }
+
+bool storage_read(const char* name, void* buf, size_t cap, size_t* len) {
+    if (!mounted) return false;                          // at boot only: no media check
+    char path[64];
+    make_path(path, name);
+    return fat_read(path, buf, cap, len);
+}
+
+bool storage_write(const char* name, const void* data, size_t len) {
+    if (!ready()) return false;
+    char path[64];
+    make_path(path, name);
+    fat_mkdir(DIR_PATH);
+    return fat_write(path, data, len);
+}

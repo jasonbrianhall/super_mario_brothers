@@ -322,28 +322,41 @@ uint32_t audio_play_pos() {
     }
 }
 
-void audio_submit(const uint8_t* samples, int n) {
-    if (driver == AUDIO_NONE) return;
+static int volume = AUDIO_VOLUME_MAX;
+void audio_set_volume(int level) {
+    volume = level < 0 ? 0 : level > AUDIO_VOLUME_MAX ? AUDIO_VOLUME_MAX : level;
+}
+
+// The APU's samples are unsigned mix levels (0 = silence, ~130 = loudest).
+// Scale them up and run a one-pole DC blocker so the output is centered.
+// in < 0 means silence: hold the input so the output decays smoothly to 0.
+static int32_t prev_in, prev_out;
+static void write_samples(const uint8_t* samples, int n) {
     uint32_t play = audio_play_pos();
     uint32_t ahead = (write_pos + RING_FRAMES - play) % RING_FRAMES;
     // If we've drifted too close (underrun) or too far (overrun), resync.
     if (ahead < target_ahead / 4 || ahead > target_ahead * 3)
         write_pos = (play + target_ahead) % RING_FRAMES;
-
-    // The APU's samples are unsigned mix levels (0 = silence, ~130 = loudest).
-    // Scale them up and run a one-pole DC blocker so the output is centered.
-    static int32_t prev_in, prev_out;
     for (int i = 0; i < n; i++) {
-        int32_t in = samples[i] * 160;
+        int32_t in = samples ? samples[i] * 160 : prev_in;
         int32_t out = in - prev_in + ((prev_out * 255) >> 8);
         prev_in = in;
         prev_out = out;
+        out = out * volume / AUDIO_VOLUME_MAX;
         if (out > 32767) out = 32767;
         if (out < -32768) out = -32768;
         ring[write_pos * 2] = (int16_t)out;
         ring[write_pos * 2 + 1] = (int16_t)out;
         write_pos = (write_pos + 1) % RING_FRAMES;
     }
+}
+void audio_submit(const uint8_t* samples, int n) {
+    if (driver != AUDIO_NONE) write_samples(samples, n);
+}
+// The ring keeps looping on its own, so a paused game must keep writing
+// (or the last half second repeats).
+void audio_silence(int n) {
+    if (driver != AUDIO_NONE) write_samples(nullptr, n);
 }
 
 const char* audio_name() {
