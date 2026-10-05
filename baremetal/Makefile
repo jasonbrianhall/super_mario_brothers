@@ -31,7 +31,9 @@ GRUB_I386     ?= $(firstword $(wildcard /usr/lib/grub/i386-pc /usr/lib/grub2/i38
 ifeq ($(ARCH),x86_64)
 MFLAG    := -m64
 SUFFIX   :=
-GFXMODE  := 1024x768x32
+# BIOS only (UEFI keeps the firmware's mode, see grub.cfg); GRUB falls
+# back along the list.
+GFXMODE  := 1024x768x32,800x600x32,640x480x32,auto
 BOOT_S   := boot.S
 # PIE=1 builds the position-independent kernel that smb.efi embeds.
 ifeq ($(PIE),1)
@@ -190,13 +192,13 @@ smb.efi run-efi:
 .PHONY: smb.efi
 endif
 
-# grub.cfg carries the x86_64 video mode; the i586 images get their own.
+# grub.cfg's @GFXMODE@ is the BIOS video mode for each ARCH.
 iso: $(ISO)
 $(ISO): $(KERNEL) grub.cfg $(ROM)
 	@rm -rf $(BUILD)/iso && mkdir -p $(BUILD)/iso/boot/grub
 	cp $(KERNEL) $(BUILD)/iso/boot/smb.elf
 	cp "$(ROM)" $(BUILD)/iso/boot/smb.nes
-	sed 's/1024x768x32/$(GFXMODE)/' grub.cfg > $(BUILD)/iso/boot/grub/grub.cfg
+	sed 's/@GFXMODE@/$(GFXMODE)/' grub.cfg > $(BUILD)/iso/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) -o $@ $(BUILD)/iso 2>/dev/null
 
 # Sound card for QEMU: SOUND=hda or ac97 (the default for each ARCH is below)
@@ -234,7 +236,7 @@ $(FLOPPY): $(KERNEL) grub.cfg $(ROM)
 	$(GRUB_MKIMAGE) -O i386-pc -o $(BUILD)/core.img -p /boot/grub \
 	    biosdisk fat gzio normal configfile multiboot vbe video video_fb boot
 	gzip -9 -n -c $(KERNEL) > $(BUILD)/kernel.gz
-	sed 's/1024x768x32/$(GFXMODE)/' grub.cfg > $(BUILD)/grub.cfg
+	sed 's/@GFXMODE@/$(GFXMODE)/' grub.cfg > $(BUILD)/grub.cfg
 	rm -f $@
 	$(MKFS_FAT) -C -F 12 -f 2 -r 224 -R $$(( $$(stat -c %s $(BUILD)/core.img) / 512 + 2 )) -n SMB $@ 1440 >/dev/null
 	mmd -i $@ ::/boot ::/boot/grub ::/smb

@@ -4,6 +4,12 @@
 // Graphics Output Protocol, copies the embedded position-independent kernel
 // below 4 GiB, applies its relocations, exits boot services and jumps to it
 // with the same Multiboot-style information GRUB would have provided.
+//
+// Diagnostics: it reports each step on screen while the firmware console is
+// still there; "debug" in the load options (GRUB: chainloader ... debug)
+// also waits for a key before handing over. A grey block in the bottom-left
+// corner means ExitBootServices kept failing; a red one that the kernel was
+// entered (it clears the screen once it's running).
 #include <efi.h>
 #include <efilib.h>
 
@@ -21,6 +27,8 @@ struct __attribute__((packed)) MultibootInfo {
     UINT64 fb_addr;
     UINT32 fb_pitch, fb_width, fb_height;
     UINT8 fb_bpp, fb_type;
+    UINT8 fb_pad[2];            // GRUB aligns what follows to 4 bytes
+    UINT8 fb_color[6];          // red, green, blue (position, size) pairs
 };
 struct __attribute__((packed)) MultibootModule { UINT32 mod_start, mod_end, string, reserved; };
 struct __attribute__((packed)) MultibootMmap { UINT32 size; UINT64 addr, len; UINT32 type; };
@@ -29,10 +37,44 @@ typedef struct { UINT64 r_offset, r_info; INT64 r_addend; } Elf64_Rela;
 
 static EFI_SYSTEM_TABLE* ST_;
 
+// Our own memset/memcpy rather than gnu-efi's SetMem/CopyMem: gnu-efi 4.x
+// builds those with the Microsoft calling convention (GNU_EFI_USE_MS_ABI)
+// and 3.x with the System V one, and nothing tells us which library we
+// were linked with. Called the wrong way, SetMem zeroes the wrong memory
+// and the loader crashes. Volatile so GCC doesn't turn them back into a
+// call to memset/memcpy.
+static void fill(void* p, UINTN n, UINT8 v) { volatile UINT8* d = p; while (n--) *d++ = v; }
+static void copy(void* to, const void* from, UINTN n) {
+    volatile UINT8* d = to;
+    const UINT8* s = from;
+    while (n--) *d++ = *s++;
+}
+
 static void fail(CHAR16* msg) {
     Print(L"\r\nsmb.efi: %s\r\nPress any key to return.\r\n", msg);
     UINTN idx;
     uefi_call_wrapper(ST_->BootServices->WaitForEvent, 3, 1, &ST_->ConIn->WaitForKey, &idx);
+}
+
+static void wait_key(void) {
+    UINTN idx;
+    uefi_call_wrapper(ST_->ConIn->Reset, 2, ST_->ConIn, FALSE);
+    uefi_call_wrapper(ST_->BootServices->WaitForEvent, 3, 1, &ST_->ConIn->WaitForKey, &idx);
+}
+
+// Progress block n (1-based) along the bottom of the screen, straight into
+// the framebuffer: usable after ExitBootServices.
+static void fb_block(EFI_GRAPHICS_OUTPUT_PROTOCOL* gop, int n, UINT32 rgb) {
+    EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* info = gop->Mode->Info;
+    UINT32 w = info->HorizontalResolution, h = info->VerticalResolution, pitch = info->PixelsPerScanLine;
+    UINT32 x0 = 8 + (UINT32)(n - 1) * 24, y0 = h - 24;
+    if (h < 40 || x0 + 16 > w) return;
+    UINT32 r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+    UINT32 px = info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor
+              ? (r << 16) | (g << 8) | b : (b << 16) | (g << 8) | r;
+    UINT32* fb = (UINT32*)(UINTN)gop->Mode->FrameBufferBase;
+    for (UINT32 y = y0; y < y0 + 16; y++)
+        for (UINT32 x = x0; x < x0 + 16; x++) fb[(UINTN)y * pitch + x] = px;
 }
 
 // Allocate pages below 4 GiB (the kernel's DMA structures need 32-bit addresses).
@@ -44,15 +86,18 @@ static void* alloc_low(UINTN bytes) {
     return (void*)(UINTN)addr;
 }
 
-// Pick a 32-bit BGRX mode: keep the current one if it qualifies, else the
-// largest that does.
+// Pick a 32-bit mode (BGRX or RGBX): keep the current one if it qualifies,
+// else the largest that does.
+static int gop_format_ok(EFI_GRAPHICS_PIXEL_FORMAT f) {
+    return f == PixelBlueGreenRedReserved8BitPerColor || f == PixelRedGreenBlueReserved8BitPerColor;
+}
 static EFI_GRAPHICS_OUTPUT_PROTOCOL* setup_gop(void) {
     EFI_GUID guid = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
     EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = NULL;
     if (EFI_ERROR(uefi_call_wrapper(ST_->BootServices->LocateProtocol, 3, &guid, NULL, (void**)&gop)) || !gop)
         return NULL;
     EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* cur = gop->Mode->Info;
-    if (cur->PixelFormat == PixelBlueGreenRedReserved8BitPerColor && cur->HorizontalResolution >= 256)
+    if (gop_format_ok(cur->PixelFormat) && cur->HorizontalResolution >= 256)
         return gop;
     UINT32 best = (UINT32)-1, best_px = 0;
     for (UINT32 m = 0; m < gop->Mode->MaxMode; m++) {
@@ -60,7 +105,7 @@ static EFI_GRAPHICS_OUTPUT_PROTOCOL* setup_gop(void) {
         UINTN size;
         if (EFI_ERROR(uefi_call_wrapper(gop->QueryMode, 4, gop, m, &size, &info))) continue;
         UINT32 px = info->HorizontalResolution * info->VerticalResolution;
-        if (info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor && px > best_px) { best = m; best_px = px; }
+        if (gop_format_ok(info->PixelFormat) && px > best_px) { best = m; best_px = px; }
     }
     if (best == (UINT32)-1) return NULL;
     uefi_call_wrapper(gop->SetMode, 2, gop, best);
@@ -105,6 +150,15 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE* st) {
     for (UINTN i = 0; i < cut; i++) rom_path[i] = self[i] == L'/' ? L'\\' : self[i];
     StrCpy(rom_path + cut, L"smb.nes");
 
+    // "debug" anywhere in the load options: pause before handing over.
+    int debug = 0;
+    {
+        CHAR16* o = li->LoadOptions;
+        UINTN on = li->LoadOptionsSize / 2;
+        for (UINTN i = 0; o && i + 5 <= on; i++)
+            if (o[i] == L'd' && o[i+1] == L'e' && o[i+2] == L'b' && o[i+3] == L'u' && o[i+4] == L'g') debug = 1;
+    }
+
     UINTN rom_size = 0;
     UINT8* rom = read_file(image, rom_path, &rom_size);
     if (!rom) { fail(L"couldn't read smb.nes next to smb.efi"); return EFI_NOT_FOUND; }
@@ -112,21 +166,39 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE* st) {
     EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = setup_gop();
     if (!gop) { fail(L"no 32-bit graphics mode available"); return EFI_UNSUPPORTED; }
 
+    // (after setup_gop: a mode change clears the screen)
+    Print(L"Super Mario Bros. UEFI loader\r\n");
+    Print(L"  loaded from:  %s\r\n", self ? self : L"(unknown)");
+    Print(L"  ROM:          %s, %d bytes at 0x%lx\r\n", rom_path, rom_size, (UINT64)(UINTN)rom);
+    Print(L"  graphics:     %dx%d, %s, framebuffer 0x%lx, %d px/line\r\n",
+          gop->Mode->Info->HorizontalResolution, gop->Mode->Info->VerticalResolution,
+          gop->Mode->Info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor ? L"BGRX" : L"RGBX",
+          (UINT64)gop->Mode->FrameBufferBase, gop->Mode->Info->PixelsPerScanLine);
+
     // Kernel: copy, zero .bss, relocate.
     UINT8* kbase = alloc_low(KERNEL_MEM_SIZE);
     struct MultibootInfo* mbi = alloc_low(4096);
     struct MultibootMmap* mmap = alloc_low(MAX_MMAP * sizeof(struct MultibootMmap));
     if (!kbase || !mbi || !mmap) { fail(L"out of memory below 4 GiB"); return EFI_OUT_OF_RESOURCES; }
     UINTN image_size = kernel_image_end - kernel_image;
-    CopyMem(kbase, (void*)kernel_image, image_size);
-    SetMem(kbase + image_size, KERNEL_MEM_SIZE - image_size, 0);
+    Print(L"  kernel:       %d bytes (%d in memory) at 0x%lx, entry +0x%lx\r\n",
+          image_size, (UINTN)KERNEL_MEM_SIZE, (UINT64)(UINTN)kbase, (UINT64)KERNEL_ENTRY);
+    copy(kbase, (void*)kernel_image, image_size);
+    fill(kbase + image_size, KERNEL_MEM_SIZE - image_size, 0);
     for (Elf64_Rela* r = (Elf64_Rela*)(kbase + KERNEL_RELA_START); r < (Elf64_Rela*)(kbase + KERNEL_RELA_END); r++) {
-        if ((r->r_info & 0xFFFFFFFF) != 8) { fail(L"unexpected relocation type in kernel"); return EFI_LOAD_ERROR; }
+        UINT32 type = (UINT32)(r->r_info & 0xFFFFFFFF);
+        if (type == 0) continue;                                  // R_X86_64_NONE
+        if (type != 8) {                                          // R_X86_64_RELATIVE is all we can do
+            Print(L"\r\nkernel relocation %d at +0x%lx (symbol %d) isn't R_X86_64_RELATIVE (8).\r\n",
+                  type, r->r_offset, (UINT32)(r->r_info >> 32));
+            fail(L"unexpected relocation type in kernel; rebuild with the current Makefile");
+            return EFI_LOAD_ERROR;
+        }
         *(UINT64*)(kbase + r->r_offset) = (UINT64)(UINTN)kbase + r->r_addend;
     }
 
     // Multiboot-style boot information, in the same page.
-    SetMem(mbi, 4096, 0);
+    fill(mbi, 4096, 0);
     struct MultibootModule* mod = (struct MultibootModule*)((UINT8*)mbi + 512);
     char* cmdline = (char*)mbi + 1024;
     mod->mod_start = (UINT32)(UINTN)rom;
@@ -149,27 +221,38 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE* st) {
     mbi->fb_pitch = gop->Mode->Info->PixelsPerScanLine * 4;
     mbi->fb_bpp = 32;
     mbi->fb_type = 1;
+    int bgr = gop->Mode->Info->PixelFormat == PixelBlueGreenRedReserved8BitPerColor;
+    mbi->fb_color[0] = bgr ? 16 : 0;  mbi->fb_color[1] = 8;   // red
+    mbi->fb_color[2] = 8;             mbi->fb_color[3] = 8;   // green
+    mbi->fb_color[4] = bgr ? 0 : 16;  mbi->fb_color[5] = 8;   // blue
 
-    // Leave boot services (retry once if the memory map changed under us).
-    UINTN map_size = 0, key, desc_size;
+    Print(L"  command line: %a\r\n", cmdline);
+    if (debug) { Print(L"debug: press any key to start the kernel.\r\n"); wait_key(); }
+    Print(L"Leaving boot services...\r\n");
+
+    // Leave boot services. The map buffer is allocated once, with room to
+    // spare, before the first attempt: after a failed ExitBootServices only
+    // GetMemoryMap and ExitBootServices may be called (some firmware hangs
+    // on an AllocatePool there), and nothing may be printed.
+    UINTN map_size = 0, map_cap, key, desc_size;
     UINT32 desc_ver;
-    EFI_MEMORY_DESCRIPTOR* map = NULL;
-    for (int attempt = 0; attempt < 4; attempt++) {
-        map_size = 0;
-        uefi_call_wrapper(st->BootServices->GetMemoryMap, 5, &map_size, NULL, &key, &desc_size, &desc_ver);
-        map_size += 8 * desc_size;
-        if (map) FreePool(map);
-        map = AllocatePool(map_size);
+    uefi_call_wrapper(st->BootServices->GetMemoryMap, 5, &map_size, NULL, &key, &desc_size, &desc_ver);
+    map_cap = map_size + 64 * (desc_size ? desc_size : 48);
+    EFI_MEMORY_DESCRIPTOR* map = AllocatePool(map_cap);
+    if (!map) { fail(L"out of memory for the memory map"); return EFI_OUT_OF_RESOURCES; }
+    for (int attempt = 0; attempt < 8; attempt++) {
+        map_size = map_cap;
         if (EFI_ERROR(uefi_call_wrapper(st->BootServices->GetMemoryMap, 5, &map_size, map, &key, &desc_size, &desc_ver)))
             continue;
         if (!EFI_ERROR(uefi_call_wrapper(st->BootServices->ExitBootServices, 2, image, key)))
             goto exited;
     }
-    fail(L"ExitBootServices failed");
-    return EFI_LOAD_ERROR;
+    fb_block(gop, 1, 0x404040);     // a grey first block: stuck in the firmware
+    for (;;) __asm__ volatile("hlt");
 
 exited:
     __asm__ volatile("cli");
+    fb_block(gop, 1, 0xFF0000);     // red: out of the firmware, entering the kernel
     // Hand the kernel the free RAM as a Multiboot memory map. Only
     // EfiConventionalMemory: boot-services memory still holds the page
     // tables the kernel keeps using, and smb.nes sits in loader memory.

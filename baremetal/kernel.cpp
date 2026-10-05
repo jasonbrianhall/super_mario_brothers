@@ -24,7 +24,8 @@
 #define COM1 0x3F8
 extern "C" void serial_putc(char c) {
     if (c == '\n') serial_putc('\r');
-    while (!(inb(COM1 + 5) & 0x20)) {}
+    // Bounded: a PC without a UART at 0x3F8 may never report it ready.
+    for (int i = 0; i < 100000 && !(inb(COM1 + 5) & 0x20); i++) {}
     outb(COM1, (uint8_t)c);
 }
 extern "C" void serial_puts(const char* s) { while (*s) serial_putc(*s++); }
@@ -197,7 +198,7 @@ static bool bga_init(uint32_t w, uint32_t h, uint32_t bpp) {
 
 static bool video_init(const MultibootInfo* mbi) {
     bool ok = false;
-    if ((mbi->flags & (1 << 12)) && mbi->fb_addr < phys_limit) {
+    if ((mbi->flags & (1 << 12)) && mbi->fb_addr && mbi->fb_addr < phys_limit) {   // 0: a GOP with no linear framebuffer
         int bpp = mbi->fb_bpp;
         if (mbi->fb_type == 0 && bpp == 8) {
             fb_indexed = ok = true;
@@ -210,7 +211,7 @@ static bool video_init(const MultibootInfo* mbi) {
             fb = (uint8_t*)(uintptr_t)mbi->fb_addr;
             fb_w = mbi->fb_width; fb_h = mbi->fb_height; fb_pitch = mbi->fb_pitch;
             fb_bytes = (bpp + 7) / 8;
-            printf("Using bootloader framebuffer %ux%u, %d bits\n", fb_w, fb_h, bpp);
+            printf("Using bootloader framebuffer %ux%u, %d bits at 0x%lx\n", fb_w, fb_h, bpp, (unsigned long)mbi->fb_addr);
         }
     }
     if (!ok && bga_init(FB_W, FB_H, FB_BPP)) {
