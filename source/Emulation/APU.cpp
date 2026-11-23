@@ -14,8 +14,6 @@
 #include "../Configuration.hpp"
 #include "APU.hpp"
 
-    APU::MixCache APU::outputCache[256];
-    int APU::cacheIndex = 0;
 
 
 static const uint8_t lengthTable[] = {
@@ -115,6 +113,21 @@ public:
         {
             timerValue--;
         }
+    }
+
+    // stepTimer() n times.
+    void advanceTimer(unsigned n)
+    {
+        if (n <= timerValue)
+        {
+            timerValue -= n;
+            return;
+        }
+        n -= timerValue + 1;                    // the step that reloads
+        unsigned cycle = (unsigned)timerPeriod + 1;
+        unsigned reloads = 1 + n / cycle;
+        dutyValue = (dutyValue + reloads) % 8;
+        timerValue = timerPeriod - n % cycle;
     }
 
     void stepEnvelope()
@@ -300,6 +313,24 @@ public:
         }
     }
 
+    // stepTimer() n times.
+    void advanceTimer(unsigned n)
+    {
+        if (n <= timerValue)
+        {
+            timerValue -= n;
+            return;
+        }
+        n -= timerValue + 1;                    // the step that reloads
+        unsigned cycle = (unsigned)timerPeriod + 1;
+        unsigned reloads = 1 + n / cycle;
+        if (lengthValue > 0 && counterValue > 0)
+        {
+            dutyValue = (dutyValue + reloads) % 32;
+        }
+        timerValue = timerPeriod - n % cycle;
+    }
+
     void stepLength()
     {
         if (lengthEnabled && lengthValue > 0)
@@ -417,6 +448,28 @@ public:
         {
             timerValue--;
         }
+    }
+
+    // stepTimer() n times.
+    void advanceTimer(unsigned n)
+    {
+        if (n <= timerValue)
+        {
+            timerValue -= n;
+            return;
+        }
+        n -= timerValue + 1;                    // the step that reloads
+        unsigned cycle = (unsigned)timerPeriod + 1;
+        unsigned reloads = 1 + n / cycle;
+        uint8_t shift = mode ? 6 : 1;
+        while (reloads--)
+        {
+            uint16_t b1 = shiftRegister & 1;
+            uint16_t b2 = (shiftRegister >> shift) & 1;
+            shiftRegister >>= 1;
+            shiftRegister |= (b1 ^ b2) << 14;
+        }
+        timerValue = timerPeriod - n % cycle;
     }
 
     void stepEnvelope()
@@ -560,35 +613,28 @@ APU::~APU()
         uint8_t tri = triangle->output();
         uint8_t noi = noise->output();
 
-        // Check if we've computed this combination before
-        for (int i = 0; i < 256; i++) {
-            MixCache& cache = outputCache[i];
-            if (cache.valid && 
-                cache.pulse1_val == p1 && cache.pulse2_val == p2 && 
-                cache.triangle_val == tri && cache.noise_val == noi) {
-                return cache.result;  // Cache hit - return stored result
-            }
-        }
- 
-        // Cache miss - compute the floating point math
+        // Each channel's output is 4 bits, so the mix of the four is a lookup
+        // in a 64K table, filled in as combinations come up. (This was a
+        // linear search of a 256-entry cache for every sample; same results.)
+        static uint8_t mixTable[65536];
+        static uint8_t mixKnown[65536 / 8];
+        bool small = (p1 | p2 | tri | noi) < 16;
+        unsigned key = ((unsigned)p1 << 12) | ((unsigned)p2 << 8) | ((unsigned)tri << 4) | noi;
+        if (small && (mixKnown[key >> 3] & (1 << (key & 7))))
+            return mixTable[key];
+
         double pulse_sum = p1 + p2;
         double pulse_out = (pulse_sum > 0) ? 95.52 / (8128.0 / pulse_sum + 100.0) : 0.0;
-        
+
         double tnd_sum = tri / 8227.0 + noi / 12241.0;
         double tnd_out = (tnd_sum > 0) ? 163.67 / (1.0 / tnd_sum + 100.0) : 0.0;
-        
+
         uint8_t result = (uint8_t)((pulse_out + tnd_out) * 255.0);
 
-        // Store in cache for next time
-        MixCache& cache = outputCache[cacheIndex];
-        cache.pulse1_val = p1;
-        cache.pulse2_val = p2;
-        cache.triangle_val = tri;
-        cache.noise_val = noi;
-        cache.result = result;
-        cache.valid = true;
-        cacheIndex = (cacheIndex + 1) & 255;  // Wrap around
-
+        if (small) {
+            mixTable[key] = result;
+            mixKnown[key >> 3] |= (uint8_t)(1 << (key & 7));
+        }
         return result;
     }
 
@@ -655,22 +701,63 @@ void APU::stepFrame()
         //pthread_mutex_lock(&audio_mutex);
 #endif
 
-        // Step the timer ~3729 times per quarter frame (same as SDL)
+        // Step the timer ~3729 times per quarter frame (same as SDL).
+        // Sample j is taken at the first step index k with k / 3729 > j /
+        // samplesToWrite, before that step's timer update; once the last
+        // sample is taken the quarter frame's stepping stops. The timers are
+        // advanced in one go between samples (advanceTimer(n) == n calls of
+        // stepTimer(); the triangle steps twice per step).
         int j = 0;
-        for (int stepIndex = 0; stepIndex < 3729 && j < samplesToWrite; stepIndex++)
+        if (samplesToWrite * 2 <= 3729)
         {
-            if ((stepIndex / 3729.0) > (j / (double)samplesToWrite))
+            int done = 0;  // steps done so far
+            for (; j < samplesToWrite; j++)
             {
-                uint8_t sample = getOutput();
-                audioBuffer[audioBufferLength + j] = sample;
-                j++;
-            }
+                int k = (int)((long)j * 3729 / samplesToWrite) + 1;
+                if (k >= 3729)
+                {
+                    break;
+                }
+                unsigned n = (unsigned)(k - done);
+                pulse1->advanceTimer(n);
+                pulse2->advanceTimer(n);
+                noise->advanceTimer(n);
+                triangle->advanceTimer(2 * n);
 
-            pulse1->stepTimer();
-            pulse2->stepTimer();
-            noise->stepTimer();
-            triangle->stepTimer();
-            triangle->stepTimer(); // Triangle steps twice like in SDL
+                audioBuffer[audioBufferLength + j] = getOutput();
+
+                pulse1->advanceTimer(1);
+                pulse2->advanceTimer(1);
+                noise->advanceTimer(1);
+                triangle->advanceTimer(2);
+                done = k + 1;
+            }
+            if (j < samplesToWrite)
+            {
+                unsigned n = (unsigned)(3729 - done);
+                pulse1->advanceTimer(n);
+                pulse2->advanceTimer(n);
+                noise->advanceTimer(n);
+                triangle->advanceTimer(2 * n);
+            }
+        }
+        else
+        {
+            for (int stepIndex = 0; stepIndex < 3729 && j < samplesToWrite; stepIndex++)
+            {
+                if ((long)stepIndex * samplesToWrite > (long)j * 3729)  // stepIndex/3729 > j/samplesToWrite
+                {
+                    uint8_t sample = getOutput();
+                    audioBuffer[audioBufferLength + j] = sample;
+                    j++;
+                }
+
+                pulse1->stepTimer();
+                pulse2->stepTimer();
+                noise->stepTimer();
+                triangle->stepTimer();
+                triangle->stepTimer(); // Triangle steps twice like in SDL
+            }
         }
         audioBufferLength += j; // Use j instead of samplesToWrite
         

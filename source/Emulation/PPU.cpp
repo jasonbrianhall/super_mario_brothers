@@ -207,31 +207,43 @@ void PPU::renderTile(uint32_t* buffer, int index, int xOffset, int yOffset)
     uint16_t tile = readByte(index) + (ppuCtrl & (1 << 4) ? 256 : 0);
     uint8_t attribute = getAttributeTableValue(index);
 
+    // The tile's three visible colors (color 0 is transparent).
+    uint32_t colors[4];
+    for (int k = 1; k < 4; k++)
+    {
+        colors[k] = 0xff000000 | paletteRGB[palette[attribute * 4 + k]];
+    }
+
     // Read the pixels of the tile
     for( int row = 0; row < 8; row++ )
     {
+        int y = yOffset + row;
+        if (y < 0 || y >= 240)
+        {
+            continue;
+        }
         uint8_t plane1 = readCHR(tile * 16 + row);
         uint8_t plane2 = readCHR(tile * 16 + row + 8);
+        if ((plane1 | plane2) == 0)
+        {
+            continue; // the whole row is transparent
+        }
 
+        uint32_t* line = buffer + y * 256;
         for( int column = 0; column < 8; column++ )
         {
-            uint8_t paletteIndex = (((plane1 & (1 << column)) ? 1 : 0) + ((plane2 & (1 << column)) ? 2 : 0));
-            uint8_t colorIndex = palette[attribute * 4 + paletteIndex];
+            uint8_t paletteIndex = ((plane1 >> column) & 1) | (((plane2 >> column) & 1) << 1);
             if( paletteIndex == 0 )
             {
                 // skip transparent pixels
-                //colorIndex = palette[0];
                 continue;
             }
-            uint32_t pixel = 0xff000000 | paletteRGB[colorIndex];
-
             int x = (xOffset + (7 - column));
-            int y = (yOffset + row);
-            if (x < 0 || x >= 256 || y < 0 || y >= 240)
+            if (x < 0 || x >= 256)
             {
                 continue;
             }
-            buffer[y * 256 + x] = pixel;
+            line[x] = colors[paletteIndex];
         }
     }
 
@@ -240,9 +252,10 @@ void PPU::renderTile(uint32_t* buffer, int index, int xOffset, int yOffset)
 void PPU::render(uint32_t* buffer)
 {
     // Clear the buffer with the background color
+    const uint32_t background = paletteRGB[palette[0]];
     for (int index = 0; index < 256 * 240; index++)
     {
-        buffer[index] = paletteRGB[palette[0]];
+        buffer[index] = background;
     }
 
     // Draw sprites behind the backround
