@@ -788,8 +788,10 @@ void GTKMainWindow::gameLoop()
         };
         desiredSpec.userdata = NULL;
 
-        SDL_AudioSpec obtainedSpec;
-        if (SDL_OpenAudio(&desiredSpec, &obtainedSpec) < 0) {
+        // NULL 'obtained': SDL must deliver exactly the requested format/rate
+        // (it converts internally if the device differs).
+        SDL_AudioSpec& obtainedSpec = desiredSpec;
+        if (SDL_OpenAudio(&desiredSpec, nullptr) < 0) {
             std::cout << "SDL_OpenAudio failed: " << SDL_GetError() << std::endl;
             std::cout << "Continuing without audio..." << std::endl;
         } else {

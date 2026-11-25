@@ -6,8 +6,6 @@
 #include <dos.h>
 #include <pc.h>
 #include <dpmi.h>
-#else
-#include <pthread.h>
 #endif
 
 
@@ -37,6 +35,56 @@ static const uint16_t noiseTable[] = {
     4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068
 };
 
+// NTSC 2A03 CPU clock. Pulse/noise timers tick every other CPU cycle
+// (one "APU cycle"); the triangle timer ticks every CPU cycle.
+static const double CPU_CLOCK = 1789773.0;
+
+/**
+ * Shared envelope unit (pulse and noise).
+ * Only a write to the 4th register of the channel ($4003/$4007/$400F)
+ * restarts it -- writing the control register ($4000/$4004/$400C) does not.
+ */
+struct Envelope
+{
+    bool start = false;
+    bool loop = false;
+    bool constant = false;
+    uint8_t period = 0;       // also the constant volume
+    uint8_t divider = 0;
+    uint8_t decay = 0;
+
+    void write(uint8_t value)
+    {
+        loop = (value & 0x20) != 0;
+        constant = (value & 0x10) != 0;
+        period = value & 0x0f;
+    }
+
+    void clock()
+    {
+        if (start)
+        {
+            start = false;
+            decay = 15;
+            divider = period;
+        }
+        else if (divider == 0)
+        {
+            divider = period;
+            if (decay > 0)
+                decay--;
+            else if (loop)
+                decay = 15;
+        }
+        else
+        {
+            divider--;
+        }
+    }
+
+    uint8_t volume() const { return constant ? period : decay; }
+};
+
 /**
  * Pulse waveform generator.
  */
@@ -44,218 +92,125 @@ class Pulse
 {
     friend class APU;
 public:
-    Pulse(uint8_t channel)
-    {
-        enabled = false;
-        this->channel = channel;
-        lengthEnabled = false;
-        lengthValue = 0;
-        timerPeriod = 0;
-        timerValue = 0;
-        dutyMode = 0;
-        dutyValue = 0;
-        sweepReload = false;
-        sweepEnabled = false;
-        sweepNegate = false;
-        sweepShift = 0;
-        sweepPeriod = 0;
-        sweepValue = 0;
-        envelopeEnabled = false;
-        envelopeLoop = false;
-        envelopeStart = false;
-        envelopePeriod = 0;
-        envelopeValue = 0;
-        envelopeVolume = 0;
-        constantVolume = 0;
-    }
+    explicit Pulse(uint8_t channel) : channel(channel) {}
 
     void writeControl(uint8_t value)
     {
         dutyMode = (value >> 6) & 3;
-        lengthEnabled = ((value >> 5) & 1) == 0;
-        envelopeLoop = ((value >> 5) & 1) == 1;
-        envelopeEnabled = ((value >> 4) & 1) == 0;
-        envelopePeriod = value & 15;
-        constantVolume = value & 15;
-        envelopeStart = true;
+        lengthHalt = (value & 0x20) != 0;
+        envelope.write(value);
     }
 
     void writeSweep(uint8_t value)
     {
-        sweepEnabled = ((value >> 7) & 1) == 1;
-        sweepPeriod = ((value >> 4) & 7) + 1;
-        sweepNegate = ((value >> 3) & 1) == 1;
+        sweepEnabled = (value & 0x80) != 0;
+        sweepPeriod = (value >> 4) & 7;
+        sweepNegate = (value & 0x08) != 0;
         sweepShift = value & 7;
         sweepReload = true;
     }
 
     void writeTimerLow(uint8_t value)
     {
-        timerPeriod = (timerPeriod & 0xff00) | (uint16_t)value;
+        timerPeriod = (timerPeriod & 0x0700) | value;
     }
 
     void writeTimerHigh(uint8_t value)
     {
-        lengthValue = lengthTable[value >> 3];
-        timerPeriod = (timerPeriod & 0xff) | ((uint16_t)(value & 7) << 8);
-        envelopeStart = true;
+        if (enabled)
+            lengthValue = lengthTable[value >> 3];
+        timerPeriod = (timerPeriod & 0x00ff) | ((uint16_t)(value & 7) << 8);
+        envelope.start = true;
         dutyValue = 0;
     }
 
-    void stepTimer()
+    // Run n CPU cycles and return the sum of the channel's output over them.
+    // The timer ticks every other CPU cycle, so a duty step lasts
+    // 2 * (period + 1) CPU cycles. Volume, length and sweep only change on
+    // frame-sequencer clocks, so between steps the output is constant and
+    // the loop jumps from one step to the next.
+    uint32_t advance(uint32_t n)
     {
-        if (timerValue == 0)
+        uint32_t sum = 0;
+        while (n > 0)
         {
-            timerValue = timerPeriod;
-            dutyValue = (dutyValue + 1) % 8;
-        }
-        else
-        {
-            timerValue--;
-        }
-    }
-
-    // stepTimer() n times.
-    void advanceTimer(unsigned n)
-    {
-        if (n <= timerValue)
-        {
-            timerValue -= n;
-            return;
-        }
-        n -= timerValue + 1;                    // the step that reloads
-        unsigned cycle = (unsigned)timerPeriod + 1;
-        unsigned reloads = 1 + n / cycle;
-        dutyValue = (dutyValue + reloads) % 8;
-        timerValue = timerPeriod - n % cycle;
-    }
-
-    void stepEnvelope()
-    {
-        if (envelopeStart)
-        {
-            envelopeVolume = 15;
-            envelopeValue = envelopePeriod;
-            envelopeStart = false;
-        }
-        else if (envelopeValue > 0)
-        {
-            envelopeValue--;
-        }
-        else
-        {
-            if (envelopeVolume > 0)
+            uint32_t k = (n < countdown) ? n : countdown;
+            sum += k * output();
+            countdown -= k;
+            n -= k;
+            if (countdown == 0)
             {
-                envelopeVolume--;
+                dutyValue = (dutyValue + 1) & 7;
+                countdown = 2u * ((uint32_t)timerPeriod + 1);
             }
-            else if (envelopeLoop)
-            {
-                envelopeVolume = 15;
-            }
-            envelopeValue = envelopePeriod;
         }
-    }
-
-    void stepSweep()
-    {
-        if (sweepReload)
-        {
-            if (sweepEnabled && sweepValue == 0)
-            {
-                sweep();
-            }
-            sweepValue = sweepPeriod;
-            sweepReload = false;
-        }
-        else if (sweepValue > 0)
-        {
-            sweepValue--;
-        }
-        else
-        {
-            if (sweepEnabled)
-            {
-                sweep();
-            }
-            sweepValue = sweepPeriod;
-        }
+        return sum;
     }
 
     void stepLength()
     {
-        if (lengthEnabled && lengthValue > 0)
-        {
+        if (!lengthHalt && lengthValue > 0)
             lengthValue--;
-        }
     }
 
-    void sweep()
+    uint16_t sweepTarget() const
     {
         uint16_t delta = timerPeriod >> sweepShift;
         if (sweepNegate)
         {
-            timerPeriod -= delta;
-            if (channel == 1)
-            {
-                timerPeriod--;
-            }
+            // Pulse 1 uses one's complement, pulse 2 two's complement
+            int t = (int)timerPeriod - delta - (channel == 1 ? 1 : 0);
+            return t < 0 ? 0 : (uint16_t)t;
+        }
+        return timerPeriod + delta;
+    }
+
+    // The sweep unit mutes the channel whenever the period is too low or the
+    // target period overflows -- even when the sweep itself is disabled.
+    bool muted() const
+    {
+        return timerPeriod < 8 || sweepTarget() > 0x7ff;
+    }
+
+    void stepSweep()
+    {
+        if (sweepDivider == 0 && sweepEnabled && sweepShift != 0 && !muted())
+            timerPeriod = sweepTarget();
+
+        if (sweepDivider == 0 || sweepReload)
+        {
+            sweepDivider = sweepPeriod;
+            sweepReload = false;
         }
         else
         {
-            timerPeriod += delta;
+            sweepDivider--;
         }
     }
 
-    uint8_t output()
+    uint8_t output() const
     {
-        if (!enabled)
-        {
+        if (lengthValue == 0 || muted() || dutyTable[dutyMode][dutyValue] == 0)
             return 0;
-        }
-        if (lengthValue == 0)
-        {
-            return 0;
-        }
-        if (dutyTable[dutyMode][dutyValue] == 0)
-        {
-            return 0;
-        }
-        if (timerPeriod < 8 || timerPeriod > 0x7ff)
-        {
-            return 0;
-        }
-        if (envelopeEnabled)
-        {
-            return envelopeVolume;
-        }
-        else
-        {
-            return constantVolume;
-        }
+        return envelope.volume();
     }
 
 private:
-    bool enabled;
     uint8_t channel;
-    bool lengthEnabled;
-    uint8_t lengthValue;
-    uint16_t timerPeriod;
-    uint16_t timerValue;
-    uint8_t dutyMode;
-    uint8_t dutyValue;
-    bool sweepReload;
-    bool sweepEnabled;
-    bool sweepNegate;
-    uint8_t sweepShift;
-    uint8_t sweepPeriod;
-    uint8_t sweepValue;
-    bool envelopeEnabled;
-    bool envelopeLoop;
-    bool envelopeStart;
-    uint8_t envelopePeriod;
-    uint8_t envelopeValue;
-    uint8_t envelopeVolume;
-    uint8_t constantVolume;
+    bool enabled = false;
+    bool lengthHalt = false;
+    uint8_t lengthValue = 0;
+    uint16_t timerPeriod = 0;
+    uint32_t countdown = 2;     // CPU cycles until the next duty step
+    uint8_t dutyMode = 0;
+    uint8_t dutyValue = 0;
+    bool sweepReload = false;
+    bool sweepEnabled = false;
+    bool sweepNegate = false;
+    uint8_t sweepShift = 0;
+    uint8_t sweepPeriod = 0;
+    uint8_t sweepDivider = 0;
+    Envelope envelope;
 };
 
 /**
@@ -265,549 +220,416 @@ class Triangle
 {
     friend class APU;
 public:
-    Triangle()
-    {
-        enabled = false;
-        lengthEnabled = false;
-        lengthValue = 0;
-        timerPeriod = 0;
-        timerValue = 0;  // This was missing!
-        dutyValue = 0;
-        counterPeriod = 0;
-        counterValue = 0;
-        counterReload = false;
-    }
-
     void writeControl(uint8_t value)
     {
-        lengthEnabled = ((value >> 7) & 1) == 0;
+        // Bit 7 is both the length-counter halt and the linear-counter
+        // control flag. While it is set the linear counter keeps reloading,
+        // so the note sustains instead of being cut off.
+        control = (value & 0x80) != 0;
         counterPeriod = value & 0x7f;
     }
 
     void writeTimerLow(uint8_t value)
     {
-        timerPeriod = (timerPeriod & 0xff00) | (uint16_t)value;
+        timerPeriod = (timerPeriod & 0x0700) | value;
     }
 
     void writeTimerHigh(uint8_t value)
     {
-        lengthValue = lengthTable[value >> 3];
+        if (enabled)
+            lengthValue = lengthTable[value >> 3];
         timerPeriod = (timerPeriod & 0x00ff) | ((uint16_t)(value & 7) << 8);
-        timerValue = timerPeriod;
         counterReload = true;
     }
 
-    void stepTimer()
+    // Run n CPU cycles (the triangle timer ticks every CPU cycle) and
+    // return the sum of the output over them.
+    uint32_t advance(uint32_t n)
     {
-        if (timerValue == 0)
+        // Very small periods are ultrasonic; real hardware produces a
+        // ~7.5 value DC level. Freezing the sequencer avoids aliasing.
+        if (lengthValue == 0 || counterValue == 0 || timerPeriod < 2)
         {
-            timerValue = timerPeriod;
-            if (lengthValue > 0 && counterValue > 0)
+            // Sequencer frozen: output holds. Keep the timer running.
+            uint32_t p = (uint32_t)timerPeriod + 1;
+            countdown = (n < countdown) ? countdown - n : p - (n - countdown) % p;
+            return n * output();
+        }
+        uint32_t sum = 0;
+        while (n > 0)
+        {
+            uint32_t k = (n < countdown) ? n : countdown;
+            sum += k * output();
+            countdown -= k;
+            n -= k;
+            if (countdown == 0)
             {
-                dutyValue = (dutyValue + 1) % 32;
+                dutyValue = (dutyValue + 1) & 31;
+                countdown = (uint32_t)timerPeriod + 1;
             }
         }
-        else
-        {
-            timerValue--;
-        }
-    }
-
-    // stepTimer() n times.
-    void advanceTimer(unsigned n)
-    {
-        if (n <= timerValue)
-        {
-            timerValue -= n;
-            return;
-        }
-        n -= timerValue + 1;                    // the step that reloads
-        unsigned cycle = (unsigned)timerPeriod + 1;
-        unsigned reloads = 1 + n / cycle;
-        if (lengthValue > 0 && counterValue > 0)
-        {
-            dutyValue = (dutyValue + reloads) % 32;
-        }
-        timerValue = timerPeriod - n % cycle;
+        return sum;
     }
 
     void stepLength()
     {
-        if (lengthEnabled && lengthValue > 0)
-        {
+        if (!control && lengthValue > 0)
             lengthValue--;
-        }
     }
 
-void Triangle::stepCounter()
-{
-    if (counterReload)
+    void stepCounter()
     {
-        counterValue = counterPeriod;
-    }
-    else if (counterValue > 0)
-    {
-        counterValue--;
-    }
-    counterReload = false;  // Move this outside the if block
-}
+        if (counterReload)
+            counterValue = counterPeriod;
+        else if (counterValue > 0)
+            counterValue--;
 
-    uint8_t output()
+        if (!control)
+            counterReload = false;
+    }
+
+    // The triangle holds its last level when silenced rather than
+    // dropping to 0 (which would click).
+    uint8_t output() const
     {
-        if (!enabled)
-        {
-            return 0;
-        }
-        if (lengthValue == 0)
-        {
-            return 0;
-        }
-        if (counterValue == 0)
-        {
-            return 0;
-        }
         return triangleTable[dutyValue];
     }
 
 private:
-    bool enabled;
-    bool lengthEnabled;
-    uint8_t lengthValue;
-    uint16_t timerPeriod;
-    uint16_t timerValue;
-    uint8_t dutyValue;
-    uint8_t counterPeriod;
-    uint8_t counterValue;
-    bool counterReload;
+    bool enabled = false;
+    bool control = false;
+    uint8_t lengthValue = 0;
+    uint16_t timerPeriod = 0;
+    uint32_t countdown = 1;     // CPU cycles until the next sequencer step
+    uint8_t dutyValue = 0;
+    uint8_t counterPeriod = 0;
+    uint8_t counterValue = 0;
+    bool counterReload = false;
 };
 
+/**
+ * Noise generator.
+ */
 class Noise
 {
     friend class APU;
 public:
-    Noise()
-    {
-        enabled = false;
-        mode = false;
-        shiftRegister = 1;
-        lengthEnabled = false;
-        lengthValue = 0;
-        timerPeriod = 0;
-        timerValue = 0;
-        envelopeEnabled = false;
-        envelopeLoop = false;
-        envelopeStart = false;
-        envelopePeriod = 0;
-        envelopeValue = 0;
-        envelopeVolume = 0;
-        constantVolume = 0;
-    }
-
     void writeControl(uint8_t value)
     {
-        lengthEnabled = ((value >> 5) & 1) == 0;
-        envelopeLoop = ((value >> 5) & 1) == 1;
-        envelopeEnabled = ((value >> 4) & 1) == 0;
-        envelopePeriod = value & 15;
-        constantVolume = value & 15;
-        envelopeStart = true;
+        lengthHalt = (value & 0x20) != 0;
+        envelope.write(value);
     }
 
     void writePeriod(uint8_t value)
     {
-        mode = (value & 0x80) == 0x80;
+        mode = (value & 0x80) != 0;
         timerPeriod = noiseTable[value & 0x0f];
     }
 
     void writeLength(uint8_t value)
     {
-        lengthValue = lengthTable[value >> 3];
-        envelopeStart = true;
+        if (enabled)
+            lengthValue = lengthTable[value >> 3];
+        envelope.start = true;
     }
 
-    void stepTimer()
+    // Run n CPU cycles (noiseTable holds periods in CPU cycles) and return
+    // the sum of the output over them.
+    uint32_t advance(uint32_t n)
     {
-        if (timerValue == 0)
+        uint32_t sum = 0;
+        int shift = mode ? 6 : 1;
+        while (n > 0)
         {
-            timerValue = timerPeriod;
-            uint8_t shift;
-            if (mode)
+            uint32_t k = (n < countdown) ? n : countdown;
+            sum += k * output();
+            countdown -= k;
+            n -= k;
+            if (countdown == 0)
             {
-                shift = 6;
+                uint16_t b1 = shiftRegister & 1;
+                uint16_t b2 = (shiftRegister >> shift) & 1;
+                shiftRegister >>= 1;
+                shiftRegister |= (b1 ^ b2) << 14;
+                countdown = timerPeriod;
             }
-            else
-            {
-                shift = 1;
-            }
-            uint16_t b1 = shiftRegister & 1;
-            uint16_t b2 = (shiftRegister >> shift) & 1;
-            shiftRegister >>= 1;
-            shiftRegister |= (b1 ^ b2) << 14;
         }
-        else
-        {
-            timerValue--;
-        }
-    }
-
-    // stepTimer() n times.
-    void advanceTimer(unsigned n)
-    {
-        if (n <= timerValue)
-        {
-            timerValue -= n;
-            return;
-        }
-        n -= timerValue + 1;                    // the step that reloads
-        unsigned cycle = (unsigned)timerPeriod + 1;
-        unsigned reloads = 1 + n / cycle;
-        uint8_t shift = mode ? 6 : 1;
-        while (reloads--)
-        {
-            uint16_t b1 = shiftRegister & 1;
-            uint16_t b2 = (shiftRegister >> shift) & 1;
-            shiftRegister >>= 1;
-            shiftRegister |= (b1 ^ b2) << 14;
-        }
-        timerValue = timerPeriod - n % cycle;
-    }
-
-    void stepEnvelope()
-    {
-        if (envelopeStart)
-        {
-            envelopeVolume = 15;
-            envelopeValue = envelopePeriod;
-            envelopeStart = false;
-        }
-        else if (envelopeValue > 0)
-        {
-            envelopeValue--;
-        }
-        else
-        {
-            if (envelopeVolume > 0)
-            {
-                envelopeVolume--;
-            }
-            else if (envelopeLoop)
-            {
-                envelopeVolume = 15;
-            }
-            envelopeValue = envelopePeriod;
-        }
+        return sum;
     }
 
     void stepLength()
     {
-        if (lengthEnabled && lengthValue > 0)
-        {
+        if (!lengthHalt && lengthValue > 0)
             lengthValue--;
-        }
     }
 
-    uint8_t output()
+    uint8_t output() const
     {
-        if (!enabled)
-        {
+        if (lengthValue == 0 || (shiftRegister & 1))
             return 0;
-        }
-        if (lengthValue == 0)
-        {
-            return 0;
-        }
-        if ((shiftRegister & 1) == 0)
-        {
-            return 0;
-        }
-        if (envelopeEnabled)
-        {
-            return envelopeVolume;
-        }
-        else
-        {
-            return constantVolume;
-        }
+        return envelope.volume();
     }
 
 private:
-    bool enabled;
-    bool mode;
-    uint16_t shiftRegister;
-    bool lengthEnabled;
-    uint8_t lengthValue;
-    uint16_t timerPeriod;
-    uint16_t timerValue;
-    bool envelopeEnabled;
-    bool envelopeLoop;
-    bool envelopeStart;
-    uint8_t envelopePeriod;
-    uint8_t envelopeValue;
-    uint8_t envelopeVolume;
-    uint8_t constantVolume;
+    bool enabled = false;
+    bool mode = false;
+    uint16_t shiftRegister = 1;
+    bool lengthHalt = false;
+    uint8_t lengthValue = 0;
+    uint16_t timerPeriod = 4;
+    uint32_t countdown = 4;     // CPU cycles until the next LFSR shift
+    Envelope envelope;
 };
 
 APU::APU()
 {
-    frameValue = 0;
+    readPos = 0;
     audioBufferLength = 0;
+    lastSample = 0;
+    memset(audioBuffer, 0, sizeof(audioBuffer));
 
-    // Initialize pointers to null first for safety
-    pulse1 = nullptr;
-    pulse2 = nullptr;
-    triangle = nullptr;
-    noise = nullptr;
+    frameStep = 0;
+    fiveStepMode = false;
 
-    // Clear audio buffer
-    memset(audioBuffer, 0, AUDIO_BUFFER_LENGTH);
+    cycleRemainder = 0.0;
+    sampleClock = 0.0;
+    pulse1Sum = pulse2Sum = triangleSum = noiseSum = 0;
+    sumCycles = 0;
 
-    try {
-        pulse1 = new Pulse(1);
-        pulse2 = new Pulse(2);
-        triangle = new Triangle;
-        noise = new Noise;
-        
-        #ifdef __DJGPP__
-        printf("APU initialized for DOS - all objects created successfully\n");
-        #else
-        printf("APU initialized for Linux\n");
-        #endif
-    } catch (...) {
-        printf("ERROR: Failed to create APU objects\n");
-        // Clean up any partially created objects
-        if (pulse1) { delete pulse1; pulse1 = nullptr; }
-        if (pulse2) { delete pulse2; pulse2 = nullptr; }
-        if (triangle) { delete triangle; triangle = nullptr; }
-        if (noise) { delete noise; noise = nullptr; }
-    }
+    filterRate = 0;
+    hpCoeff = lpCoeff = 0.0f;
+    hpPrevIn = 0.0f;
+    hpPrevOut = 0.0f;
+    lpPrevOut = 0.0f;
+
+    // Non-linear mixer lookup tables (nesdev "APU Mixer"). One extra entry
+    // at the end so lookups can interpolate without a bounds check.
+    pulseTable[0] = 0.0f;
+    for (int n = 1; n < 32; n++)
+        pulseTable[n] = 95.52f / (8128.0f / n + 100.0f);
+    tndTable[0] = 0.0f;
+    for (int n = 1; n < 204; n++)
+        tndTable[n] = 163.67f / (24329.0f / n + 100.0f);
+
+    pulse1 = new Pulse(1);
+    pulse2 = new Pulse(2);
+    triangle = new Triangle;
+    noise = new Noise;
 }
 
 APU::~APU()
 {
-    if (pulse1) {
-        delete pulse1;
-        pulse1 = nullptr;
-    }
-    if (pulse2) {
-        delete pulse2;
-        pulse2 = nullptr;
-    }
-    if (triangle) {
-        delete triangle;
-        triangle = nullptr;
-    }
-    if (noise) {
-        delete noise;
-        noise = nullptr;
-    }
+    delete pulse1;
+    delete pulse2;
+    delete triangle;
+    delete noise;
 }
 
-    uint8_t APU::getOutput()
+static inline float lookup(const float* table, float index)
+{
+    int i = (int)index;
+    float f = index - (float)i;
+    return table[i] + f * (table[i + 1] - table[i]);
+}
+
+/**
+ * Mix the channels' average outputs since the last sample. Averaging over
+ * the whole sample period (a box filter) instead of point sampling keeps
+ * the square waves from aliasing into off-key tones.
+ */
+float APU::mixAverage()
+{
+    if (sumCycles == 0)
+        return 0.0f;
+    float inv = 1.0f / (float)sumCycles;
+    float pulse = (float)(pulse1Sum + pulse2Sum) * inv;
+    float tnd = (float)(3 * triangleSum + 2 * noiseSum) * inv;
+    pulse1Sum = pulse2Sum = triangleSum = noiseSum = 0;
+    sumCycles = 0;
+    return lookup(pulseTable, pulse) + lookup(tndTable, tnd);
+}
+
+void APU::pushSample(float value)
+{
+    // First-order high-pass (~90 Hz) removes the DC offset of the NES mixer,
+    // then a gentle low-pass (~14 kHz), roughly like the console's output.
+    float hp = hpCoeff * (hpPrevOut + value - hpPrevIn);
+    hpPrevIn = value;
+    hpPrevOut = hp;
+    lpPrevOut += lpCoeff * (hp - lpPrevOut);
+
+    int s = (int)(lpPrevOut * 255.0f + (lpPrevOut >= 0 ? 0.5f : -0.5f));
+    if (s > 127) s = 127;
+    if (s < -128) s = -128;
+
+    if (audioBufferLength >= AUDIO_BUFFER_LENGTH)
     {
-        if (!pulse1 || !pulse2 || !triangle || !noise) {
-            return 128;
-        }
-
-        uint8_t p1 = pulse1->output();
-        uint8_t p2 = pulse2->output();
-        uint8_t tri = triangle->output();
-        uint8_t noi = noise->output();
-
-        // Each channel's output is 4 bits, so the mix of the four is a lookup
-        // in a 64K table, filled in as combinations come up. (This was a
-        // linear search of a 256-entry cache for every sample; same results.)
-        static uint8_t mixTable[65536];
-        static uint8_t mixKnown[65536 / 8];
-        bool small = (p1 | p2 | tri | noi) < 16;
-        unsigned key = ((unsigned)p1 << 12) | ((unsigned)p2 << 8) | ((unsigned)tri << 4) | noi;
-        if (small && (mixKnown[key >> 3] & (1 << (key & 7))))
-            return mixTable[key];
-
-        double pulse_sum = p1 + p2;
-        double pulse_out = (pulse_sum > 0) ? 95.52 / (8128.0 / pulse_sum + 100.0) : 0.0;
-
-        double tnd_sum = tri / 8227.0 + noi / 12241.0;
-        double tnd_out = (tnd_sum > 0) ? 163.67 / (1.0 / tnd_sum + 100.0) : 0.0;
-
-        uint8_t result = (uint8_t)((pulse_out + tnd_out) * 255.0);
-
-        if (small) {
-            mixTable[key] = result;
-            mixKnown[key >> 3] |= (uint8_t)(1 << (key & 7));
-        }
-        return result;
+        // Overflow: drop the oldest sample to keep latency bounded
+        readPos = (readPos + 1) % AUDIO_BUFFER_LENGTH;
+        audioBufferLength--;
     }
-
+    audioBuffer[(readPos + audioBufferLength) % AUDIO_BUFFER_LENGTH] = (int8_t)s;
+    audioBufferLength++;
+}
 
 void APU::output(uint8_t* buffer, int len)
 {
-    len = (len > audioBufferLength) ? audioBufferLength : len;
-    memcpy(buffer, audioBuffer, len);
-    if (len > audioBufferLength)
+#ifndef __DJGPP__
+    std::lock_guard<std::mutex> lock(bufferMutex);
+#endif
+    int n = (len < audioBufferLength) ? len : audioBufferLength;
+    for (int i = 0; i < n; i++)
     {
-        memcpy(buffer, audioBuffer, audioBufferLength);
-        audioBufferLength = 0;
+        lastSample = audioBuffer[readPos];
+        buffer[i] = (uint8_t)lastSample;
+        readPos = (readPos + 1) % AUDIO_BUFFER_LENGTH;
+    }
+    audioBufferLength -= n;
+
+    // Underrun: SDL2 does not pre-clear the buffer, so fill the rest.
+    // Holding the last value avoids a pop.
+    for (int i = n; i < len; i++)
+        buffer[i] = (uint8_t)lastSample;
+}
+
+void APU::clockQuarterFrame()
+{
+    pulse1->envelope.clock();
+    pulse2->envelope.clock();
+    triangle->stepCounter();
+    noise->envelope.clock();
+}
+
+void APU::clockHalfFrame()
+{
+    pulse1->stepSweep();
+    pulse2->stepSweep();
+    pulse1->stepLength();
+    pulse2->stepLength();
+    triangle->stepLength();
+    noise->stepLength();
+}
+
+void APU::clockFrameSequencer()
+{
+    frameStep++;
+    if (!fiveStepMode)
+    {
+        // 4-step: quarter on 1,2,3,4; half on 2,4
+        clockQuarterFrame();
+        if (frameStep == 2 || frameStep == 4)
+            clockHalfFrame();
+        if (frameStep >= 4)
+            frameStep = 0;
     }
     else
     {
-        memcpy(buffer, audioBuffer, len);
-        audioBufferLength -= len;
-        memcpy(audioBuffer, audioBuffer + len, audioBufferLength);
+        // 5-step: quarter on 1,2,3,5; half on 2,5; step 4 does nothing
+        if (frameStep != 4)
+            clockQuarterFrame();
+        if (frameStep == 2 || frameStep == 5)
+            clockHalfFrame();
+        if (frameStep >= 5)
+            frameStep = 0;
     }
 }
 
 void APU::stepFrame()
 {
-    // Safety check - if objects aren't created, don't crash
-    if (!pulse1 || !pulse2 || !triangle || !noise) {
+    int frameRate = Configuration::getFrameRate();
+    int audioRate = Configuration::getAudioFrequency();
+    if (frameRate <= 0 || audioRate <= 0)
         return;
+
+    if (audioRate != filterRate)
+    {
+        float dt = 1.0f / (float)audioRate;
+        float hpRC = 1.0f / (2.0f * 3.14159265f * 90.0f);
+        float lpRC = 1.0f / (2.0f * 3.14159265f * 14000.0f);
+        hpCoeff = hpRC / (hpRC + dt);
+        lpCoeff = dt / (lpRC + dt);
+        filterRate = audioRate;
     }
 
-    // Step the frame counter 4 times per frame, for 240Hz (same as SDL)
-    for (int i = 0; i < 4; i++)
-    {
-        frameValue = (frameValue + 1) % 5;
-        switch (frameValue)
-        {
-        case 1:
-        case 3:
-            stepEnvelope();
-            break;
-        case 0:
-        case 2:
-            stepEnvelope();
-            stepSweep();
-            stepLength();
-            break;
-        }
+    double cyclesPerSample = CPU_CLOCK / audioRate;
+    double exactCycles = CPU_CLOCK / frameRate + cycleRemainder;
+    uint32_t cycles = (uint32_t)exactCycles;
+    cycleRemainder = exactCycles - cycles;
 
-        // Calculate the number of samples needed per 1/4 frame (same as SDL)
-        int frequency = Configuration::getAudioFrequency();
-        int samplesToWrite = frequency / (Configuration::getFrameRate() * 4);
-        if (i == 3)
-        {
-            // Handle the remainder on the final tick of the frame counter
-            samplesToWrite = (frequency / Configuration::getFrameRate()) - 3 * (frequency / (Configuration::getFrameRate() * 4));
-        }
-        
-        // Bounds check
-        if (samplesToWrite <= 0 || audioBufferLength + samplesToWrite >= AUDIO_BUFFER_LENGTH) {
-            continue;
-        }
-        
 #ifndef __DJGPP__
-        // Audio locking for thread safety (like SDL's SDL_LockAudio)
-        //static pthread_mutex_t audio_mutex = PTHREAD_MUTEX_INITIALIZER;
-        //pthread_mutex_lock(&audio_mutex);
+    std::lock_guard<std::mutex> lock(bufferMutex);
 #endif
 
-        // Step the timer ~3729 times per quarter frame (same as SDL).
-        // Sample j is taken at the first step index k with k / 3729 > j /
-        // samplesToWrite, before that step's timer update; once the last
-        // sample is taken the quarter frame's stepping stops. The timers are
-        // advanced in one go between samples (advanceTimer(n) == n calls of
-        // stepTimer(); the triangle steps twice per step).
-        int j = 0;
-        if (samplesToWrite * 2 <= 3729)
+    // Walk the frame from event to event: the next output sample, or the
+    // next frame-sequencer clock (every quarter frame, ~240 Hz). The
+    // channels integrate their output over each stretch in between.
+    uint32_t quarterLength = cycles / 4;
+    uint32_t nextQuarter = quarterLength;
+    int quartersDone = 0;
+    uint32_t pos = 0;
+
+    while (pos < cycles)
+    {
+        // sampleClock = CPU cycles still needed for the next sample
+        uint32_t toSample = (uint32_t)sampleClock;
+        if ((double)toSample < sampleClock) toSample++;
+        if (toSample == 0) toSample = 1;
+
+        uint32_t end = pos + toSample;
+        if (quartersDone < 4 && nextQuarter < end) end = nextQuarter;
+        if (end > cycles) end = cycles;
+        uint32_t n = end - pos;
+
+        if (n > 0)
         {
-            int done = 0;  // steps done so far
-            for (; j < samplesToWrite; j++)
-            {
-                int k = (int)((long)j * 3729 / samplesToWrite) + 1;
-                if (k >= 3729)
-                {
-                    break;
-                }
-                unsigned n = (unsigned)(k - done);
-                pulse1->advanceTimer(n);
-                pulse2->advanceTimer(n);
-                noise->advanceTimer(n);
-                triangle->advanceTimer(2 * n);
-
-                audioBuffer[audioBufferLength + j] = getOutput();
-
-                pulse1->advanceTimer(1);
-                pulse2->advanceTimer(1);
-                noise->advanceTimer(1);
-                triangle->advanceTimer(2);
-                done = k + 1;
-            }
-            if (j < samplesToWrite)
-            {
-                unsigned n = (unsigned)(3729 - done);
-                pulse1->advanceTimer(n);
-                pulse2->advanceTimer(n);
-                noise->advanceTimer(n);
-                triangle->advanceTimer(2 * n);
-            }
+            pulse1Sum += pulse1->advance(n);
+            pulse2Sum += pulse2->advance(n);
+            triangleSum += triangle->advance(n);
+            noiseSum += noise->advance(n);
+            sumCycles += n;
+            sampleClock -= n;
+            pos = end;
         }
-        else
+
+        if (sampleClock <= 0.0)
         {
-            for (int stepIndex = 0; stepIndex < 3729 && j < samplesToWrite; stepIndex++)
-            {
-                if ((long)stepIndex * samplesToWrite > (long)j * 3729)  // stepIndex/3729 > j/samplesToWrite
-                {
-                    uint8_t sample = getOutput();
-                    audioBuffer[audioBufferLength + j] = sample;
-                    j++;
-                }
-
-                pulse1->stepTimer();
-                pulse2->stepTimer();
-                noise->stepTimer();
-                triangle->stepTimer();
-                triangle->stepTimer(); // Triangle steps twice like in SDL
-            }
+            pushSample(mixAverage());
+            sampleClock += cyclesPerSample;
         }
-        audioBufferLength += j; // Use j instead of samplesToWrite
-        
-#ifndef __DJGPP__
-        //pthread_mutex_unlock(&audio_mutex);
-#endif        
+
+        if (quartersDone < 4 && pos == nextQuarter)
+        {
+            clockFrameSequencer();
+            quartersDone++;
+            nextQuarter = (quartersDone == 3) ? cycles : nextQuarter + quarterLength;
+        }
     }
-}
-
-
-void APU::stepEnvelope()
-{
-    if (pulse1) pulse1->stepEnvelope();
-    if (pulse2) pulse2->stepEnvelope();
-    if (triangle) triangle->stepCounter();
-    if (noise) noise->stepEnvelope();
-}
-
-void APU::stepSweep()
-{
-    if (pulse1) pulse1->stepSweep();
-    if (pulse2) pulse2->stepSweep();
-}
-
-void APU::stepLength()
-{
-    if (pulse1) pulse1->stepLength();
-    if (pulse2) pulse2->stepLength();
-    if (triangle) triangle->stepLength();
-    if (noise) noise->stepLength();
 }
 
 void APU::writeControl(uint8_t value)
 {
-    if (pulse1) pulse1->enabled = (value & 1) == 1;
-    if (pulse2) pulse2->enabled = (value & 2) == 2;
-    if (triangle) triangle->enabled = (value & 4) == 4;
-    if (noise) noise->enabled = (value & 8) == 8;
-    
-    if (pulse1 && !pulse1->enabled) {
-        pulse1->lengthValue = 0;
-    }
-    if (pulse2 && !pulse2->enabled) {
-        pulse2->lengthValue = 0;
-    }
-    if (triangle && !triangle->enabled) {
-        triangle->lengthValue = 0;
-    }
-    if (noise && !noise->enabled) {
-        noise->lengthValue = 0;
+    pulse1->enabled = (value & 1) != 0;
+    pulse2->enabled = (value & 2) != 0;
+    triangle->enabled = (value & 4) != 0;
+    noise->enabled = (value & 8) != 0;
+
+    if (!pulse1->enabled) pulse1->lengthValue = 0;
+    if (!pulse2->enabled) pulse2->lengthValue = 0;
+    if (!triangle->enabled) triangle->lengthValue = 0;
+    if (!noise->enabled) noise->lengthValue = 0;
+}
+
+void APU::writeFrameCounter(uint8_t value)
+{
+    // A write resets the frame sequencer. In 5-step mode (bit 7 set) it also
+    // immediately clocks the quarter- and half-frame units. SMB writes $FF
+    // here at the start of every sound-engine update.
+    fiveStepMode = (value & 0x80) != 0;
+    frameStep = 0;
+    if (fiveStepMode)
+    {
+        clockQuarterFrame();
+        clockHalfFrame();
     }
 }
 
@@ -815,57 +637,22 @@ void APU::writeRegister(uint16_t address, uint8_t value)
 {
     switch (address)
     {
-    case 0x4000:
-        if (pulse1) pulse1->writeControl(value);
-        break;
-    case 0x4001:
-        if (pulse1) pulse1->writeSweep(value);
-        break;
-    case 0x4002:
-        if (pulse1) pulse1->writeTimerLow(value);
-        break;
-    case 0x4003:
-        if (pulse1) pulse1->writeTimerHigh(value);
-        break;
-    case 0x4004:
-        if (pulse2) pulse2->writeControl(value);
-        break;
-    case 0x4005:
-        if (pulse2) pulse2->writeSweep(value);
-        break;
-    case 0x4006:
-        if (pulse2) pulse2->writeTimerLow(value);
-        break;
-    case 0x4007:
-        if (pulse2) pulse2->writeTimerHigh(value);
-        break;
-    case 0x4008:
-        if (triangle) triangle->writeControl(value);
-        break;
-    case 0x400a:
-        if (triangle) triangle->writeTimerLow(value);
-        break;
-    case 0x400b:
-        if (triangle) triangle->writeTimerHigh(value);
-        break;
-    case 0x400c:
-        if (noise) noise->writeControl(value);
-        break;
-    case 0x400e:  // FIXED: Remove case 0x400d, only 0x400e
-        if (noise) noise->writePeriod(value);
-        break;
-    case 0x400f:
-        if (noise) noise->writeLength(value);
-        break;
-    case 0x4015:
-        writeControl(value);
-        break;
-    case 0x4017:
-        stepEnvelope();
-        stepSweep();
-        stepLength();
-        break;
-    default:
-        break;
+    case 0x4000: pulse1->writeControl(value); break;
+    case 0x4001: pulse1->writeSweep(value); break;
+    case 0x4002: pulse1->writeTimerLow(value); break;
+    case 0x4003: pulse1->writeTimerHigh(value); break;
+    case 0x4004: pulse2->writeControl(value); break;
+    case 0x4005: pulse2->writeSweep(value); break;
+    case 0x4006: pulse2->writeTimerLow(value); break;
+    case 0x4007: pulse2->writeTimerHigh(value); break;
+    case 0x4008: triangle->writeControl(value); break;
+    case 0x400a: triangle->writeTimerLow(value); break;
+    case 0x400b: triangle->writeTimerHigh(value); break;
+    case 0x400c: noise->writeControl(value); break;
+    case 0x400e: noise->writePeriod(value); break;
+    case 0x400f: noise->writeLength(value); break;
+    case 0x4015: writeControl(value); break;
+    case 0x4017: writeFrameCounter(value); break;
+    default: break;
     }
 }

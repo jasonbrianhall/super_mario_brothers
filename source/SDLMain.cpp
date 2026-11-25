@@ -158,9 +158,15 @@ static bool initialize()
         desired.channels = 1;
         desired.samples  = 2048;
         desired.callback = audioCallback;
-        SDL_AudioSpec obtained;
-        SDL_OpenAudio(&desired, &obtained);
-        SDL_PauseAudio(0);
+        // Pass NULL for 'obtained' so SDL guarantees the exact format/rate we
+        // asked for (converting if needed). With a non-NULL 'obtained' SDL may
+        // silently pick a different rate or sample format, and the APU's
+        // signed 8-bit samples would then be misinterpreted.
+        if (SDL_OpenAudio(&desired, nullptr) == 0) {
+            SDL_PauseAudio(0);
+        } else {
+            fprintf(stderr, "SDL_OpenAudio failed: %s\n", SDL_GetError());
+        }
     }
 
     return true;
