@@ -12,7 +12,16 @@ MemoryAccess::MemoryAccess(SMBEngine& engine, uint8_t constant) :
     engine(engine)
 {
     this->constant = constant;
-    this->value = &constant;
+    this->value = &this->constant;  // was &constant: pointed at the parameter, which is gone once this returns
+}
+
+MemoryAccess::MemoryAccess(const MemoryAccess& other) :
+    engine(other.engine)
+{
+    // A copy of a constant must point at its own copy of the value,
+    // not at the (possibly temporary) source object's.
+    constant = other.constant;
+    value = (other.value == &other.constant) ? &constant : other.value;
 }
 
 MemoryAccess& MemoryAccess::operator = (uint8_t value)

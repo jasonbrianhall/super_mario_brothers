@@ -21,6 +21,11 @@ public:
      */
     MemoryAccess(SMBEngine& engine, uint8_t constant);
 
+    /**
+     * Copy a MemoryAccess. Copies of constants keep their own value.
+     */
+    MemoryAccess(const MemoryAccess& other);
+
     MemoryAccess& operator = (uint8_t value);
     MemoryAccess& operator = (const MemoryAccess& rhs);
     MemoryAccess& operator += (uint8_t value);
