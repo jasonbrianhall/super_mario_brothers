@@ -21,6 +21,8 @@ public:
      */
     MemoryAccess(SMBEngine& engine, uint8_t constant);
 
+    MemoryAccess(const MemoryAccess& other);
+
     MemoryAccess& operator = (uint8_t value);
     MemoryAccess& operator = (const MemoryAccess& rhs);
     MemoryAccess& operator += (uint8_t value);
