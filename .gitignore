@@ -3,3 +3,10 @@ SMBRom.cpp
 SMBRom.hpp
 rom_to_header
 
+
+# SDL3 DOS build output
+msdos_sdl/build/
+msdos_sdl/smb.exe
+msdos_sdl/SMBC.CON
+msdos_sdl/CWSDPMI.EXE
+msdos_sdl/*.SAV

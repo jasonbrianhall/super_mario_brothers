@@ -124,17 +124,27 @@ public:
         dutyValue = 0;
     }
 
-    void stepTimer()
+    // Run n CPU cycles and return the sum of the channel's output over them.
+    // The timer ticks every other CPU cycle, so a duty step lasts
+    // 2 * (period + 1) CPU cycles. Volume, length and sweep only change on
+    // frame-sequencer clocks, so between steps the output is constant and
+    // the loop jumps from one step to the next.
+    uint32_t advance(uint32_t n)
     {
-        if (timerValue == 0)
+        uint32_t sum = 0;
+        while (n > 0)
         {
-            timerValue = timerPeriod;
-            dutyValue = (dutyValue + 1) & 7;
+            uint32_t k = (n < countdown) ? n : countdown;
+            sum += k * output();
+            countdown -= k;
+            n -= k;
+            if (countdown == 0)
+            {
+                dutyValue = (dutyValue + 1) & 7;
+                countdown = 2u * ((uint32_t)timerPeriod + 1);
+            }
         }
-        else
-        {
-            timerValue--;
-        }
+        return sum;
     }
 
     void stepLength()
@@ -191,7 +201,7 @@ private:
     bool lengthHalt = false;
     uint8_t lengthValue = 0;
     uint16_t timerPeriod = 0;
-    uint16_t timerValue = 0;
+    uint32_t countdown = 2;     // CPU cycles until the next duty step
     uint8_t dutyMode = 0;
     uint8_t dutyValue = 0;
     bool sweepReload = false;
@@ -232,20 +242,33 @@ public:
         counterReload = true;
     }
 
-    void stepTimer()
+    // Run n CPU cycles (the triangle timer ticks every CPU cycle) and
+    // return the sum of the output over them.
+    uint32_t advance(uint32_t n)
     {
-        if (timerValue == 0)
+        // Very small periods are ultrasonic; real hardware produces a
+        // ~7.5 value DC level. Freezing the sequencer avoids aliasing.
+        if (lengthValue == 0 || counterValue == 0 || timerPeriod < 2)
         {
-            timerValue = timerPeriod;
-            // Very small periods are ultrasonic; real hardware produces a
-            // ~7.5 value DC level. Freezing the sequencer avoids aliasing.
-            if (lengthValue > 0 && counterValue > 0 && timerPeriod >= 2)
+            // Sequencer frozen: output holds. Keep the timer running.
+            uint32_t p = (uint32_t)timerPeriod + 1;
+            countdown = (n < countdown) ? countdown - n : p - (n - countdown) % p;
+            return n * output();
+        }
+        uint32_t sum = 0;
+        while (n > 0)
+        {
+            uint32_t k = (n < countdown) ? n : countdown;
+            sum += k * output();
+            countdown -= k;
+            n -= k;
+            if (countdown == 0)
+            {
                 dutyValue = (dutyValue + 1) & 31;
+                countdown = (uint32_t)timerPeriod + 1;
+            }
         }
-        else
-        {
-            timerValue--;
-        }
+        return sum;
     }
 
     void stepLength()
@@ -277,7 +300,7 @@ private:
     bool control = false;
     uint8_t lengthValue = 0;
     uint16_t timerPeriod = 0;
-    uint16_t timerValue = 0;
+    uint32_t countdown = 1;     // CPU cycles until the next sequencer step
     uint8_t dutyValue = 0;
     uint8_t counterPeriod = 0;
     uint8_t counterValue = 0;
@@ -310,21 +333,28 @@ public:
         envelope.start = true;
     }
 
-    // Clocked every CPU cycle: noiseTable holds periods in CPU cycles.
-    void stepTimer()
+    // Run n CPU cycles (noiseTable holds periods in CPU cycles) and return
+    // the sum of the output over them.
+    uint32_t advance(uint32_t n)
     {
-        if (timerValue == 0)
+        uint32_t sum = 0;
+        int shift = mode ? 6 : 1;
+        while (n > 0)
         {
-            timerValue = timerPeriod - 1;
-            uint16_t b1 = shiftRegister & 1;
-            uint16_t b2 = (shiftRegister >> (mode ? 6 : 1)) & 1;
-            shiftRegister >>= 1;
-            shiftRegister |= (b1 ^ b2) << 14;
+            uint32_t k = (n < countdown) ? n : countdown;
+            sum += k * output();
+            countdown -= k;
+            n -= k;
+            if (countdown == 0)
+            {
+                uint16_t b1 = shiftRegister & 1;
+                uint16_t b2 = (shiftRegister >> shift) & 1;
+                shiftRegister >>= 1;
+                shiftRegister |= (b1 ^ b2) << 14;
+                countdown = timerPeriod;
+            }
         }
-        else
-        {
-            timerValue--;
-        }
+        return sum;
     }
 
     void stepLength()
@@ -347,7 +377,7 @@ private:
     bool lengthHalt = false;
     uint8_t lengthValue = 0;
     uint16_t timerPeriod = 4;
-    uint16_t timerValue = 0;
+    uint32_t countdown = 4;     // CPU cycles until the next LFSR shift
     Envelope envelope;
 };
 
@@ -363,20 +393,22 @@ APU::APU()
 
     cycleRemainder = 0.0;
     sampleClock = 0.0;
-    mixAccumulator = 0.0;
-    mixCount = 0;
-    oddCycle = false;
+    pulse1Sum = pulse2Sum = triangleSum = noiseSum = 0;
+    sumCycles = 0;
 
+    filterRate = 0;
+    hpCoeff = lpCoeff = 0.0f;
     hpPrevIn = 0.0f;
     hpPrevOut = 0.0f;
     lpPrevOut = 0.0f;
 
-    // Non-linear mixer lookup tables (nesdev "APU Mixer")
+    // Non-linear mixer lookup tables (nesdev "APU Mixer"). One extra entry
+    // at the end so lookups can interpolate without a bounds check.
     pulseTable[0] = 0.0f;
-    for (int n = 1; n < 31; n++)
+    for (int n = 1; n < 32; n++)
         pulseTable[n] = 95.52f / (8128.0f / n + 100.0f);
     tndTable[0] = 0.0f;
-    for (int n = 1; n < 203; n++)
+    for (int n = 1; n < 204; n++)
         tndTable[n] = 163.67f / (24329.0f / n + 100.0f);
 
     pulse1 = new Pulse(1);
@@ -393,29 +425,40 @@ APU::~APU()
     delete noise;
 }
 
-float APU::getOutput()
+static inline float lookup(const float* table, float index)
 {
-    return pulseTable[pulse1->output() + pulse2->output()] +
-           tndTable[3 * triangle->output() + 2 * noise->output()];
+    int i = (int)index;
+    float f = index - (float)i;
+    return table[i] + f * (table[i + 1] - table[i]);
+}
+
+/**
+ * Mix the channels' average outputs since the last sample. Averaging over
+ * the whole sample period (a box filter) instead of point sampling keeps
+ * the square waves from aliasing into off-key tones.
+ */
+float APU::mixAverage()
+{
+    if (sumCycles == 0)
+        return 0.0f;
+    float inv = 1.0f / (float)sumCycles;
+    float pulse = (float)(pulse1Sum + pulse2Sum) * inv;
+    float tnd = (float)(3 * triangleSum + 2 * noiseSum) * inv;
+    pulse1Sum = pulse2Sum = triangleSum = noiseSum = 0;
+    sumCycles = 0;
+    return lookup(pulseTable, pulse) + lookup(tndTable, tnd);
 }
 
 void APU::pushSample(float value)
 {
     // First-order high-pass (~90 Hz) removes the DC offset of the NES mixer,
     // then a gentle low-pass (~14 kHz), roughly like the console's output.
-    float rate = (float)Configuration::getAudioFrequency();
-    float dt = 1.0f / rate;
-    float hpRC = 1.0f / (2.0f * 3.14159265f * 90.0f);
-    float lpRC = 1.0f / (2.0f * 3.14159265f * 14000.0f);
-    float hpA = hpRC / (hpRC + dt);
-    float lpA = dt / (lpRC + dt);
-
-    float hp = hpA * (hpPrevOut + value - hpPrevIn);
+    float hp = hpCoeff * (hpPrevOut + value - hpPrevIn);
     hpPrevIn = value;
     hpPrevOut = hp;
-    lpPrevOut += lpA * (hp - lpPrevOut);
+    lpPrevOut += lpCoeff * (hp - lpPrevOut);
 
-    int s = (int)lrintf(lpPrevOut * 255.0f);
+    int s = (int)(lpPrevOut * 255.0f + (lpPrevOut >= 0 ? 0.5f : -0.5f));
     if (s > 127) s = 127;
     if (s < -128) s = -128;
 
@@ -493,57 +536,72 @@ void APU::clockFrameSequencer()
 
 void APU::stepFrame()
 {
-    double frameRate = (double)Configuration::getFrameRate();
-    double audioRate = (double)Configuration::getAudioFrequency();
+    int frameRate = Configuration::getFrameRate();
+    int audioRate = Configuration::getAudioFrequency();
     if (frameRate <= 0 || audioRate <= 0)
         return;
 
-    double cyclesPerSample = CPU_CLOCK / audioRate;
+    if (audioRate != filterRate)
+    {
+        float dt = 1.0f / (float)audioRate;
+        float hpRC = 1.0f / (2.0f * 3.14159265f * 90.0f);
+        float lpRC = 1.0f / (2.0f * 3.14159265f * 14000.0f);
+        hpCoeff = hpRC / (hpRC + dt);
+        lpCoeff = dt / (lpRC + dt);
+        filterRate = audioRate;
+    }
 
+    double cyclesPerSample = CPU_CLOCK / audioRate;
     double exactCycles = CPU_CLOCK / frameRate + cycleRemainder;
-    int cycles = (int)exactCycles;
+    uint32_t cycles = (uint32_t)exactCycles;
     cycleRemainder = exactCycles - cycles;
 
 #ifndef __DJGPP__
     std::lock_guard<std::mutex> lock(bufferMutex);
 #endif
 
-    // The frame sequencer is clocked roughly every quarter of a frame
-    // (~7457 CPU cycles, i.e. 240 Hz).
-    int nextQuarter = 1;
-    int quarterLength = cycles / 4;
+    // Walk the frame from event to event: the next output sample, or the
+    // next frame-sequencer clock (every quarter frame, ~240 Hz). The
+    // channels integrate their output over each stretch in between.
+    uint32_t quarterLength = cycles / 4;
+    uint32_t nextQuarter = quarterLength;
+    int quartersDone = 0;
+    uint32_t pos = 0;
 
-    for (int c = 0; c < cycles; c++)
+    while (pos < cycles)
     {
-        triangle->stepTimer();
-        noise->stepTimer();
+        // sampleClock = CPU cycles still needed for the next sample
+        uint32_t toSample = (uint32_t)sampleClock;
+        if ((double)toSample < sampleClock) toSample++;
+        if (toSample == 0) toSample = 1;
 
-        oddCycle = !oddCycle;
-        if (oddCycle)
+        uint32_t end = pos + toSample;
+        if (quartersDone < 4 && nextQuarter < end) end = nextQuarter;
+        if (end > cycles) end = cycles;
+        uint32_t n = end - pos;
+
+        if (n > 0)
         {
-            pulse1->stepTimer();
-            pulse2->stepTimer();
-
-            // Box-filter the mixer output over each output sample period
-            // (instead of point sampling) to cut down on aliasing.
-            mixAccumulator += getOutput();
-            mixCount++;
+            pulse1Sum += pulse1->advance(n);
+            pulse2Sum += pulse2->advance(n);
+            triangleSum += triangle->advance(n);
+            noiseSum += noise->advance(n);
+            sumCycles += n;
+            sampleClock -= n;
+            pos = end;
         }
 
-        sampleClock += 1.0;
-        if (sampleClock >= cyclesPerSample)
+        if (sampleClock <= 0.0)
         {
-            sampleClock -= cyclesPerSample;
-            float v = mixCount ? (float)(mixAccumulator / mixCount) : getOutput();
-            mixAccumulator = 0.0;
-            mixCount = 0;
-            pushSample(v);
+            pushSample(mixAverage());
+            sampleClock += cyclesPerSample;
         }
 
-        if (nextQuarter <= 4 && c + 1 == quarterLength * nextQuarter)
+        if (quartersDone < 4 && pos == nextQuarter)
         {
             clockFrameSequencer();
-            nextQuarter++;
+            quartersDone++;
+            nextQuarter = (quartersDone == 3) ? cycles : nextQuarter + quarterLength;
         }
     }
 }

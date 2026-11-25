@@ -1,10 +1,11 @@
 # Super Mario Brothers Virtualized
 
-This is not a remake. This is the original Super Mario Bros. running on a virtualized 6502 CPU with emulated PPU and APU behavior. Unlike cycle-accurate emulators, this virtualizer translates 6502 instructions to native code for maximum performance and won't slow down like a real NES when overwhelmed. Available in three versions:
+This is not a remake. This is the original Super Mario Bros. running on a virtualized 6502 CPU with emulated PPU and APU behavior. Unlike cycle-accurate emulators, this virtualizer translates 6502 instructions to native code for maximum performance and won't slow down like a real NES when overwhelmed. Available in four versions:
 
 1. **GTK3+/SDL Version**: Built with GTK3+ for configuration and controls and SDL for input and audio, includes Scaling, APU, and PPU caching optimizations
 2. **Allegro DOS/Linux Version**: DOS (Allegro 4 only) and Linux (Allegro 4 or 5) with extensive performance caching systems including scaling optimization
 3. **Pure SDL**: Built with SDL for input and audio, includes Scaling, APU, and PPU caching optimizations
+4. **SDL3 DOS Version** (`msdos_sdl/`): the Pure SDL game built for MS-DOS with DJGPP and SDL3's DOS port (VESA/VGA, Sound Blaster, gameport), the same way as SDLPoPDOS -- see [msdos_sdl/README.md](msdos_sdl/README.md)
 
 You do have to provide your own NES ROM (md5sum 811b027eaf99c2def7b933c5208636de)
 
@@ -155,6 +156,14 @@ python main.py smbdis.asm ../source/SMB/ smb_config/
 - The build process automatically handles all dependencies via `djfdyuruiry/djgpp` Docker image
 
 ## Build & Run
+
+### SDL3 DOS Version
+``` bash
+cd msdos_sdl
+make            # smb.exe (CWSDPMI built in) + SMBC.CON; needs i586-pc-msdosdjgpp-g++ or Docker
+make run        # play it in DOSBox
+make dist       # build/dist/SMB, ready to copy to a DOS machine
+```
 
 ### GTK3+/SDL Version (Original)
 ``` bash

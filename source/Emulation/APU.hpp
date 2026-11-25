@@ -61,12 +61,17 @@ private:
 
     // Timing / resampling
     double cycleRemainder;      /**< Fractional CPU cycles carried between frames */
-    double sampleClock;         /**< CPU cycles accumulated toward the next sample */
-    double mixAccumulator;      /**< Sum of mixer output over the current sample */
-    int mixCount;
-    bool oddCycle;              /**< Pulse/noise run at half CPU rate */
+    double sampleClock;         /**< CPU cycles still needed for the next sample */
+    uint32_t pulse1Sum;         /**< Channel outputs summed over the current sample */
+    uint32_t pulse2Sum;
+    uint32_t triangleSum;
+    uint32_t noiseSum;
+    uint32_t sumCycles;         /**< CPU cycles covered by the sums */
 
     // Output filters (approximation of the NES's analog output stage)
+    int filterRate;
+    float hpCoeff;
+    float lpCoeff;
     float hpPrevIn;
     float hpPrevOut;
     float lpPrevOut;
@@ -76,10 +81,10 @@ private:
     Triangle* triangle;
     Noise* noise;
 
-    float pulseTable[31];
-    float tndTable[203];
+    float pulseTable[32];
+    float tndTable[204];
 
-    float getOutput();
+    float mixAverage();
     void pushSample(float value);
 
     void clockQuarterFrame();
